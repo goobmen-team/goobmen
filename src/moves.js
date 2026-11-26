@@ -289,7 +289,8 @@ function explode(c) {
   for (let i = 0; i < 40; i++) { const a = rand(0, 6.3), r = Math.sqrt(Math.random()) * 2.4, x = c[0] + Math.cos(a) * r, z = c[2] + Math.sin(a) * r; marks.push([x, floorAt(x, z), z]); }
   while (marks.length > 120) marks.shift();
   // junk, and burning chunks that leave trails of smoke
-  for (let i = 0; i < 16; i++) { const a = rand(0, 6.3), sp = rand(3, 10); spawnProp(['rock', 'bone', 'fish', 'meat', 'rock'][i % 5], V.add(c, [0, 0.3, 0]), [Math.cos(a) * sp, rand(6, 14), Math.sin(a) * sp], { life: 7, floor: floorAt(c[0], c[2]) + 0.06 }); }
+  for (let i = 0; i < 16; i++) { const a = rand(0, 6.3), sp = rand(3, 10); spawnProp(['rock', 'bone', 'fish', 'meat', 'rock'][i % 5], V.add(c, [0, 0.3, 0]), [Math.cos(a) * sp, rand(6, 14), Math.sin(a) * sp], { life: 9 }); }
+  shoveProps(c, 9, 9);                                        // and whatever was lying around goes flying
   for (let i = 0; i < 14; i++) { const a = rand(0, 6.3), sp = rand(4, 11); b.chunks.push({ p: V.add(c, [0, 0.3, 0]), v: [Math.cos(a) * sp, rand(7, 16), Math.sin(a) * sp], life: rand(1.6, 3.2) }); }
   for (const v of [player, ...bots]) {
     const dd = Math.hypot(v.pos[0] - c[0], v.pos[2] - c[2]);

@@ -53,28 +53,159 @@ const JUNK = {
          { mesh: mergeMesh([blob(0.02, 0.02, 0.09, [0, 0, -0.11]), blob(0.028, 0.028, 0.028, [0.017, 0, -0.19]), blob(0.028, 0.028, 0.028, [-0.017, 0, -0.19])]), color: [0.75, 0.68, 0.52], rough: 0.6 }]
 };
 const starMesh = mergeMesh([starData()]);
+// ---------------------------------------------------------------- physics for the junk
+// Each thing is a rigid body touching the world at a handful of points on its real shape: it falls, tumbles,
+// bounces, slides with friction, rolls over onto its flattest side and goes to sleep. Points are in the
+// thing's own space, before its draw scale.
+const ell = (rx, ry, rz, c) => { c = c || [0, 0, 0]; const k = 0.62; const out = [];
+  for (const [x, y, z] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) out.push([c[0] + x * rx, c[1] + y * ry, c[2] + z * rz]);
+  for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) out.push([c[0] + x * rx * k, c[1] + y * ry * k, c[2] + z * rz * k]);
+  return out; };
+const SHAPES = {
+  rock: ell(0.085, 0.065, 0.075),
+  bone: [...ell(0.03, 0.03, 0.12), ...[-1, 1].flatMap(z => [[0.063, 0, z * 0.12], [-0.063, 0, z * 0.12], [0, 0.036, z * 0.12], [0, -0.036, z * 0.12], [0, 0, z * 0.156]])],
+  fish: ell(0.035, 0.065, 0.15),
+  meat: [...ell(0.075, 0.075, 0.11, [0, 0, 0.03]), [0, 0.028, -0.21], [0, -0.028, -0.21], [0.045, 0, -0.21], [-0.045, 0, -0.21]]
+};
+const gunShapes = {};
+function gunShape(id) {                       // the corners of the gun's box, placed the way drawProps draws it
+  if (gunShapes[id]) return gunShapes[id];
+  const v = new Float32Array(b64bytes(window.GUN_DATA[id].body.v).buffer), lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+  for (let i = 0; i < v.length; i += 8) for (let c = 0; c < 3; c++) { lo[c] = Math.min(lo[c], v[i + c]); hi[c] = Math.max(hi[c], v[i + c]); }
+  const s = GUNS[id].scale / 1.25, out = [];
+  for (const x of [lo[0], hi[0]]) for (const y of [lo[1], hi[1]]) for (const z of [lo[2], hi[2]]) out.push([x * s, y * s - 0.04, z * s - 0.1]);
+  for (const z of [lo[2], hi[2]]) out.push([(lo[0] + hi[0]) / 2 * s, (lo[1] + hi[1]) / 2 * s - 0.04, z * s - 0.1]);   // nose and butt
+  return (gunShapes[id] = out);
+}
 function spawnProp(kind, p, v, o) {
-  const prop = Object.assign({ kind, p: p.slice(), v: v.slice(), R: M3.ry(rand(0, 6.3)), axis: [rand(-1, 1), rand(-1, 1), rand(-1, 1)], spin: rand(5, 11), life: 7, rest: false, floor: 0.06, scale: 1.25 }, o || {});
+  const prop = Object.assign({ kind, p: p.slice(), v: v.slice(), R: M3.ry(rand(0, 6.3)), life: 7, rest: false, still: 0, scale: 1.25 }, o || {});
+  // a random tumble to start with (old callers gave an axis and a spin rate)
+  if (!prop.w) { const a = V.norm([rand(-1, 1), rand(-1, 1), rand(-1, 1)]); prop.w = V.mul(a, prop.spin || rand(5, 11)); }
+  const local = kind === 'gun' ? gunShape(prop.gun) : SHAPES[kind];
+  prop.pts = local.map(q => V.mul(q, prop.scale));
+  const r = Math.max(...prop.pts.map(V.len));
+  prop.rad = r; prop.invI = 1 / (0.33 * r * r);           // a fair guess at how hard it is to spin
   props.push(prop);
-  if (props.length > 40) props.shift();
+  while (props.length > 40) { const k = props.findIndex(q => !q.keep); props.splice(k < 0 ? 0 : k, 1); }
   return prop;
 }
 // a lob from one point that lands on another after t seconds
 const lob = (from, to, t) => [(to[0] - from[0]) / t, (to[1] - from[1]) / t + 4.9 * t, (to[2] - from[2]) / t];
+function groundNormal(x, z) {
+  if (world.map !== 'island') return [0, 1, 0];
+  const e = 0.15;
+  return V.norm([floorAt(x - e, z) - floorAt(x + e, z), 2 * e, floorAt(x, z - e) - floorAt(x, z + e)]);
+}
+// one contact: stop it going into the surface (with a little bounce if it hit hard), and rub with friction
+function contact(o, r, n, bounce) {
+  const vp = V.add(o.v, V.cross(o.w, r)), vn = V.dot(vp, n);
+  if (vn >= 0) return 0;
+  const rn = V.cross(r, n), j = -(1 + (vn < -1.6 ? bounce : 0)) * vn / (1 + o.invI * V.dot(rn, rn));
+  o.v = V.mad(o.v, n, j); o.w = V.mad(o.w, rn, o.invI * j);
+  const vp2 = V.add(o.v, V.cross(o.w, r)), vt = V.sub(vp2, V.mul(n, V.dot(vp2, n))), sl = V.len(vt);
+  if (sl > 1e-4) {
+    const t = V.mul(vt, 1 / sl), rt = V.cross(r, t);
+    const jt = Math.max(-sl / (1 + o.invI * V.dot(rt, rt)), -0.55 * j);
+    o.v = V.mad(o.v, t, jt); o.w = V.mad(o.w, rt, o.invI * jt);
+  }
+  return -vn;
+}
+function propStep(o, h) {
+  o.v[1] -= 9.8 * h;
+  o.p = V.mad(o.p, o.v, h);
+  const spin = V.len(o.w);
+  if (spin > 1e-5) {
+    const R = M3.mul(M3.axis(o.w, spin * h), o.R);           // turn, then keep it a clean rotation
+    const x = V.norm(M3.vec(R, [1, 0, 0])), y = V.norm(V.orth(M3.vec(R, [0, 1, 0]), x));
+    o.R = M3.cols(x, y, V.cross(x, y));
+  }
+  // the ground: find every point that went under, push out of the deepest, then resolve each
+  let touch = false, hit = 0, deep = 0, n = null;
+  const under = [];
+  for (const q of o.pts) {
+    const r = M3.vec(o.R, q), x = o.p[0] + r[0], z = o.p[2] + r[2], g = floorAt(x, z), d = g - (o.p[1] + r[1]);
+    if (d > -0.004) { under.push(r); if (d > deep) { deep = d; n = groundNormal(x, z); } }
+  }
+  if (under.length) {
+    touch = true;
+    n = n || groundNormal(o.p[0], o.p[2]);
+    if (deep > 0) o.p = V.mad(o.p, [0, 1, 0], deep);
+    for (let pass = 0; pass < 2; pass++) for (const r of under) hit = Math.max(hit, contact(o, r, n, 0.32));
+    o.w = V.mul(o.w, Math.exp(-h * 2.5)); o.v = V.mul(o.v, Math.exp(-h * 0.6));   // rolling resistance
+  }
+  // trunks, rocks and posts: bounce off their sides
+  if (world.map === 'island') for (const s of solidsNear(o.p[0], o.p[2])) {
+    if (o.p[1] > s.y + s.h - 0.05) continue;
+    const e = edgeOf(s, o.p[0], o.p[2]), pad = o.rad * 0.6;
+    if (e.d >= pad) continue;
+    let dx = o.p[0] - e.at[0], dz = o.p[2] - e.at[1], len = Math.hypot(dx, dz) || 1;
+    if (e.d < 0) { dx = -dx; dz = -dz; }
+    const nn = [dx / len, 0, dz / len];
+    o.p[0] += nn[0] * (pad - e.d); o.p[2] += nn[2] * (pad - e.d);
+    hit = Math.max(hit, contact(o, V.mul(nn, -o.rad * 0.6), nn, 0.4));
+  }
+  o.w = V.mul(o.w, Math.exp(-h * 0.15));                     // air
+  return { touch, hit };
+}
 function propsStep(dt) {
   for (let i = props.length - 1; i >= 0; i--) {
     const o = props[i];
     if ((o.life -= dt) <= 0) { props.splice(i, 1); continue; }
     if (o.rest) continue;
-    o.v[1] -= 9.8 * dt; o.p = V.mad(o.p, o.v, dt); o.R = M3.mul(M3.axis(o.axis, o.spin * dt), o.R);
-    const low = floorAt(o.p[0], o.p[2]) + o.floor;
-    if (o.p[1] < low && o.v[1] < 0) {
-      o.p[1] = low;
-      if (-o.v[1] > 1.1) { o.v = [o.v[0] * 0.45, -o.v[1] * 0.3, o.v[2] * 0.45]; o.spin *= 0.5; Sound.play('click', 0.25); }
-      else { o.rest = true; o.R = o.kind === 'gun' ? M3.mul(M3.ry(rand(0, 6.3)), M3.rz(Math.PI / 2)) : o.kind === 'fish' ? M3.mul(M3.ry(rand(0, 6.3)), M3.rz(Math.PI / 2)) : M3.ry(rand(0, 6.3)); }
+    const steps = Math.max(1, Math.ceil(dt / 0.006)), h = dt / steps;
+    let touch = false, hit = 0;
+    for (let k = 0; k < steps; k++) { const c = propStep(o, h); touch = touch || c.touch; hit = Math.max(hit, c.hit); }
+    if (hit > 1.4 && game.time - (o.clack || 0) > 0.08) {    // a clatter, louder for harder hits
+      o.clack = game.time;
+      const near = clamp(1.4 - V.len(V.sub(o.p, player.pos)) / 25, 0, 1), k = Math.min(1, hit / 7) * near;
+      if (k > 0.03) { if (o.kind === 'gun') { Sound.play('magout', k * 0.9); Sound.play('thud', k * 0.5); } else Sound.play(o.kind === 'rock' ? 'thud' : 'click', k * 0.6); }
     }
+    // asleep once it has been lying still for a moment
+    o.still = touch && V.len(o.v) < 0.09 && V.len(o.w) < 0.5 ? o.still + dt : 0;
+    if (o.still > 0.3) { o.rest = true; o.v = [0, 0, 0]; o.w = [0, 0, 0]; }
   }
   for (let i = pops.length - 1; i >= 0; i--) { const q = pops[i]; q.t += dt; if (q.t > q.life) { q.el.remove(); pops.splice(i, 1); } }
+}
+// a blast or a shove: everything nearby gets thrown about, sleeping things included
+function shoveProps(c, radius, power) {
+  for (const o of props) {
+    const d = V.sub(o.p, c), len = V.len(d);
+    if (len > radius) continue;
+    const k = power * (1 - len / radius), dir = V.norm(V.add(V.mul(d, 1 / (len || 1)), [0, 0.8, 0]));
+    o.v = V.mad(o.v, dir, k); o.w = V.add(o.w, [rand(-1, 1) * k * 2, rand(-1, 1) * k * 2, rand(-1, 1) * k * 2]); o.rest = false; o.still = 0;
+  }
+}
+
+// ---------------------------------------------------------------- dropping your gun (G), picking it back up (E)
+function dropGun(f) {
+  if (!f.weapon || f.dead >= 0 || looting) return;
+  const id = f.weapon, am = f.ammo[id], fwd = [Math.sin(f.yaw), 0, Math.cos(f.yaw)];
+  const from = f.gun ? f.gun.p.slice() : V.add(f.pos, [fwd[0] * 0.4, 1.2, fwd[2] * 0.4]);
+  const R = f.gun ? f.gun.R.slice() : M3.ry(f.yaw);
+  const v = [fwd[0] * 2.6 + (f.vel ? f.vel[0] : 0), 2.4, fwd[2] * 2.6 + (f.vel ? f.vel[1] : 0)];
+  const w = V.add(V.mul([Math.cos(f.yaw), 0, -Math.sin(f.yaw)], rand(3, 6)), [0, rand(-3, 3), 0]);
+  spawnProp('gun', from, v, { gun: id, R, w, life: 120, keep: true, ammo: { clip: am.clip, spare: am.spare } });
+  f.inv.splice(f.inv.indexOf(id), 1); delete f.ammo[id];
+  f.weapon = null; f.reload = -1; f.cycle = -1; f.inspect = -1; f.bolt = 0; f.equip = 1;
+  Sound.play('whoosh', 0.5);
+  if (f.isPlayer) { notify('Dropped the ' + GUNS[id].name); hudDirty = true; }
+}
+function gunNear(p) {
+  let best = null, bestD = 1.4;
+  for (const o of props) {
+    if (o.kind !== 'gun' || !o.ammo) continue;
+    const d = Math.hypot(o.p[0] - p[0], o.p[2] - p[2]);
+    if (d < bestD && Math.abs(o.p[1] - p[1]) < 1.6) { bestD = d; best = o; }
+  }
+  return best;
+}
+function pickUp(o) {
+  const f = player, id = o.gun, g = GUNS[id];
+  if (!f.inv.includes(id)) { f.inv.push(id); f.inv.sort((a, b) => SLOTS.indexOf(a) - SLOTS.indexOf(b)); f.ammo[id] = { clip: o.ammo.clip, spare: o.ammo.spare }; }
+  else f.ammo[id].spare = Math.min(g.reserve * 3, f.ammo[id].spare + o.ammo.clip + o.ammo.spare);
+  props.splice(props.indexOf(o), 1);
+  notify('Picked up ' + g.article + ' ' + g.name); hudDirty = true;
+  if (f.weapon !== id) equip(f, id); else Sound.play('rack', 0.5);
 }
 function drawProps(prog, textured) {
   for (const o of props) {
@@ -405,7 +536,7 @@ function lootStep(dt) {
   lootCam = clamp(lootCam + (looting && looting.cancel < 0 && looting.t < looting.def.end - 0.45 ? dt / 0.65 : -dt / 0.55), 0, 1);
   if (!looting) {
     const target = pressed ? lootTarget() : null;
-    if (!target) return false;
+    if (!target) { if (pressed && player.dead < 0) { const o = gunNear(player.pos); if (o) pickUp(o); } return false; }
     startLoot(target);
   }
   const L = looting, f = player;
@@ -458,10 +589,12 @@ function lootStep(dt) {
 function hudLoot(dt) {
   const target = looting ? null : lootTarget();
   const L = looting && !looting.given && looting.cancel < 0 ? looting : null;
-  const show = (target || L) && player.dead < 0;
+  const lying = !target && !looting && player.dead < 0 ? gunNear(player.pos) : null;
+  const show = (target || L || lying) && player.dead < 0;
   ui.prompt.style.display = show ? 'flex' : 'none';
   ui.prompt.classList.toggle('holding', !!L);
-  if (show) {
+  if (lying) { ui.prompttext.textContent = 'Press E to pick up the ' + GUNS[lying.gun].name; ui.ring.style.setProperty('--p', '100%'); }
+  else if (show) {
     const kind = L ? L.kind : target.kind, def = kind === 'body' ? BODY : CHEST;
     const gun = kind === 'chest' ? ' (' + GUNS[(L || target).chest.gun].name + ')' : '';
     ui.prompttext.textContent = (L ? 'Keep holding… ' : 'Hold E to ' + def.label) + (L ? '' : gun);

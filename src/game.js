@@ -499,6 +499,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'Digit2') equip(player, 'glock');
   else if (e.code === 'Digit3') equip(player, 'awp');
   else if (e.code === 'Digit4' || e.code === 'KeyH') equip(player, null);
+  else if (e.code === 'KeyG') dropGun(player);
   else if (e.code === 'KeyV') { if (player.weapon && player.reload < 0 && player.cycle < 0 && player.equip >= 1 && player.inspect < 0) player.inspect = 0; }
   else if (e.code === 'KeyT') { if (world.map === 'island') setMap('plate'); else askMap(!world.asking); }   // temporary, while the map is being made
   else if (e.code === 'KeyQ') game.aimToggle = !game.aimToggle;
@@ -1028,7 +1029,7 @@ window.__game = {
   ready: true, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
-  resume() { manual = false; }, give, equip, startReload, damage,
+  resume() { manual = false; }, give, equip, startReload, damage, props,
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },
   gunInfo() { const f = player; if (!f.gun) return null; const g = f.gun.g, hr = bonePos(f, 'hand_R'), hl = bonePos(f, 'hand_L'); const at = q => V.add(f.gun.p, M3.vec(f.gun.S, q)); return { rightErr: V.len(V.sub(hr, at(g.right.at))), leftErr: V.len(V.sub(hl, at(g.left.at))), muzzle: at(g.muzzle), forward: M3.vec(f.gun.R, [0, 0, 1]), target: f.target }; },
