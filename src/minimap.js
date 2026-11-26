@@ -1,7 +1,7 @@
 // ======================================================================= the minimap
 // Top right, square, turning with your view so straight ahead is always up. The island's land is drawn once into a
 // picture; on top goes your planted C4 and you. Enemies and chests are not shown.
-const MINI = { size: 180, range: 55 };                          // pixels across, metres from the middle to the edge
+const MINI = { size: 180, range: 85 };                          // pixels across, metres from the middle to the edge
 let miniLand = null;                                            // { img, half, px } for the island, made the first time it's needed
 function miniIsland() {
   if (miniLand) return miniLand;
@@ -21,6 +21,21 @@ function miniIsland() {
   g.putImageData(data, 0, 0);
   return (miniLand = { img, half, px: n / (2 * half) });
 }
+// what stands on the island, worked out once: tree tops, palms, rocks, house roofs, bridges, cave walls
+let miniThings = null;
+function miniFeatures() {
+  if (miniThings) return miniThings;
+  const round = [], shapes = [];
+  for (const l of leaves) round.push({ x: l[0], z: l[2], r: Math.max(1.2, l[3] * 1.05), c: '#2c5626', e: '#1c3a18' });   // tree tops
+  for (const o of solids) {
+    if (!o.hull) { if (o.h > 1.5 && o.h / o.r < 10) round.push({ x: o.x, z: o.z, r: o.r / 0.24 * 1.25, c: '#557f36', e: '#33521f' }); continue; }   // palms (trees come from their tops)
+    if (o.h === HOUSE_TALL && o.tris && o.tris.length === 2) continue;   // a house wall: the house is drawn whole below
+    shapes.push({ hull: o.hull, c: o.thin ? '#8a6a40' : o.wall ? '#4b4a48' : '#8b8a84', e: o.thin ? '#4d3a20' : '#2e2d2b' });
+  }
+  if (typeof HOUSES !== 'undefined') for (const q of HOUSES) shapes.push({ hull: [[-3.8, -3.2], [3.8, -3.2], [3.8, 3.2], [-3.8, 3.2]].map(([a, b]) => houseWorld(q, a, b)), c: '#8a4b33', e: '#3d1f14' });
+  for (const t of shapes) { let x = 0, z = 0; for (const q of t.hull) { x += q[0]; z += q[1]; } t.x = x / t.hull.length; t.z = z / t.hull.length; }
+  return (miniThings = { round, shapes });
+}
 function drawMinimap() {
   const cv = ui.minimap; if (!cv) return;
   const g = cv.getContext('2d'), S = MINI.size, r = S / 2, scale = r / MINI.range;
@@ -35,6 +50,18 @@ function drawMinimap() {
     const L = miniIsland(), k = scale / L.px;
     g.fillStyle = 'rgb(20,65,120)'; g.fillRect(-S, -S, 2 * S, 2 * S);
     g.drawImage(L.img, (-me[0] - L.half) * scale, (-me[2] - L.half) * scale, L.img.width * k, L.img.height * k);
+    const F = miniFeatures(), far = MINI.range * 1.5, at = (x, z) => [(x - me[0]) * scale, (z - me[2]) * scale];
+    g.lineWidth = 1;
+    for (const t of F.shapes) {
+      if (Math.abs(t.x - me[0]) > far || Math.abs(t.z - me[2]) > far) continue;
+      g.beginPath(); t.hull.forEach((q, i) => { const [x, y] = at(q[0], q[1]); if (i) g.lineTo(x, y); else g.moveTo(x, y); }); g.closePath();
+      g.fillStyle = t.c; g.fill(); g.strokeStyle = t.e; g.stroke();
+    }
+    for (const t of F.round) {
+      if (Math.abs(t.x - me[0]) > far || Math.abs(t.z - me[2]) > far) continue;
+      const [x, y] = at(t.x, t.z);
+      g.beginPath(); g.arc(x, y, Math.max(1.4, t.r * scale), 0, Math.PI * 2); g.fillStyle = t.c; g.fill(); g.strokeStyle = t.e; g.stroke();
+    }
   } else {                                                      // the training plate: a grey square with a grid
     g.fillStyle = '#2b2d31'; g.fillRect(-S, -S, 2 * S, 2 * S);
     g.fillStyle = '#8b8e94'; g.fillRect((-HALF - me[0]) * scale, (-HALF - me[2]) * scale, 2 * HALF * scale, 2 * HALF * scale);
