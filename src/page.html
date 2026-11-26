@@ -21,17 +21,16 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; o
 #slots span { background: rgba(20,22,26,.55); border: 2px solid transparent; border-radius: 7px; padding: 4px 10px; }
 #slots span.on { border-color: #fff; background: rgba(20,22,26,.8); } #slots span.none { opacity: .45; }
 #score { position: fixed; left: 18px; top: 14px; }
-/* the map, in a dark wooden frame with iron corners */
-#mapframe { position: fixed; right: 14px; top: 12px; padding: 8px; border: 3px solid #1e130a; border-radius: 3px;
-  background: repeating-linear-gradient(97deg, rgba(0,0,0,.10) 0 2px, transparent 2px 7px), repeating-linear-gradient(90deg, rgba(255,220,170,.05) 0 1px, transparent 1px 13px), linear-gradient(160deg, #6b4425, #4a2c16 55%, #5a371d); }
-#minimap { position: static; inset: auto; display: block; width: 180px; height: 180px; border: 2px solid #a8823f; background: #d6c49c; }
-#mapframe .iron { position: absolute; width: 20px; height: 20px; border: 0 solid #34312e; }
-#mapframe .iron::after { content: ''; position: absolute; width: 5px; height: 5px; border-radius: 50%; background: #8d8a85; border: 1px solid #1d1b19; }
-#mapframe .tl { left: -3px; top: -3px; border-width: 5px 0 0 5px; } #mapframe .tl::after { left: 1px; top: 1px; }
-#mapframe .tr { right: -3px; top: -3px; border-width: 5px 5px 0 0; } #mapframe .tr::after { right: 1px; top: 1px; }
-#mapframe .bl { left: -3px; bottom: -3px; border-width: 0 0 5px 5px; } #mapframe .bl::after { left: 1px; bottom: 1px; }
-#mapframe .br { right: -3px; bottom: -3px; border-width: 0 5px 5px 0; } #mapframe .br::after { right: 1px; bottom: 1px; }
-#kills { position: fixed; right: 14px; top: 224px; width: 208px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 24px; font-weight: 900; color: #f1e3c0; -webkit-text-stroke: 5px #2a1a0c; paint-order: stroke fill; }
+/* the map, in a carved wooden frame: a bevelled edge, a brass inner line and a boss in every corner */
+#mapframe { position: fixed; right: 12px; top: 10px; padding: 11px; border-radius: 5px;
+  background: repeating-linear-gradient(92deg, rgba(0,0,0,.13) 0 1px, transparent 1px 4px, rgba(255,220,170,.06) 4px 5px, transparent 5px 11px), linear-gradient(150deg, #8a5f36 0%, #5b3a1e 45%, #4a2f17 70%, #6d4724 100%);
+  box-shadow: 0 0 0 2px #1a0f06, inset 0 0 0 1px #2c1a0b, inset 3px 3px 0 rgba(255,226,180,.35), inset -3px -3px 0 rgba(0,0,0,.5); }
+#minimap { position: static; inset: auto; display: block; width: 180px; height: 180px; background: #1a4a84;
+  border: 3px solid #c9a24a; border-color: #e6c46d #a9812f #8a6522 #d6b25a; box-shadow: 0 0 0 1px #2a1a08, inset 0 0 0 1px #3d2a0c; }
+#mapframe .boss { position: absolute; width: 11px; height: 11px; border-radius: 50%; border: 1px solid #2a1a08;
+  background: radial-gradient(circle at 35% 30%, #fff1b8 0%, #e0b94f 35%, #9a7222 80%, #6b4d14 100%); }
+#mapframe .tl { left: 0; top: 0; } #mapframe .tr { right: 0; top: 0; } #mapframe .bl { left: 0; bottom: 0; } #mapframe .br { right: 0; bottom: 0; }
+#kills { position: fixed; right: 12px; top: 226px; width: 204px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 24px; font-weight: 900; color: #f1e3c0; -webkit-text-stroke: 5px #2a1a0c; paint-order: stroke fill; }
 #kills svg { width: 24px; height: 24px; overflow: visible; }
 #cross { --gap: 6px; position: fixed; left: 50%; top: 50%; }
 #cross i { position: absolute; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
@@ -90,7 +89,7 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
 <canvas id="c" tabindex="0"></canvas>
 <div id="hud" hidden>
   <div id="scope"><i></i><i></i><i></i><i></i><i></i><i></i></div>
-  <div id="mapframe"><canvas id="minimap" width="180" height="180"></canvas><i class="iron tl"></i><i class="iron tr"></i><i class="iron bl"></i><i class="iron br"></i></div>
+  <div id="mapframe"><canvas id="minimap" width="180" height="180"></canvas><i class="boss tl"></i><i class="boss tr"></i><i class="boss bl"></i><i class="boss br"></i></div>
   <div id="kills"><svg viewBox="0 0 24 24" aria-label="kills"><path fill="#f1e3c0" stroke="#2a1a0c" stroke-width="2" stroke-linejoin="round" paint-order="stroke" d="M12 2C6.9 2 3 5.7 3 10.4c0 2.7 1.3 5 3.3 6.5V20a1 1 0 0 0 1 1h1.7v-2h2v2h2v-2h2v2h1.7a1 1 0 0 0 1-1v-3.1c2-1.5 3.3-3.8 3.3-6.5C21 5.7 17.1 2 12 2z"/><circle cx="8.6" cy="11" r="2.3" fill="#2a1a0c"/><circle cx="15.4" cy="11" r="2.3" fill="#2a1a0c"/><path d="M12 13.4l-1.3 2.4h2.6z" fill="#2a1a0c"/></svg><span id="killcount">0</span></div>
   <div id="vignette"></div><div id="hurtDir"></div><div id="boomflash"></div>
   <div id="pops"></div>
