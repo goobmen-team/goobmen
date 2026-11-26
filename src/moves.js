@@ -247,41 +247,122 @@ function sendStep(s, dt) {
 
 // ---------------------------------------------------------------- the bomb visit
 // a caveman who has never seen a bomb, planting one
-const bombSpot = s => V.add(bonePos(s.f, 'chest'), [0, 0.17, 0]);
-let blast = null;
+const bombSpot = s => V.add(bonePos(s.f, 'spine'), [0, 0.3, 0]);          // on top of his belly
+let blast = null;                             // the latest one, for the light it throws
+const blasts = [];                            // every explosion still going: fire, smoke, chunks, the ring
 const fx = (p, v, life, size, color, grav, grow, add) => particles.push({ p: p.slice(), v, life, max: life, size, color, grav, grow, add });
 const ball = r => [rand(-1, 1) * r, rand(-0.3, 1) * r, rand(-1, 1) * r];
-// a proper explosion: flash, fireball, sparks, a ring of dust, a column of black smoke, scorching and flying junk
+const BLAST_LIFE = 9;
+// a proper explosion: blinding flash, a fireball that rolls up into a mushroom of black smoke, a shockwave
+// ring racing over the ground, burning chunks trailing smoke, a scorched crater and fire that keeps going
 function explode(c) {
-  const d = Math.hypot(c[0] - player.pos[0], c[2] - player.pos[2]);
-  Sound.play('explode', clamp(1.7 - d / 40, 0.35, 1));
-  if (d < 14) Sound.play('ring', 1 - d / 14);
-  cam.shake = Math.max(cam.shake, clamp(1.7 - d / 22, 0, 1));
-  blast = { p: c.slice(), t: game.time };
-  for (let i = 0; i < 10; i++) fx(V.add(c, ball(0.3)), ball(1.5), rand(0.12, 0.22), rand(1.0, 1.7), [1, 0.95, 0.8, 1], 0, 2, true);
-  for (let i = 0; i < 90; i++) { const v = ball(rand(2, 8)); v[1] = Math.abs(v[1]) * 0.9 + 1.5; fx(V.add(c, ball(0.4)), v, rand(0.5, 1.2), rand(0.3, 0.6), i % 3 ? [1, 0.5, 0.1, 0.9] : [1, 0.8, 0.3, 0.9], -1.2, 0.9, true); }
-  for (let i = 0; i < 90; i++) { const v = ball(rand(6, 17)); v[1] = Math.abs(v[1]) * 0.8 + 2; fx(c, v, rand(0.9, 1.9), 0.022, [1, 0.8, 0.35, 1], 9, 0, true); }
-  for (let i = 0; i < 60; i++) { const a = i / 60 * Math.PI * 2, sp = rand(8, 11); fx(V.add(c, [0, 0.15, 0]), [Math.cos(a) * sp, rand(0, 0.6), Math.sin(a) * sp], rand(0.9, 1.4), rand(0.4, 0.6), [0.55, 0.49, 0.4, 0.55], 0, 0.9); }
-  for (let i = 0; i < 70; i++) { const v = ball(rand(1, 3)); v[1] = rand(2, 6); fx(V.add(c, ball(0.5)), v, rand(2.5, 4.5), rand(0.5, 0.9), [0.11, 0.11, 0.12, 0.8], -1, 0.55); }
-  for (let i = 0; i < 28; i++) { const a = rand(0, 6.3), r = Math.sqrt(Math.random()) * 1.5, x = c[0] + Math.cos(a) * r, z = c[2] + Math.sin(a) * r; marks.push([x, floorAt(x, z), z]); }
-  while (marks.length > 90) marks.shift();
-  for (let i = 0; i < 12; i++) { const a = rand(0, 6.3), sp = rand(3, 8); spawnProp(['rock', 'bone', 'fish', 'meat', 'rock'][i % 5], V.add(c, [0, 0.3, 0]), [Math.cos(a) * sp, rand(5, 11), Math.sin(a) * sp], { life: 6, floor: floorAt(c[0], c[2]) + 0.06 }); }
+  const d = V.len(V.sub(c, cameraEye().eye)), floor = floorAt(c[0], c[2]);
+  Sound.play('explode', clamp(1.8 - d / 45, 0.3, 1), d);
+  cam.shake = Math.max(cam.shake, clamp(2.2 - d / 18, 0, 1));
+  const b = { p: c.slice(), g: [c[0], floor, c[2]], t: game.time, near: clamp(1 - d / 30, 0, 1), chunks: [] };
+  blast = b; blasts.push(b);
+  const g = b.g;
+  // the flash: white-hot core
+  for (let i = 0; i < 14; i++) fx(V.add(c, ball(0.4)), ball(2), rand(0.1, 0.25), rand(1.6, 2.6), [1, 0.97, 0.88, 1], 0, 4, true);
+  // the fireball: a big boiling ball of orange that climbs and cools
+  for (let i = 0; i < 150; i++) {
+    const v = ball(rand(2, 9)); v[1] = Math.abs(v[1]) * 0.8 + rand(1.5, 4);
+    const hot = Math.random();
+    fx(V.add(c, ball(0.5)), v, rand(0.6, 1.6), rand(0.45, 0.95), hot < 0.3 ? [1, 0.85, 0.45, 1] : hot < 0.75 ? [1, 0.48, 0.08, 0.95] : [0.9, 0.22, 0.04, 0.9], -2.2, 1.3, true);
+  }
+  // sparks
+  for (let i = 0; i < 220; i++) { const v = ball(rand(7, 24)); v[1] = Math.abs(v[1]) * 0.9 + 2.5; fx(c, v, rand(0.7, 2.2), rand(0.018, 0.034), [1, rand(0.6, 0.9), 0.3, 1], 9.8, 0, true); }
+  // dust blown out along the ground, two rings: a fast low one and a slower billowing one
+  for (let i = 0; i < 110; i++) { const a = i / 110 * Math.PI * 2 + rand(-0.03, 0.03), sp = rand(11, 16); fx([g[0], g[1] + 0.15, g[2]], [Math.cos(a) * sp, rand(0, 0.8), Math.sin(a) * sp], rand(1.0, 1.7), rand(0.4, 0.7), [0.58, 0.52, 0.43, 0.6], 0, 1.4); }
+  for (let i = 0; i < 70; i++) { const a = rand(0, 6.3), sp = rand(3, 7); fx(V.add(g, [0, 0.4, 0]), [Math.cos(a) * sp, rand(0.5, 2.5), Math.sin(a) * sp], rand(2.0, 3.5), rand(0.8, 1.3), [0.5, 0.45, 0.38, 0.5], -0.2, 0.9); }
+  // the first rush of black smoke
+  for (let i = 0; i < 90; i++) { const v = ball(rand(1, 4)); v[1] = rand(3, 9); fx(V.add(c, ball(0.8)), v, rand(3.5, 6), rand(0.7, 1.2), [0.1, 0.095, 0.1, 0.7], -1.4, 0.8); }
+  // scorch and a crater full of little marks
+  for (let i = 0; i < 40; i++) { const a = rand(0, 6.3), r = Math.sqrt(Math.random()) * 2.4, x = c[0] + Math.cos(a) * r, z = c[2] + Math.sin(a) * r; marks.push([x, floorAt(x, z), z]); }
+  while (marks.length > 120) marks.shift();
+  // junk, and burning chunks that leave trails of smoke
+  for (let i = 0; i < 16; i++) { const a = rand(0, 6.3), sp = rand(3, 10); spawnProp(['rock', 'bone', 'fish', 'meat', 'rock'][i % 5], V.add(c, [0, 0.3, 0]), [Math.cos(a) * sp, rand(6, 14), Math.sin(a) * sp], { life: 7, floor: floorAt(c[0], c[2]) + 0.06 }); }
+  for (let i = 0; i < 14; i++) { const a = rand(0, 6.3), sp = rand(4, 11); b.chunks.push({ p: V.add(c, [0, 0.3, 0]), v: [Math.cos(a) * sp, rand(7, 16), Math.sin(a) * sp], life: rand(1.6, 3.2) }); }
   for (const v of [player, ...bots]) {
     const dd = Math.hypot(v.pos[0] - c[0], v.pos[2] - c[2]);
-    if (v.dead < 0 && dd < 7) damage(v, Math.round(25 + 75 * (1 - dd / 7)), { pos: c });
+    if (v.dead < 0 && dd < 8) damage(v, Math.round(25 + 75 * (1 - dd / 8)), { pos: c });
   }
 }
-// the C4: two bricks and a tape strip, a detonator with a blinking light
-function drawC4(prog, at, R, t, left, lit) {
-  const P = party(), I = M3.id(), q = o => V.add(at, M3.vec(R, o));
-  flat(prog, [0.76, 0.72, 0.6], 0.85, 0.0); drawMesh(prog, meshes.shell, scaled(R, 0.34, 0.1, 0.19), at);
-  flat(prog, [0.06, 0.06, 0.06], 0.6, 0.1); drawMesh(prog, meshes.shell, scaled(R, 0.035, 0.104, 0.195), at);
-  flat(prog, [0.08, 0.08, 0.1], 0.35, 0.5); drawMesh(prog, meshes.shell, scaled(R, 0.13, 0.04, 0.09), q([0.07, 0.07, 0]));
+// what an explosion keeps doing after the bang
+function blastsStep(dt) {
+  for (let i = blasts.length - 1; i >= 0; i--) {
+    const b = blasts[i], age = game.time - b.t;
+    if (age > BLAST_LIFE + 12) { blasts.splice(i, 1); if (blast === b) blast = null; continue; }
+    if (age < 0.25) cam.shake = Math.max(cam.shake, b.near);                    // it keeps shaking while the wave passes
+    else if (age < 2.5) cam.shake = Math.max(cam.shake, b.near * 0.25 * (1 - age / 2.5));
+    const g = b.g, rate = (k, n) => Math.random() < dt * n * k;
+    // the mushroom: a stem of smoke feeding a cap that spreads out up top
+    if (age < 5) {
+      const k = 1 - age / 5;
+      if (rate(k, 40)) { const top = Math.min(9, 2 + age * 3.5); fx(V.add(g, [rand(-0.5, 0.5), rand(0.5, 1.2), rand(-0.5, 0.5)]), [rand(-0.3, 0.3), rand(3, 5) * (0.5 + 0.5 * k), rand(-0.3, 0.3)], top / 4 + rand(0.5, 1.5), rand(0.6, 1.0), [0.16, 0.15, 0.15, 0.55], 0, 0.6); }
+      if (age > 0.5 && rate(k, 30)) { const h = Math.min(9, 2 + age * 3.2), a = rand(0, 6.3), r = rand(0.5, 2.2); fx(V.add(g, [Math.cos(a) * r, h, Math.sin(a) * r]), [Math.cos(a) * rand(0.6, 1.6), rand(0.2, 0.8), Math.sin(a) * rand(0.6, 1.6)], rand(4, 7), rand(1.2, 2.0), [0.24, 0.22, 0.21, 0.45], -0.15, 0.55); }
+    }
+    // the fireball's glow inside the smoke, early on
+    if (age < 1.6 && rate(1 - age / 1.6, 60)) { const h = 0.6 + age * 3; fx(V.add(g, [rand(-0.6, 0.6), h + rand(-0.4, 0.6), rand(-0.6, 0.6)]), [rand(-0.5, 0.5), rand(1.5, 3), rand(-0.5, 0.5)], rand(0.4, 0.8), rand(0.7, 1.2), [1, 0.4, 0.06, 0.8], -1, 0.8, true); }
+    // the fire left on the ground, and its smoke
+    if (age < BLAST_LIFE) {
+      const k = 1 - age / BLAST_LIFE, a = rand(0, 6.3), r = Math.sqrt(Math.random()) * 1.3, x = g[0] + Math.cos(a) * r, z = g[2] + Math.sin(a) * r;
+      if (rate(k, 45)) fx([x, floorAt(x, z) + 0.05, z], [rand(-0.2, 0.2), rand(0.8, 2.2), rand(-0.2, 0.2)], rand(0.3, 0.8), rand(0.15, 0.4), Math.random() < 0.4 ? [1, 0.75, 0.25, 0.9] : [1, 0.38, 0.06, 0.85], -1.5, 0.3, true);
+      if (rate(k, 9)) fx([x, floorAt(x, z) + 0.3, z], [rand(-0.3, 0.3), rand(1, 2), rand(-0.3, 0.3)], rand(3, 5), rand(0.4, 0.7), [0.13, 0.12, 0.12, 0.5], -0.4, 0.5);
+      if (rate(k, 6)) fx([x, floorAt(x, z) + 0.1, z], [rand(-1, 1), rand(1.5, 4), rand(-1, 1)], rand(1, 2), 0.02, [1, 0.7, 0.3, 1], 2, 0, true);   // embers
+    }
+    // burning chunks arcing out, trailing smoke, then a puff where they land
+    for (let k = b.chunks.length - 1; k >= 0; k--) {
+      const ch = b.chunks[k];
+      ch.v[1] -= 9.8 * dt; ch.p = V.mad(ch.p, ch.v, dt); ch.life -= dt;
+      const low = floorAt(ch.p[0], ch.p[2]);
+      if (ch.p[1] < low || ch.life <= 0) { puff([ch.p[0], low + 0.05, ch.p[2]], 6, [0.3, 0.28, 0.26, 0.6], 0.8, 0.15, 0.6, -0.5); b.chunks.splice(k, 1); continue; }
+      fx(ch.p, [0, 0.2, 0], rand(0.2, 0.35), rand(0.12, 0.2), [1, 0.5, 0.1, 0.9], 0, 0.3, true);
+      fx(ch.p, [rand(-0.2, 0.2), 0.4, rand(-0.2, 0.2)], rand(1.2, 2.2), rand(0.12, 0.2), [0.15, 0.14, 0.14, 0.6], -0.3, 0.45);
+    }
+  }
+}
+// drawn with the other effects: the scorch on the ground, the shockwave ring, and a flash too big for one particle
+function drawBlasts(quad, right, up, additive) {
+  for (const b of blasts) {
+    const age = game.time - b.t, g = b.g;
+    if (!additive) {
+      const fade = 1 - smooth(BLAST_LIFE + 4, BLAST_LIFE + 12, age), grow = smooth(0, 0.15, age);
+      quad([g[0], g[1] + 0.02, g[2]], [2.8 * grow, 0, 0], [0, 0, 2.8 * grow], [0.03, 0.025, 0.02, 0.85 * fade]);       // scorch
+      quad([g[0], g[1] + 0.025, g[2]], [1.4 * grow, 0, 0], [0, 0, 1.4 * grow], [0.01, 0.01, 0.01, 0.8 * fade]);
+      if (age < 1.2) {                                                                                                     // shockwave dust ring
+        const r = 1 + 16 * Math.pow(age / 1.2, 0.55), a = 0.5 * (1 - age / 1.2), n = 56;
+        for (let k = 0; k < n; k++) {
+          const t = k / n * Math.PI * 2, x = g[0] + Math.cos(t) * r, z = g[2] + Math.sin(t) * r;
+          quad([x, floorAt(x, z) + 0.25, z], V.mul(right, 0.75 + r * 0.04), [0, 0.35 + r * 0.02, 0], [0.62, 0.57, 0.5, a]);
+        }
+      }
+    } else {
+      if (age < 0.35) {                                                                                                    // the flash
+        const k = 1 - age / 0.35, s = 2 + age * 18;
+        quad(b.p, V.mul(right, s), V.mul(up, s), [k, k * 0.92, k * 0.75, k]);
+        quad(b.p, V.mul(right, s * 2.2), V.mul(up, s * 2.2), [k * 0.6, k * 0.35, k * 0.1, k * 0.6]);
+      }
+      if (age < 0.4) {                                                                                                     // the hot ring, a flat flash on the ground
+        const r = 1 + 30 * age, a = 1 - age / 0.4;
+        quad([g[0], g[1] + 0.1, g[2]], [r, 0, 0], [0, 0, r], [a * 0.9, a * 0.45, a * 0.12, a * 0.6]);
+      }
+    }
+  }
+}
+// the C4: the textured brick, its keypad screen lighting up, and a blinking light that speeds up
+function drawC4(prog, at, R0, t, left, lit) {
+  const R = M3.mul(R0, M3.ry(Math.PI / 2)), q = o => V.add(at, M3.vec(R, o));
+  if (prog.u.uOrm) {
+    gl.uniform1i(prog.u.uHasTex, 1);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, C4.tex);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, C4.normal);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, C4.orm);
+  }
+  drawMesh(prog, C4.parts.body, R, at);
   const on = lit && (left < 1 ? true : Math.sin(t * (left > 3 ? 6.3 : 20)) > 0);
-  flat(prog, [0.02, 0.18, 0.04], 0.3, 0.0); drawMesh(prog, meshes.shell, scaled(R, 0.075, 0.012, 0.045), q([0.075, 0.095, 0.01]));
-  flat(prog, on ? [1, 0.08, 0.04] : [0.3, 0.04, 0.03], 0.3, 0.0); drawMesh(prog, P.pom, scaled(R, 0.024, 0.024, 0.024), q([-0.05, 0.1, -0.025]));
-  flat(prog, [0.75, 0.1, 0.06], 0.5, 0.0); rod(prog, q([0.0, 0.09, 0.0]), q([-0.16, 0.12, 0.07]), 0.008); rod(prog, q([-0.16, 0.12, 0.07]), q([-0.2, 0.05, 0.075]), 0.008);
-  flat(prog, [0.1, 0.1, 0.65], 0.5, 0.0); rod(prog, q([0.0, 0.09, -0.02]), q([-0.12, 0.14, -0.09]), 0.008);
+  flat(prog, lit ? [0.25, 0.75, 0.25] : [0.04, 0.08, 0.05], 0.2, 0.0); drawMesh(prog, C4.parts.panel, R, V.add(at, M3.vec(R, [0, 0.001, 0])));
+  flat(prog, on ? [3, 0.15, 0.08] : [0.3, 0.04, 0.03], 0.3, 0.0); drawMesh(prog, party().pom, scaled(R, 0.012, 0.012, 0.012), q(V.add(C4.panelAt, [0.03, 0.004, -0.035])));
 }
 function bombStep(s, dt) {
   const f = s.f, h = s.helper;
@@ -375,6 +456,7 @@ function bombStep(s, dt) {
 const u01 = x => clamp(x, 0, 1);
 const c0 = s => V.add(s.hips, [0, 0.3, 0]);
 function sendsStep(dt) {
+  blastsStep(dt);
   for (const s of sends.slice()) {
     if (!sends.includes(s)) continue;        // your own respawn just cleared everyone's
     sendStep(s, dt);

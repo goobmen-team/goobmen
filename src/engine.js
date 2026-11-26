@@ -311,27 +311,59 @@ async function loadGun(def, data) {
 
 // ======================================================================= sound (synthesised, no files)
 const Sound = (() => {
-  let ac = null, master = null, noise = null, muted = false;
+  let ac = null, master = null, noise = null, brown = null, muffle = null, clear = null, verb = null, grit = null, muted = false;
   function init() {
     if (ac) { ac.resume(); return; }
     const A = window.AudioContext || window.webkitAudioContext;
     if (!A) return;
-    ac = new A(); master = ac.createDynamicsCompressor(); const g = ac.createGain(); g.gain.value = 0.55; master.connect(g); g.connect(ac.destination);
-    noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    ac = new A(); master = ac.createDynamicsCompressor(); const g = ac.createGain(); g.gain.value = 0.55;
+    // everything goes through a lowpass that a close blast slams shut (you go half deaf for a few seconds);
+    // the ear ringing goes around it, through `clear`
+    muffle = ac.createBiquadFilter(); muffle.type = 'lowpass'; muffle.frequency.value = 20000;
+    master.connect(muffle); muffle.connect(g); g.connect(ac.destination);
+    clear = ac.createGain(); clear.gain.value = 0.55; clear.connect(ac.destination);
+    const sr = ac.sampleRate;
+    noise = ac.createBuffer(1, sr * 4, sr);
     const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    brown = ac.createBuffer(1, sr * 4, sr);                         // deep, rumbly noise
+    const bd = brown.getChannelData(0); let last = 0;
+    for (let i = 0; i < bd.length; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; bd[i] = last * 3.5; }
+    // a big outdoor echo: 3.5 s of decaying stereo noise, with a few hard slaps off far hills
+    verb = ac.createConvolver();
+    const ir = ac.createBuffer(2, sr * 3.5, sr);
+    for (let c = 0; c < 2; c++) {
+      const x = ir.getChannelData(c);
+      for (let i = 0; i < x.length; i++) { const t = i / sr; x[i] = (Math.random() * 2 - 1) * Math.exp(-t * 1.7) * Math.min(1, t * 40) * 0.5; }
+      for (const [at, k] of [[0.29, 0.5], [0.61, 0.35], [1.05, 0.22], [1.6, 0.12]]) for (let i = 0; i < sr * 0.08; i++) x[Math.floor((at + c * 0.03) * sr) + i] += (Math.random() * 2 - 1) * k * Math.exp(-i / sr * 40);
+    }
+    verb.buffer = ir; const wet = ac.createGain(); wet.gain.value = 0.9; verb.connect(wet); wet.connect(master);
+    grit = ac.createWaveShaper();                                    // overdrive, for the blast's crunch
+    const curve = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; curve[i] = Math.tanh(x * 4); }
+    grit.curve = curve; grit.connect(master); grit.connect(verb);
   }
-  function burst(dur, freq, vol, type, at, q) {
+  // `to` picks where the sound goes: the dry mix (default), dry plus the echo, or through the overdrive
+  function burst(dur, freq, vol, type, at, q, to, buf) {
     const t = ac.currentTime + (at || 0), s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
-    s.buffer = noise; f.type = type || 'lowpass'; f.frequency.setValueAtTime(freq, t); if (q) f.Q.value = q;
+    s.buffer = buf || noise; s.loop = true; f.type = type || 'lowpass'; f.frequency.setValueAtTime(freq, t); if (q) f.Q.value = q;
     if (!type) f.frequency.exponentialRampToValueAtTime(Math.max(80, freq * 0.08), t + dur);
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    s.connect(f); f.connect(g); g.connect(master); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.02);
+    s.connect(f); f.connect(g); route(g, to); s.start(t, Math.random() * 3); s.stop(t + dur + 0.02);
   }
-  function tone(from, to, dur, vol, at, type) {
+  function tone(from, to, dur, vol, at, type, out) {
     const t = ac.currentTime + (at || 0), o = ac.createOscillator(), g = ac.createGain();
     o.type = type || 'sine'; o.frequency.setValueAtTime(from, t); o.frequency.exponentialRampToValueAtTime(to, t + dur);
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.02);
+    o.connect(g); route(g, out); o.start(t); o.stop(t + dur + 0.02);
+  }
+  function route(g, to) {
+    if (to === 'verb') { g.connect(master); g.connect(verb); } else if (to === 'grit') g.connect(grit); else if (to === 'clear') g.connect(clear); else g.connect(master);
+  }
+  // a swell: noise that fades in, holds, then fades out (the roar of the fireball, the fire after)
+  function swell(rise, dur, freq, vol, at, buf, to) {
+    const t = ac.currentTime + (at || 0), s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+    s.buffer = buf || noise; s.loop = true; f.type = 'lowpass'; f.frequency.setValueAtTime(freq, t); f.frequency.exponentialRampToValueAtTime(Math.max(60, freq * 0.35), t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + rise); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    s.connect(f); f.connect(g); route(g, to); s.start(t, Math.random() * 3); s.stop(t + dur + 0.05);
   }
   const play = {
     ak: v => { burst(0.05, 5200, 0.9 * v, 'highpass'); burst(0.32, 3800, 1.1 * v); tone(150, 38, 0.18, 1.0 * v); burst(0.6, 600, 0.22 * v, null, 0.05); },
@@ -368,13 +400,46 @@ const Sound = (() => {
     pump: (v, k) => { const f = 260 + 120 * (k || 0); burst(0.2, 1200 + 300 * (k || 0), 0.45 * v, 'bandpass', 0, 2); tone(f, f * 1.7, 0.17, 0.2 * v, 0.02, 'triangle'); },
     slideup: v => { tone(300, 1700, 1.9, 0.22 * v, 0, 'sine'); tone(305, 1730, 1.9, 0.1 * v, 0, 'triangle'); },
     beep: v => { tone(2900, 2900, 0.075, 0.2 * v, 0, 'square'); },
-    explode: v => {                                   // crack, blast, sub boom, rumble, echoes, then debris pattering down
-      burst(0.04, 7500, 1.5 * v, 'highpass'); burst(0.55, 4600, 1.6 * v); burst(1.9, 2000, 1.2 * v, null, 0.02);
-      tone(85, 22, 1.7, 1.9 * v); tone(52, 18, 2.6, 1.3 * v, 0.04);
-      burst(3.0, 420, 1.0 * v, null, 0.12); burst(1.3, 1500, 0.45 * v, null, 0.38); burst(1.6, 800, 0.32 * v, null, 0.8);
-      for (let i = 0; i < 16; i++) burst(0.04 + Math.random() * 0.05, 1500 + Math.random() * 3500, 0.13 * v * (1 - i / 20), 'bandpass', 0.8 + i * 0.11 + Math.random() * 0.1, 3);
+    // the C4. d is how far away you are: sound arrives late (343 m/s), far ones lose their top end,
+    // close ones leave you half deaf with ringing ears
+    explode: (v, d) => {
+      d = d || 0;
+      const at = d / 343, far = Math.min(1, d / 60), top = 1 - 0.75 * far;   // top: how much high end survives the distance
+      // 1. the crack: a sharp overdriven snap
+      burst(0.03, 9000 * top + 800, 2.2 * v * top, 'highpass', at, 0, 'grit');
+      tone(1400, 120, 0.06, 1.2 * v * top, at, 'square', 'grit');
+      // 2. the blast: a wall of overdriven noise that slams down, into the echo
+      burst(0.9, 5200 * top + 600, 2.4 * v, null, at, 0, 'grit');
+      burst(2.4, 2600 * top + 300, 1.5 * v, null, at + 0.01, 0, 'verb');
+      // 3. the punch in your chest: a sub thump that drops in pitch, and a second, deeper one
+      tone(120, 28, 0.5, 2.6 * v, at, 'sine'); tone(70, 20, 2.8, 2.0 * v, at + 0.02, 'sine', 'verb');
+      tone(45, 18, 3.5, 1.4 * v, at + 0.05, 'triangle');
+      // 4. the fireball roaring up, then a long rolling rumble that fades over the hills
+      swell(0.12, 2.2, 900 * top + 200, 0.9 * v, at + 0.05, brown, 'verb');
+      swell(0.4, 6.0, 260, 1.6 * v, at + 0.1, brown, 'verb');
+      burst(4.5, 520, 0.6 * v, null, at + 0.2, 0, 'verb', brown);
+      // 5. thunder-like echoes rolling back
+      for (const [t, k, f] of [[0.45, 0.55, 900], [0.95, 0.4, 650], [1.6, 0.3, 450], [2.4, 0.18, 320]]) { burst(1.2, f * (0.5 + top * 0.5), k * v, null, at + t, 0, 'verb', brown); tone(60, 30, 0.9, k * 0.8 * v, at + t); }
+      // 6. junk raining down: little clatters and thuds
+      for (let i = 0; i < 26; i++) {
+        const t = at + 0.7 + Math.random() * 2.3, k = v * (0.6 - i / 60) * top;
+        if (i % 3) burst(0.03 + Math.random() * 0.05, 1200 + Math.random() * 3800, 0.22 * k, 'bandpass', t, 3);
+        else { tone(160 + Math.random() * 120, 50, 0.12, 0.45 * k, t); burst(0.08, 600, 0.3 * k, null, t); }
+      }
+      // 7. the fire left behind, crackling
+      swell(0.6, 5.0, 1400, 0.25 * v * top, at + 0.6);
+      for (let i = 0; i < 40; i++) burst(0.012 + Math.random() * 0.02, 2500 + Math.random() * 4500, (0.05 + Math.random() * 0.12) * v * top, 'bandpass', at + 0.6 + Math.random() * 4.8, 6);
+      // 8. too close: the world goes muffled for a few seconds, and your ears ring
+      const deaf = clamp(1 - d / 16, 0, 1);
+      if (deaf > 0) {
+        const t = ac.currentTime + at + 0.06, f = muffle.frequency;
+        f.cancelScheduledValues(t); f.setValueAtTime(20000, t); f.exponentialRampToValueAtTime(20000 - 19650 * deaf, t + 0.08);
+        f.setValueAtTime(20000 - 19650 * deaf, t + 0.6 + deaf * 1.2); f.exponentialRampToValueAtTime(20000, t + 3 + deaf * 3);
+        tone(3400, 3300, 3 + deaf * 3, 0.07 * deaf, at + 0.08, 'sine', 'clear');
+        tone(5100, 5000, 2 + deaf * 2, 0.025 * deaf, at + 0.08, 'sine', 'clear');
+      }
     },
-    ring: v => { tone(3300, 3300, 3.2, 0.045 * v, 0.25, 'sine'); },
+    ring: v => { tone(3300, 3300, 3.2, 0.045 * v, 0.25, 'sine', 'clear'); },
     ting: v => { tone(2100, 2100, 0.5, 0.25 * v, 0, 'sine'); tone(3150, 3150, 0.35, 0.14 * v, 0.04, 'sine'); }
   };
   return {
