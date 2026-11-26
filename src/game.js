@@ -86,6 +86,7 @@ function give(f, id, spare) {
 }
 function equip(f, id) {
   if (f.weapon === id || (id && !f.inv.includes(id))) return;
+  f.holdC4 = false;
   f.weapon = id; f.equip = 0; f.reload = -1; f.cool = Math.max(f.cool, 0.2); f.bolt = 0; f.cycle = -1; f.inspect = -1;
   if (f.isPlayer) { Sound.play('rack', 0.5); hudDirty = true; }
 }
@@ -498,7 +499,8 @@ addEventListener('keydown', e => {
   else if (e.code === 'Digit1') equip(player, 'ak');
   else if (e.code === 'Digit2') equip(player, 'glock');
   else if (e.code === 'Digit3') equip(player, 'awp');
-  else if (e.code === 'Digit4' || e.code === 'KeyH') equip(player, null);
+  else if (e.code === 'Digit4' || e.code === 'KeyH') { player.holdC4 = false; equip(player, null); hudDirty = true; }
+  else if (e.code === 'Digit5') holdC4(player);
   else if (e.code === 'KeyG') dropGun(player);
   else if (e.code === 'KeyV') { if (player.weapon && player.reload < 0 && player.cycle < 0 && player.equip >= 1 && player.inspect < 0) player.inspect = 0; }
   else if (e.code === 'KeyT') { if (world.map === 'island') setMap('plate'); else askMap(!world.asking); }   // temporary, while the map is being made
@@ -615,6 +617,7 @@ function cameraEye() {
 function respawnPlayer() {
   abortLoot();
   const f = player;
+  f.c4 = Math.max(f.c4 || 0, 1); f.holdC4 = false; f.plantT = -1;
   f.dead = -1; f.hp = 100; f.pos = world.map === 'island' ? [START[0], groundAt(START[0], START[2]), START[2]] : [0, 0, 0]; f.air = 0; f.jump = -1; f.equip = 0;
   deathCam = 0; deathShot = null; hudDirty = true;
   bots.forEach(spawnBot); notify('Back on your feet');
@@ -641,8 +644,10 @@ function playerStep(dt) {
   const sprinting = sprint && my > 0 && f.speed > 2.7;
   f.sprintW += ((sprinting && g ? 1 : 0) - f.sprintW) * Math.min(1, dt * 9);
   f.yaw += wrap(cam.yaw + Math.PI - f.yaw) * Math.min(1, dt * 18);
-  locomotion(f, mx, my, sprint, dt);
+  const kneeling = f.plantT >= 0;                              // planting C4: stay put
+  locomotion(f, kneeling ? 0 : mx, kneeling ? 0 : my, sprint && !kneeling, dt);
   weaponStep(f, dt);
+  c4Step(f, dt);
   seaStep(f, dt);
   if (f.dead >= 0) return;
 
@@ -667,6 +672,8 @@ function playerStep(dt) {
       else startReload(f);
     }
     if (am.clip === 0 && am.spare > 0 && f.reload < 0 && f.cool <= 0 && !firing) startReload(f);
+  } else if (f.holdC4) {
+    if (mouse.pressed) startPlant(f);
   } else if (mouse.pressed && f.punch < 0) {
     f.punch = 0;
     const d = [Math.sin(f.yaw), 0, Math.cos(f.yaw)];
@@ -850,6 +857,7 @@ function drawStatics(prog, textured, hideSelf) {
   }
   drawProps(prog, textured);
   drawSends(prog);
+  drawPlanted(prog);
   flat(prog, [0.72, 0.50, 0.16], 0.28, 1.0);
   for (const s of shells) {
     const R = M3.mul(s.rest ? M3.ry(s.a) : M3.mul(M3.axis(s.spin, s.a), s.R), [s.size[0], 0, 0, 0, s.size[1], 0, 0, 0, s.size[2]]);
@@ -963,10 +971,11 @@ function hud(dt) {
   if (hudDirty) {
     hudDirty = false;
     const g = player.weapon ? GUNS[player.weapon] : null, am = g && player.ammo[player.weapon];
-    ui.weapon.textContent = g ? g.name : 'Fists';
+    ui.weapon.textContent = g ? g.name : player.holdC4 ? 'C4' : 'Fists';
     ui.ammo.innerHTML = g ? `<b class="${am.clip <= g.mag * 0.2 ? 'low' : ''}">${am.clip}</b> / ${am.spare}` : '';
     ui.hp.textContent = Math.ceil(player.hp); ui.hpfill.style.width = player.hp + '%';
-    ui.slots.innerHTML = [['1', 'ak'], ['2', 'glock'], ['3', 'awp']].map(([k, id]) => `<span class="${player.weapon === id ? 'on' : player.inv.includes(id) ? '' : 'none'}">${k} ${player.inv.includes(id) ? GUNS[id].name : '---'}</span>`).join('') + `<span class="${player.weapon ? '' : 'on'}">4 Fists</span>`;
+    ui.slots.innerHTML = [['1', 'ak'], ['2', 'glock'], ['3', 'awp']].map(([k, id]) => `<span class="${player.weapon === id ? 'on' : player.inv.includes(id) ? '' : 'none'}">${k} ${player.inv.includes(id) ? GUNS[id].name : '---'}</span>`).join('') + `<span class="${player.weapon || player.holdC4 ? '' : 'on'}">4 Fists</span>` +
+      `<span class="${player.holdC4 ? 'on' : player.c4 ? '' : 'none'}">5 C4 ×${player.c4 || 0}</span>`;
     ui.score.textContent = `Knockouts ${game.kills} · Deaths ${game.deaths}`;
   }
   const g = player.weapon ? GUNS[player.weapon] : null;

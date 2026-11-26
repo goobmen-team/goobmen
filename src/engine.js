@@ -355,19 +355,27 @@ const Sound = (() => {
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     o.connect(g); route(g, out); o.start(t); o.stop(t + dur + 0.02);
   }
+  let pan = 0;                                       // left/right for the sound being played now
   function route(g, to) {
-    if (to === 'verb') { g.connect(master); g.connect(verb); } else if (to === 'grit') g.connect(grit); else if (to === 'clear') g.connect(clear); else g.connect(master);
+    if (pan && ac.createStereoPanner) { const p = ac.createStereoPanner(); p.pan.value = pan; g.connect(p); g = p; }
+    if (to === 'verb') { g.connect(master); g.connect(verb); }
+    else if (to === 'room') { g.connect(master); const s = ac.createGain(); s.gain.value = 0.18; g.connect(s); s.connect(verb); }
+    else if (to === 'grit') g.connect(grit); else if (to === 'clear') g.connect(clear); else g.connect(master);
   }
-  // a clean electronic chirp: soft attack (no click), a touch of overtone, through a small speaker's bandpass
+  // a clean electronic bip: a pure tone with a soft 3 ms start (no click), a faint octave for shine,
+  // a quick natural fade, and a little room around it. f2 slides the pitch.
   function chirp(f, dur, vol, at, f2) {
-    const t = ac.currentTime + (at || 0), o = ac.createOscillator(), o2 = ac.createOscillator(), g = ac.createGain(), g2 = ac.createGain(), bp = ac.createBiquadFilter();
-    o.type = 'sine'; o2.type = 'triangle';
-    o.frequency.setValueAtTime(f, t); o2.frequency.setValueAtTime(f * 2, t);
-    if (f2) { o.frequency.exponentialRampToValueAtTime(f2, t + dur); o2.frequency.exponentialRampToValueAtTime(f2 * 2, t + dur); }
-    g2.gain.value = 0.1; bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 0.9;
-    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.005); g.gain.setValueAtTime(vol, t + dur * 0.55); g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
-    o.connect(g); o2.connect(g2); g2.connect(g); g.connect(bp); bp.connect(master);
-    o.start(t); o2.start(t); o.stop(t + dur + 0.02); o2.stop(t + dur + 0.02);
+    const t = ac.currentTime + (at || 0), g = ac.createGain(), lp = ac.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 6500;
+    for (const [mul, k] of [[1, 1], [2, 0.12]]) {
+      const o = ac.createOscillator(), og = ac.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(f * mul, t);
+      if (f2) o.frequency.exponentialRampToValueAtTime(f2 * mul, t + dur);
+      og.gain.value = k; o.connect(og); og.connect(g); o.start(t); o.stop(t + dur + 0.05);
+    }
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.003);
+    g.gain.setValueAtTime(vol, t + dur * 0.4); g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
+    g.connect(lp); route(lp, 'room');
   }
   // a swell: noise that fades in, holds, then fades out (the roar of the fireball, the fire after)
   function swell(rise, dur, freq, vol, at, buf, to) {
@@ -411,11 +419,12 @@ const Sound = (() => {
     pump: (v, k) => { const f = 260 + 120 * (k || 0); burst(0.2, 1200 + 300 * (k || 0), 0.45 * v, 'bandpass', 0, 2); tone(f, f * 1.7, 0.17, 0.2 * v, 0.02, 'triangle'); },
     slideup: v => { tone(300, 1700, 1.9, 0.22 * v, 0, 'sine'); tone(305, 1730, 1.9, 0.1 * v, 0, 'triangle'); },
     // the bomb: k is how close to going off it is (0 to 1), so the beep gets a little higher and shorter
-    beep: (v, k) => { k = k || 0; chirp(2000 + 500 * k, 0.12 - 0.05 * k, (0.22 + 0.08 * k) * v); burst(0.006, 5000, 0.04 * v, 'highpass'); },
-    key: (v, k) => { chirp([1320, 1568, 1175, 1760][(k || 0) % 4], 0.06, 0.12 * v); burst(0.01, 3000, 0.12 * v, 'bandpass', 0, 4); },
+    // the bomb: k is how close to going off it is (0 to 1): the bip gets a touch higher and shorter
+    beep: (v, k) => { k = k || 0; chirp(1870 * (1 + 0.07 * k), 0.085 - 0.03 * k, 0.32 * v); },
+    key: (v, k) => { chirp([1175, 1397, 1047, 1568][(k || 0) % 4], 0.05, 0.16 * v); burst(0.008, 2600, 0.06 * v, 'bandpass', 0, 3); },
     set: v => { tone(140, 70, 0.12, 0.35 * v); burst(0.05, 900, 0.25 * v, 'bandpass', 0, 2); },
-    armed: v => { chirp(1568, 0.08, 0.2 * v); chirp(2093, 0.18, 0.22 * v, 0.1); },
-    final: v => { chirp(2300, 0.45, 0.28 * v, 0, 3300); },
+    armed: v => { chirp(1397, 0.07, 0.26 * v); chirp(1870, 0.16, 0.3 * v, 0.09); },
+    final: v => { chirp(1990, 0.42, 0.34 * v, 0, 2350); },
     // the C4. d is how far away you are: sound arrives late (343 m/s), far ones lose their top end,
     // close ones leave you half deaf with ringing ears
     explode: (v, d) => {
@@ -460,7 +469,8 @@ const Sound = (() => {
   };
   return {
     init,
-    play(name, vol, k) { if (ac && !muted && ac.state === 'running') play[name](vol === undefined ? 1 : vol, k); },
+    // p: left/right, -1 to 1 (optional)
+    play(name, vol, k, p) { if (ac && !muted && ac.state === 'running') { pan = p || 0; try { play[name](vol === undefined ? 1 : vol, k); } finally { pan = 0; } } },
     toggle() { muted = !muted; return muted; }
   };
 })();

@@ -105,7 +105,8 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
       <tr><td>WASD / Shift</td><td>move / sprint</td></tr>
       <tr><td>Space / Ctrl</td><td>jump / crouch (tap Ctrl)</td></tr>
       <tr><td>Hold E</td><td>loot a chest or a knocked-out caveman</td></tr>
-      <tr><td>G / E</td><td>drop your gun / pick one up</td></tr>
+      <tr><td>G / E</td><td>drop what you hold / pick it up</td></tr>
+      <tr><td>5, then click</td><td>hold C4, plant it (on a knocked-out caveman too)</td></tr>
       <tr><td>R / V</td><td>reload / show off your gun</td></tr>
       <tr><td>1, 2, 3, 4 or wheel</td><td>AK-74, Glock 17, AWP, fists</td></tr>
       <tr><td>F</td><td>fullscreen</td></tr>
@@ -476,19 +477,27 @@ const Sound = (() => {
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
     o.connect(g); route(g, out); o.start(t); o.stop(t + dur + 0.02);
   }
+  let pan = 0;                                       // left/right for the sound being played now
   function route(g, to) {
-    if (to === 'verb') { g.connect(master); g.connect(verb); } else if (to === 'grit') g.connect(grit); else if (to === 'clear') g.connect(clear); else g.connect(master);
+    if (pan && ac.createStereoPanner) { const p = ac.createStereoPanner(); p.pan.value = pan; g.connect(p); g = p; }
+    if (to === 'verb') { g.connect(master); g.connect(verb); }
+    else if (to === 'room') { g.connect(master); const s = ac.createGain(); s.gain.value = 0.18; g.connect(s); s.connect(verb); }
+    else if (to === 'grit') g.connect(grit); else if (to === 'clear') g.connect(clear); else g.connect(master);
   }
-  // a clean electronic chirp: soft attack (no click), a touch of overtone, through a small speaker's bandpass
+  // a clean electronic bip: a pure tone with a soft 3 ms start (no click), a faint octave for shine,
+  // a quick natural fade, and a little room around it. f2 slides the pitch.
   function chirp(f, dur, vol, at, f2) {
-    const t = ac.currentTime + (at || 0), o = ac.createOscillator(), o2 = ac.createOscillator(), g = ac.createGain(), g2 = ac.createGain(), bp = ac.createBiquadFilter();
-    o.type = 'sine'; o2.type = 'triangle';
-    o.frequency.setValueAtTime(f, t); o2.frequency.setValueAtTime(f * 2, t);
-    if (f2) { o.frequency.exponentialRampToValueAtTime(f2, t + dur); o2.frequency.exponentialRampToValueAtTime(f2 * 2, t + dur); }
-    g2.gain.value = 0.1; bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 0.9;
-    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.005); g.gain.setValueAtTime(vol, t + dur * 0.55); g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
-    o.connect(g); o2.connect(g2); g2.connect(g); g.connect(bp); bp.connect(master);
-    o.start(t); o2.start(t); o.stop(t + dur + 0.02); o2.stop(t + dur + 0.02);
+    const t = ac.currentTime + (at || 0), g = ac.createGain(), lp = ac.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 6500;
+    for (const [mul, k] of [[1, 1], [2, 0.12]]) {
+      const o = ac.createOscillator(), og = ac.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(f * mul, t);
+      if (f2) o.frequency.exponentialRampToValueAtTime(f2 * mul, t + dur);
+      og.gain.value = k; o.connect(og); og.connect(g); o.start(t); o.stop(t + dur + 0.05);
+    }
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.003);
+    g.gain.setValueAtTime(vol, t + dur * 0.4); g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
+    g.connect(lp); route(lp, 'room');
   }
   // a swell: noise that fades in, holds, then fades out (the roar of the fireball, the fire after)
   function swell(rise, dur, freq, vol, at, buf, to) {
@@ -532,11 +541,12 @@ const Sound = (() => {
     pump: (v, k) => { const f = 260 + 120 * (k || 0); burst(0.2, 1200 + 300 * (k || 0), 0.45 * v, 'bandpass', 0, 2); tone(f, f * 1.7, 0.17, 0.2 * v, 0.02, 'triangle'); },
     slideup: v => { tone(300, 1700, 1.9, 0.22 * v, 0, 'sine'); tone(305, 1730, 1.9, 0.1 * v, 0, 'triangle'); },
     // the bomb: k is how close to going off it is (0 to 1), so the beep gets a little higher and shorter
-    beep: (v, k) => { k = k || 0; chirp(2000 + 500 * k, 0.12 - 0.05 * k, (0.22 + 0.08 * k) * v); burst(0.006, 5000, 0.04 * v, 'highpass'); },
-    key: (v, k) => { chirp([1320, 1568, 1175, 1760][(k || 0) % 4], 0.06, 0.12 * v); burst(0.01, 3000, 0.12 * v, 'bandpass', 0, 4); },
+    // the bomb: k is how close to going off it is (0 to 1): the bip gets a touch higher and shorter
+    beep: (v, k) => { k = k || 0; chirp(1870 * (1 + 0.07 * k), 0.085 - 0.03 * k, 0.32 * v); },
+    key: (v, k) => { chirp([1175, 1397, 1047, 1568][(k || 0) % 4], 0.05, 0.16 * v); burst(0.008, 2600, 0.06 * v, 'bandpass', 0, 3); },
     set: v => { tone(140, 70, 0.12, 0.35 * v); burst(0.05, 900, 0.25 * v, 'bandpass', 0, 2); },
-    armed: v => { chirp(1568, 0.08, 0.2 * v); chirp(2093, 0.18, 0.22 * v, 0.1); },
-    final: v => { chirp(2300, 0.45, 0.28 * v, 0, 3300); },
+    armed: v => { chirp(1397, 0.07, 0.26 * v); chirp(1870, 0.16, 0.3 * v, 0.09); },
+    final: v => { chirp(1990, 0.42, 0.34 * v, 0, 2350); },
     // the C4. d is how far away you are: sound arrives late (343 m/s), far ones lose their top end,
     // close ones leave you half deaf with ringing ears
     explode: (v, d) => {
@@ -581,7 +591,8 @@ const Sound = (() => {
   };
   return {
     init,
-    play(name, vol, k) { if (ac && !muted && ac.state === 'running') play[name](vol === undefined ? 1 : vol, k); },
+    // p: left/right, -1 to 1 (optional)
+    play(name, vol, k, p) { if (ac && !muted && ac.state === 'running') { pan = p || 0; try { play[name](vol === undefined ? 1 : vol, k); } finally { pan = 0; } } },
     toggle() { muted = !muted; return muted; }
   };
 })();
@@ -1713,6 +1724,7 @@ function give(f, id, spare) {
 }
 function equip(f, id) {
   if (f.weapon === id || (id && !f.inv.includes(id))) return;
+  f.holdC4 = false;
   f.weapon = id; f.equip = 0; f.reload = -1; f.cool = Math.max(f.cool, 0.2); f.bolt = 0; f.cycle = -1; f.inspect = -1;
   if (f.isPlayer) { Sound.play('rack', 0.5); hudDirty = true; }
 }
@@ -2125,7 +2137,8 @@ addEventListener('keydown', e => {
   else if (e.code === 'Digit1') equip(player, 'ak');
   else if (e.code === 'Digit2') equip(player, 'glock');
   else if (e.code === 'Digit3') equip(player, 'awp');
-  else if (e.code === 'Digit4' || e.code === 'KeyH') equip(player, null);
+  else if (e.code === 'Digit4' || e.code === 'KeyH') { player.holdC4 = false; equip(player, null); hudDirty = true; }
+  else if (e.code === 'Digit5') holdC4(player);
   else if (e.code === 'KeyG') dropGun(player);
   else if (e.code === 'KeyV') { if (player.weapon && player.reload < 0 && player.cycle < 0 && player.equip >= 1 && player.inspect < 0) player.inspect = 0; }
   else if (e.code === 'KeyT') { if (world.map === 'island') setMap('plate'); else askMap(!world.asking); }   // temporary, while the map is being made
@@ -2204,7 +2217,8 @@ const SHAPES = {
   rock: ell(0.085, 0.065, 0.075),
   bone: [...ell(0.03, 0.03, 0.12), ...[-1, 1].flatMap(z => [[0.063, 0, z * 0.12], [-0.063, 0, z * 0.12], [0, 0.036, z * 0.12], [0, -0.036, z * 0.12], [0, 0, z * 0.156]])],
   fish: ell(0.035, 0.065, 0.15),
-  meat: [...ell(0.075, 0.075, 0.11, [0, 0, 0.03]), [0, 0.028, -0.21], [0, -0.028, -0.21], [0.045, 0, -0.21], [-0.045, 0, -0.21]]
+  meat: [...ell(0.075, 0.075, 0.11, [0, 0, 0.03]), [0, 0.028, -0.21], [0, -0.028, -0.21], [0.045, 0, -0.21], [-0.045, 0, -0.21]],
+  c4: [-1, 1].flatMap(x => [-1, 1].flatMap(z => [[x * 0.15, 0, z * 0.105], [x * 0.15, 0.093, z * 0.105]]))   // the brick, bottom at 0
 };
 const gunShapes = {};
 function gunShape(id) {                       // the corners of the gun's box, placed the way drawProps draws it
@@ -2317,7 +2331,16 @@ function shoveProps(c, radius, power) {
 
 // ---------------------------------------------------------------- dropping your gun (G), picking it back up (E)
 function dropGun(f) {
-  if (!f.weapon || f.dead >= 0 || looting) return;
+  if (f.dead >= 0 || looting) return;
+  if (f.holdC4) {                                          // drop one C4 (not armed)
+    if (f.plantT >= 0 || !f.c4) return;
+    const fwd = [Math.sin(f.yaw), 0, Math.cos(f.yaw)], R = M3.ry(f.yaw);
+    spawnProp('c4', V.add(f.pos, M3.vec(R, C4_HOLD)), [fwd[0] * 2.2, 2.2, fwd[2] * 2.2], { R, scale: 1, life: 120, keep: true, w: [rand(-4, 4), rand(-2, 2), rand(-4, 4)] });
+    f.c4--; if (!f.c4) f.holdC4 = false;
+    Sound.play('whoosh', 0.5); notify('Dropped a C4'); hudDirty = true;
+    return;
+  }
+  if (!f.weapon) return;
   const id = f.weapon, am = f.ammo[id], fwd = [Math.sin(f.yaw), 0, Math.cos(f.yaw)];
   const from = f.gun ? f.gun.p.slice() : V.add(f.pos, [fwd[0] * 0.4, 1.2, fwd[2] * 0.4]);
   const R = f.gun ? f.gun.R.slice() : M3.ry(f.yaw);
@@ -2332,13 +2355,14 @@ function dropGun(f) {
 function gunNear(p) {
   let best = null, bestD = 1.4;
   for (const o of props) {
-    if (o.kind !== 'gun' || !o.ammo) continue;
+    if (!(o.kind === 'gun' && o.ammo) && !(o.kind === 'c4' && player.c4 < C4_MAX)) continue;
     const d = Math.hypot(o.p[0] - p[0], o.p[2] - p[2]);
     if (d < bestD && Math.abs(o.p[1] - p[1]) < 1.6) { bestD = d; best = o; }
   }
   return best;
 }
 function pickUp(o) {
+  if (o.kind === 'c4') { props.splice(props.indexOf(o), 1); giveC4(player); Sound.play('magin', 0.6); notify('Picked up a C4 (press 5)'); return; }
   const f = player, id = o.gun, g = GUNS[id];
   if (!f.inv.includes(id)) { f.inv.push(id); f.inv.sort((a, b) => SLOTS.indexOf(a) - SLOTS.indexOf(b)); f.ammo[id] = { clip: o.ammo.clip, spare: o.ammo.spare }; }
   else f.ammo[id].spare = Math.min(g.reserve * 3, f.ammo[id].spare + o.ammo.clip + o.ammo.spare);
@@ -2349,6 +2373,7 @@ function pickUp(o) {
 function drawProps(prog, textured) {
   for (const o of props) {
     const k = o.scale * Math.min(1, o.life / 0.4), S = o.R.map(x => x * k);
+    if (o.kind === 'c4') { drawC4(prog, o.p, o.R.map(x => x * Math.min(1, o.life / 0.4)), false, 0); continue; }
     if (o.kind === 'gun') { const g = GUNS[o.gun]; drawGun(prog, textured, g, S.map(x => x * g.scale / 1.25), V.add(o.p, M3.vec(S, [0, -0.04, -0.1])), {}); continue; }
     for (const part of JUNK[o.kind]) { flat(prog, part.color, part.rough, 0.05); drawMesh(prog, part.mesh, S, o.p); }
   }
@@ -2661,7 +2686,8 @@ function grant(L) {
   L.given = true;
   const id = L.gun, had = player.inv.includes(id);
   give(player, id, L.kind === 'body' ? GUNS[id].mag * 2 : undefined);
-  const what = had ? GUNS[id].name + ' ammo' : GUNS[id].article + ' ' + GUNS[id].name;
+  let what = had ? GUNS[id].name + ' ammo' : GUNS[id].article + ' ' + GUNS[id].name;
+  if (L.kind === 'body' && player.c4 < C4_MAX) { giveC4(player); what += ' and a C4'; }   // bodies always have a bomb on them
   notify((L.kind === 'body' ? 'Shook out ' : 'Found ') + what);
   if (L.chest) { L.chest.t = 0; L.chest.forced = false; }
   hudDirty = true;
@@ -2732,7 +2758,7 @@ function hudLoot(dt) {
   const show = (target || L || lying) && player.dead < 0;
   ui.prompt.style.display = show ? 'flex' : 'none';
   ui.prompt.classList.toggle('holding', !!L);
-  if (lying) { ui.prompttext.textContent = 'Press E to pick up the ' + GUNS[lying.gun].name; ui.ring.style.setProperty('--p', '100%'); }
+  if (lying) { ui.prompttext.textContent = 'Press E to pick up ' + (lying.kind === 'c4' ? 'the C4' : 'the ' + GUNS[lying.gun].name); ui.ring.style.setProperty('--p', '100%'); }
   else if (show) {
     const kind = L ? L.kind : target.kind, def = kind === 'body' ? BODY : CHEST;
     const gun = kind === 'chest' ? ' (' + GUNS[(L || target).chest.gun].name + ')' : '';
@@ -2998,7 +3024,7 @@ function sendStep(s, dt) {
 
 // ---------------------------------------------------------------- the bomb visit
 // a caveman who has never seen a bomb, planting one
-const bombSpot = s => V.add(bonePos(s.f, 'spine'), [0, 0.3, 0]);          // on top of his belly
+const bombSpot = s => V.add(bonePos(s.f, 'spine'), [0, 0.25, 0]);          // on top of his belly
 const KNEEL_IN = 0.3;                                                       // how far he shuffles in to reach the belly
 // both hands on the ends of the bomb; c is the bottom middle of the bomb, in his own space
 function holdGoals(c) {
@@ -3014,7 +3040,7 @@ const ball = r => [rand(-1, 1) * r, rand(-0.3, 1) * r, rand(-1, 1) * r];
 const BLAST_LIFE = 9;
 // a proper explosion: blinding flash, a fireball that rolls up into a mushroom of black smoke, a shockwave
 // ring racing over the ground, burning chunks trailing smoke, a scorched crater and fire that keeps going
-function explode(c) {
+function explode(c, owner) {
   const d = V.len(V.sub(c, cameraEye().eye)), floor = floorAt(c[0], c[2]);
   Sound.play('explode', clamp(1.8 - d / 45, 0.3, 1), d);
   cam.shake = Math.max(cam.shake, clamp(2.2 - d / 18, 0, 1));
@@ -3045,7 +3071,8 @@ function explode(c) {
   for (let i = 0; i < 14; i++) { const a = rand(0, 6.3), sp = rand(4, 11); b.chunks.push({ p: V.add(c, [0, 0.3, 0]), v: [Math.cos(a) * sp, rand(7, 16), Math.sin(a) * sp], life: rand(1.6, 3.2) }); }
   for (const v of [player, ...bots]) {
     const dd = Math.hypot(v.pos[0] - c[0], v.pos[2] - c[2]);
-    if (v.dead < 0 && dd < 8) damage(v, Math.round(25 + 75 * (1 - dd / 8)), { pos: c });
+    // your own bomb counts as your knockout (but blowing yourself up doesn't)
+    if (v.dead < 0 && dd < 8) damage(v, dd < 3 ? 150 : Math.round(25 + 75 * (1 - dd / 8)), { pos: c, isPlayer: !!(owner && owner.isPlayer && v !== owner) });
   }
 }
 // what an explosion keeps doing after the bang
@@ -3207,7 +3234,7 @@ function bombStep(s, dt) {
   for (let k = 0; k < 4; k++) if (crossed(1.765 + k * 0.09)) Sound.play('key', near, k);
   for (let k = 0; k < 4; k++) if (crossed(2.2 + k * 0.7 + 0.31) && 2.2 + k * 0.7 < 2.85) { Sound.play('bonk', near * 0.6); puff(V.add(s.spot, M3.vec(M3.ry(s.face), [0, 1.2, 0.42])), 4, [1, 0.8, 0.3, 1], 1.4, 0.03, 0.3, 4); }
   if (crossed(2.9)) { Sound.play('bonk', near); popWord(V.add(s.spot, [0, 2.1, 0]), 'OUCH!!', 0.9); }
-  if (crossed(FUSE_AT)) { Sound.play('armed', near); popWord(V.add(s.spot, [0, 1.6, 0]), 'BEEP BEEP', 0.8); s.lit = true; s.beepAt = t; }
+  if (crossed(FUSE_AT)) { Sound.play('armed', near, 0, panAt(s.spot)); popWord(V.add(s.spot, [0, 1.6, 0]), 'BEEP BEEP', 0.8); s.lit = true; s.beepAt = game.time; }
   if (crossed(4.0)) popWord(V.add(s.spot, [0, 2.2, 0]), 'OOGA BOOGA!', 1.0);
   if (crossed(5.4)) { Sound.play('huh', near); popWord(V.add(wrong, [0, 2.1, 0]), 'HUH?', 1.0); }
   if (crossed(6.1)) { Sound.play('ooga', near * 0.8); popWord(V.add(wrong, [0, 2.1, 0]), 'OH NO!', 0.8); }
@@ -3216,11 +3243,7 @@ function bombStep(s, dt) {
   // ---------- the countdown
   if (s.lit && !s.boom) {
     const left = FUSE - (t - FUSE_AT), c = bombSpot(s);
-    // beeps that come smoothly faster as it runs out, then one long tone right before it goes
-    if (s.nextBeep === undefined) s.nextBeep = FUSE - 1;
-    if (left <= s.nextBeep && left > 0.45) { Sound.play('beep', near, 1 - left / FUSE); s.beepAt = t; s.nextBeep = left - clamp(0.08 + left * 0.095, 0.11, 1); }
-    if (left <= 0.45 && !s.final) { s.final = true; Sound.play('final', near); }
-    for (let n = FUSE; n >= 1; n--) if (s.prev - FUSE_AT < FUSE - n && t - FUSE_AT >= FUSE - n) popWord(V.add(c, [0, 0.9, 0]), String(n), 0.9);
+    tickBomb(s, left, FUSE, c);
     if (left <= 0) {                                             // KABOOM
       s.boom = true; s.boomAt = t; f.gone = true;
       explode(c);
@@ -3235,8 +3258,97 @@ function bombStep(s, dt) {
 }
 const u01 = x => clamp(x, 0, 1);
 const c0 = s => V.add(s.hips, [0, 0.3, 0]);
+// where a sound is, left to right from the camera, and how loud it is from you
+const panAt = p => { const v = cameraEye(), d = V.norm(V.sub(p, v.eye)), r = V.norm(V.cross(v.fwd, [0, 1, 0])); return clamp(V.dot(d, r) * 0.8, -0.8, 0.8); };
+const nearAt = p => clamp(1.5 - V.len(V.sub(p, player.pos)) / 30, 0.25, 1);
+// a lit bomb's countdown: bips that come smoothly faster, the seconds over it, one long tone at the end
+function tickBomb(b, left, fuse, c) {
+  const near = nearAt(c), pan = panAt(c);
+  if (b.nextBeep === undefined) b.nextBeep = fuse - 1;
+  if (left <= b.nextBeep && left > 0.45) { Sound.play('beep', near, 1 - left / fuse, pan); b.beepAt = game.time; b.nextBeep = left - clamp(0.08 + left * 0.095, 0.11, 1); }
+  if (left <= 0.45 && !b.final) { b.final = true; Sound.play('final', near, 0, pan); }
+  const n = Math.ceil(left);
+  if (n >= 1 && n !== b.shown) { b.shown = n; popWord(V.add(c, [0, 0.9, 0]), String(n), 0.9); }
+}
+
+// ---------------------------------------------------------------- your own C4
+// 5 to hold it, click to kneel and plant it (on a knocked-out caveman's belly if one is right there),
+// G to drop it, E to pick one up. You start with one and shake another out of every body you loot.
+const C4_FUSE = 5, C4_MAX = 3, PLANT = 0.75;
+const C4_HOLD = [0, 0.95, 0.38];
+const planted = [];
+player.c4 = 1; player.holdC4 = false; player.plantT = -1;
+function holdC4(f) {
+  if (!f.c4 || f.dead >= 0 || looting) return;
+  if (f.holdC4) return;
+  equip(f, null); f.holdC4 = true; f.equip = 1; Sound.play('magin', 0.5); hudDirty = true;
+}
+function giveC4(f, n) { f.c4 = Math.min(C4_MAX, (f.c4 || 0) + (n || 1)); hudDirty = true; }
+// where it goes: a body's belly if there is one close in front, otherwise the ground in front of you
+function plantSpot(f) {
+  const fwd = [Math.sin(f.yaw), 0, Math.cos(f.yaw)], at = V.mad(f.pos, fwd, 0.62);
+  for (const b of bots) {
+    if (b.dead < 1 || b.send) continue;
+    const belly = V.add(bonePos(b, 'spine'), [0, 0.25, 0]);
+    if (Math.hypot(belly[0] - at[0], belly[2] - at[2]) < 0.8) return { p: belly, body: b };
+  }
+  return { p: [at[0], floorAt(at[0], at[2]), at[2]] };
+}
+function startPlant(f) {
+  if (f.plantT >= 0 || !f.c4) return;
+  f.plantT = 0; f.plantAt = plantSpot(f); f.plantYaw = f.yaw;
+}
+// runs inside playerStep: the carrying pose, and the plant itself
+function c4Step(f, dt) {
+  f.carry = null;
+  if (!f.holdC4 || f.dead >= 0 || looting) { if (f.plantT >= 0) { f.plantT = -1; f.script = null; f.scriptW = 0; } return; }
+  if (f.plantT < 0) { f.carry = holdGoals(C4_HOLD); f.c4Hold = C4_HOLD; return; }
+  const t = f.plantT += dt, hips0 = Rig.rest[IDX.hips];
+  const local = M3.vec(M3.ry(-f.yaw), V.sub(f.plantAt.p, f.pos));
+  const down = smooth(0, 0.3, t) * (1 - smooth(PLANT - 0.2, PLANT, t)), lower = smooth(0.08, 0.42, t);
+  const c = V.lerp(C4_HOLD, local, lower);
+  f.c4Hold = t < 0.45 ? c : null;
+  const G = holdGoals(t < 0.45 ? c : V.add(local, [0, 0.08 * smooth(0.45, 0.6, t), 0]));
+  f.script = { hips: V.add(hips0, [0, -0.45 * down, -0.1 * down]), bend: 0.8 * down, head: M3.rx(-0.4 * down), arms: G };
+  f.scriptW = smooth(0, 0.12, t) * (1 - smooth(PLANT - 0.15, PLANT, t));
+  if (t >= 0.45 && !f.plantDone) {                              // it's down: arm it
+    f.plantDone = true; f.c4--;
+    planted.push({ p: f.plantAt.p.slice(), R: M3.ry(f.plantYaw), t: 0, owner: f });
+    Sound.play('set', 0.8); Sound.play('armed', 0.9, 0, 0);
+    popWord(V.add(f.plantAt.p, [0, 0.7, 0]), 'BEEP BEEP', 0.8);
+    hudDirty = true;
+  }
+  if (t >= PLANT) {
+    f.plantT = -1; f.plantDone = false; f.script = null; f.scriptW = 0;
+    if (!f.c4) f.holdC4 = false;
+    hudDirty = true;
+  }
+}
+function plantedStep(dt) {
+  for (let i = planted.length - 1; i >= 0; i--) {
+    const b = planted[i]; b.t += dt;
+    const left = C4_FUSE - b.t;
+    tickBomb(b, left, C4_FUSE, b.p);
+    if (left <= 0) {
+      planted.splice(i, 1);
+      const c = V.add(b.p, [0, 0.08, 0]);
+      explode(c, b.owner);
+      popWord(V.add(c, [0, 1.6, 0]), 'KABOOM!!', 1.6);
+    }
+  }
+}
+function drawPlanted(prog) {
+  for (const b of planted) drawC4(prog, b.p, b.R, true, Math.max(0, 1 - (game.time - (b.beepAt || -9)) / 0.12));
+  const f = player;
+  if (f.holdC4 && f.c4Hold && f.dead < 0 && !looting && !f.gone) {
+    const R = M3.mul(M3.ry(f.yaw), M3.rx(f.tilt || 0));
+    drawC4(prog, V.add(V.add(f.pos, [0, f.air || 0, 0]), M3.vec(R, f.c4Hold)), R, false, 0);
+  }
+}
+
 function sendsStep(dt) {
   blastsStep(dt);
+  plantedStep(dt);
   for (const s of sends.slice()) {
     if (!sends.includes(s)) continue;        // your own respawn just cleared everyone's
     sendStep(s, dt);
@@ -3275,7 +3387,7 @@ function drawSends(prog) {
       if (s.hold) {                                           // in his hands
         const R = M3.mul(M3.ry(h.yaw), M3.rx(h.tilt));
         drawC4(prog, V.add(h.pos, M3.vec(R, s.hold)), R, false, 0);
-      } else drawC4(prog, bombSpot(s), M3.ry(s.face), !!s.lit, s.lit ? Math.max(0, 1 - (t - s.beepAt) / 0.12) : 0);
+      } else drawC4(prog, bombSpot(s), M3.ry(s.face), !!s.lit, s.lit ? Math.max(0, 1 - (game.time - s.beepAt) / 0.12) : 0);
       if (s.bonk > 0 && !h.gone) {                            // seeing stars
         const head = V.add(bonePos(h, 'head'), [0, 0.38, 0]);
         flat(prog, [0.95, 0.65, 0.02], 0.3, 0.7);
@@ -3444,6 +3556,7 @@ function cameraEye() {
 function respawnPlayer() {
   abortLoot();
   const f = player;
+  f.c4 = Math.max(f.c4 || 0, 1); f.holdC4 = false; f.plantT = -1;
   f.dead = -1; f.hp = 100; f.pos = world.map === 'island' ? [START[0], groundAt(START[0], START[2]), START[2]] : [0, 0, 0]; f.air = 0; f.jump = -1; f.equip = 0;
   deathCam = 0; deathShot = null; hudDirty = true;
   bots.forEach(spawnBot); notify('Back on your feet');
@@ -3470,8 +3583,10 @@ function playerStep(dt) {
   const sprinting = sprint && my > 0 && f.speed > 2.7;
   f.sprintW += ((sprinting && g ? 1 : 0) - f.sprintW) * Math.min(1, dt * 9);
   f.yaw += wrap(cam.yaw + Math.PI - f.yaw) * Math.min(1, dt * 18);
-  locomotion(f, mx, my, sprint, dt);
+  const kneeling = f.plantT >= 0;                              // planting C4: stay put
+  locomotion(f, kneeling ? 0 : mx, kneeling ? 0 : my, sprint && !kneeling, dt);
   weaponStep(f, dt);
+  c4Step(f, dt);
   seaStep(f, dt);
   if (f.dead >= 0) return;
 
@@ -3496,6 +3611,8 @@ function playerStep(dt) {
       else startReload(f);
     }
     if (am.clip === 0 && am.spare > 0 && f.reload < 0 && f.cool <= 0 && !firing) startReload(f);
+  } else if (f.holdC4) {
+    if (mouse.pressed) startPlant(f);
   } else if (mouse.pressed && f.punch < 0) {
     f.punch = 0;
     const d = [Math.sin(f.yaw), 0, Math.cos(f.yaw)];
@@ -3679,6 +3796,7 @@ function drawStatics(prog, textured, hideSelf) {
   }
   drawProps(prog, textured);
   drawSends(prog);
+  drawPlanted(prog);
   flat(prog, [0.72, 0.50, 0.16], 0.28, 1.0);
   for (const s of shells) {
     const R = M3.mul(s.rest ? M3.ry(s.a) : M3.mul(M3.axis(s.spin, s.a), s.R), [s.size[0], 0, 0, 0, s.size[1], 0, 0, 0, s.size[2]]);
@@ -3792,10 +3910,11 @@ function hud(dt) {
   if (hudDirty) {
     hudDirty = false;
     const g = player.weapon ? GUNS[player.weapon] : null, am = g && player.ammo[player.weapon];
-    ui.weapon.textContent = g ? g.name : 'Fists';
+    ui.weapon.textContent = g ? g.name : player.holdC4 ? 'C4' : 'Fists';
     ui.ammo.innerHTML = g ? `<b class="${am.clip <= g.mag * 0.2 ? 'low' : ''}">${am.clip}</b> / ${am.spare}` : '';
     ui.hp.textContent = Math.ceil(player.hp); ui.hpfill.style.width = player.hp + '%';
-    ui.slots.innerHTML = [['1', 'ak'], ['2', 'glock'], ['3', 'awp']].map(([k, id]) => `<span class="${player.weapon === id ? 'on' : player.inv.includes(id) ? '' : 'none'}">${k} ${player.inv.includes(id) ? GUNS[id].name : '---'}</span>`).join('') + `<span class="${player.weapon ? '' : 'on'}">4 Fists</span>`;
+    ui.slots.innerHTML = [['1', 'ak'], ['2', 'glock'], ['3', 'awp']].map(([k, id]) => `<span class="${player.weapon === id ? 'on' : player.inv.includes(id) ? '' : 'none'}">${k} ${player.inv.includes(id) ? GUNS[id].name : '---'}</span>`).join('') + `<span class="${player.weapon || player.holdC4 ? '' : 'on'}">4 Fists</span>` +
+      `<span class="${player.holdC4 ? 'on' : player.c4 ? '' : 'none'}">5 C4 ×${player.c4 || 0}</span>`;
     ui.score.textContent = `Knockouts ${game.kills} · Deaths ${game.deaths}`;
   }
   const g = player.weapon ? GUNS[player.weapon] : null;
