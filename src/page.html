@@ -14,9 +14,10 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; o
 #status { position: fixed; left: 18px; bottom: 18px; width: 220px; }
 #hpbar { height: 10px; background: rgba(255,255,255,.2); border-radius: 5px; overflow: hidden; margin-top: 4px; }
 #hpfill { height: 100%; background: #58d66a; }
+#vestbox { margin-top: 6px; } .vestbar { height: 10px; background: rgba(255,255,255,.2); border-radius: 5px; overflow: hidden; margin-top: 4px; } #vestfill { height: 100%; background: #7ea6c4; }
 #gunbox { position: fixed; right: 18px; bottom: 18px; text-align: right; min-width: 170px; }
 #ammo { font-size: 22px; } #ammo b { font-size: 36px; } #ammo b.low { color: #ff6b5e; }
-#slots { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 6px; white-space: nowrap; }
+#slots { position: fixed; left: 250px; right: 200px; bottom: 18px; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; white-space: nowrap; }
 #slots span { background: rgba(20,22,26,.55); border: 2px solid transparent; border-radius: 7px; padding: 4px 10px; }
 #slots span.on { border-color: #fff; background: rgba(20,22,26,.8); } #slots span.none { opacity: .45; }
 #score { position: fixed; left: 18px; top: 14px; }
@@ -87,7 +88,7 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
   <div id="note"></div>
   <div id="mapask" class="panel" hidden>Which island?<br><b>1</b>Normal map<br><b>2</b>Optimized map, for low-end devices<br><span class="small">T to cancel</span></div>
   <div id="score" class="panel"></div>
-  <div id="status" class="panel">Health <b id="hp">100</b><div id="hpbar"><div id="hpfill"></div></div></div>
+  <div id="status" class="panel">Health <b id="hp">100</b><div id="hpbar"><div id="hpfill"></div></div><div id="vestbox" hidden>Vest <b id="vest">100</b><div class="vestbar"><div id="vestfill"></div></div></div></div>
   <div id="slots"></div>
   <div id="gunbox" class="panel"><div id="weapon"></div><div id="ammo"></div></div>
 </div>
@@ -110,12 +111,13 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
       <tr><td>5, then click</td><td>hold C4, plant it (on a knocked-out caveman too)</td></tr>
       <tr><td>R / V</td><td>reload / show off your gun</td></tr>
       <tr><td>1, 2, 3, 4 or wheel</td><td>AK-74, Glock 17, AWP, fists</td></tr>
+      <tr><td>6, 7, 8, 9</td><td>MP5, P90, shotgun, grenade launcher</td></tr>
       <tr><td>F</td><td>fullscreen</td></tr>
       <tr><td>N</td><td>fly (testing): Space up, C down, wheel speed</td></tr>
       <tr><td>T</td><td>island map, then 1 or 2 (temporary)</td></tr>
       <tr><td>P / M / Esc</td><td>enemy fire / sound / pause</td></tr>
     </table>
-    <div class="small">Tip: press F for fullscreen. In a normal tab, Ctrl and W pressed together close the page. A mouse works much better than a trackpad.<br>AWP model by Rifeor (sketchfab.com/Rifeor), licence CC BY 4.0, adapted for this game.<br>C4 model by 6lucius (sketchfab.com/6lucius), licence CC BY 4.0, adapted for this game.</div>
+    <div class="small">Tip: press F for fullscreen. In a normal tab, Ctrl and W pressed together close the page. A mouse works much better than a trackpad.<br>AWP model by Rifeor (sketchfab.com/Rifeor), licence CC BY 4.0, adapted for this game.<br>C4 model by 6lucius (sketchfab.com/6lucius), licence CC BY 4.0, adapted for this game.<br>MP5 model by dani-zzz (sketchfab.com/dani-zzz), CC BY 4.0, and Milkor MGL by Valo (sketchfab.com/Valo__), CC BY 4.0, adapted.<br>Shotgun by Jonathan Steylaerts (sketchfab.com/JonathanSteylaerts) and P90 by charles.cla (sketchfab.com/charles.cla), CC BY-NC 4.0 (non-commercial), adapted.</div>
   </div>
 </div>
 <!--SCRIPTS-->

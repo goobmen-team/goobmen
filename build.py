@@ -12,14 +12,16 @@ def read(name):
 model = base64.b64encode((root / 'assets/caveman.glb').read_bytes()).decode()
 parts = ['<script>window.MODEL_B64="%s";</script>' % model,
          '<script>window.GUN_DATA=%s;</script>' % read('assets/guns.json'),
-         '<script>window.C4_DATA=%s;</script>' % read('assets/c4.json')]
+         '<script>Object.assign(window.GUN_DATA,%s);</script>' % read('assets/guns2.json'),
+         '<script>window.C4_DATA=%s;</script>' % read('assets/c4.json'),
+         '<script>window.TAPE_DATA=%s;</script>' % read('assets/tape.json')]
 
 for name in ('engine.js', 'game.js'):
     code = read('src/' + name)
     if name == 'game.js':
-        # looting and the jump/death animations live in their own files
+        # looting, the jump/death animations, ragdolls and the reload/grenade/vest code live in their own files
         code = code.replace('//MAP//', read('src/island.js') + read('src/places.js') + read('src/bridges.js') + read('src/caves.js'))
-        code = code.replace('//LOOT//', read('src/loot.js') + read('src/moves.js') + read('src/ragdoll.js'))
+        code = code.replace('//LOOT//', read('src/loot.js') + read('src/moves.js') + read('src/ragdoll.js') + read('src/weapons.js'))
     assert '</script' not in code
     parts.append('<script>\n%s</script>' % code)
 

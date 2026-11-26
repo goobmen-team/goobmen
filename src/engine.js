@@ -111,9 +111,10 @@ layout(location=3) in uvec4 aJ; layout(location=4) in vec4 aW;
 uniform mat4 uBones[40]; uniform mat4 uModel;
 mat4 skin() { return uModel * (uBones[aJ.x]*aW.x + uBones[aJ.y]*aW.y + uBones[aJ.z]*aW.z + uBones[aJ.w]*aW.w); }`;
 const skinProg = program(`${SKINVS}
-uniform mat4 uViewProj; out vec3 vW; out vec3 vN; out vec2 vUv;
-void main() { mat4 m = skin(); vec4 w = m * vec4(aPos, 1.0); vW = w.xyz; vN = mat3(m) * aNrm; vUv = aUv; gl_Position = uViewProj * w; }`, `
-in vec3 vW; in vec3 vN; in vec2 vUv; out vec4 o;
+layout(location=5) in float aTorso; uniform float uInflate;
+uniform mat4 uViewProj; out vec3 vW; out vec3 vN; out vec2 vUv; out vec3 vRest; out float vTorso;
+void main() { mat4 m = skin(); vec4 w = m * vec4(aPos + aNrm * uInflate, 1.0); vW = w.xyz; vN = mat3(m) * aNrm; vUv = aUv; vRest = aPos; vTorso = aTorso; gl_Position = uViewProj * w; }`, `
+in vec3 vW; in vec3 vN; in vec2 vUv; in vec3 vRest; in float vTorso; out vec4 o; uniform int uVest;
 uniform sampler2D uTex, uNormalMap; uniform int uHasTex, uHasNormal; uniform vec3 uColor, uTint; uniform float uRough, uHurt;
 ${COMMON}
 void main() {
@@ -121,6 +122,14 @@ void main() {
   if (dot(N, V) < -0.15 && !gl_FrontFacing) N = -N;
   if (uHasNormal == 1) N = normalMap(uNormalMap, N, vW, vUv);
   vec3 base = (uHasTex == 1 ? texture(uTex, vUv).rgb : uColor) * uTint;
+  if (uVest == 1) {                                  // keep only the part of the skin a vest would cover, with webbing across it
+    float ax = abs(vRest.x), y = vRest.y;
+    bool body = y > 0.86 && y < 1.235 && ax < 0.235 - max(0.0, y - 1.10) * 0.55;
+    bool strap = y >= 1.2 && y < 1.42 && ax > 0.065 && ax < 0.145;
+    if (vTorso < 0.45 || !(body || strap)) discard;
+    if (body && fract((y - 0.86) * 13.0) < 0.16) base *= 0.45;
+    if (body && (y < 0.885 || ax > 0.225 - max(0.0, y - 1.10) * 0.55)) base *= 0.4;
+  }
   float sh = shadowAt(vW + N * 0.012), ndl = max(dot(N, uSun), 0.0);
   vec3 hemi = mix(vec3(0.28, 0.25, 0.23), vec3(0.60, 0.62, 0.66), N.y * 0.5 + 0.5);
   vec3 light = hemi + vec3(1.22, 1.17, 1.10) * ndl * sh + vec3(0.40, 0.39, 0.38) * max(dot(N, V), 0.0) * (1.0 - 0.8 * ndl * sh) + flashLight(vW, N);
@@ -264,11 +273,16 @@ async function loadCaveman(glb64) {
   for (const p of g.meshes[0].primitives) {
     const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
     attrib(0, acc(p.attributes.POSITION), 3, gl.FLOAT); attrib(1, acc(p.attributes.NORMAL), 3, gl.FLOAT); attrib(2, acc(p.attributes.TEXCOORD_0), 2, gl.FLOAT);
-    attrib(3, acc(p.attributes.JOINTS_0), 4, gl.UNSIGNED_BYTE, true); attrib(4, acc(p.attributes.WEIGHTS_0), 4, gl.FLOAT);
+    const jo = acc(p.attributes.JOINTS_0), we = acc(p.attributes.WEIGHTS_0);
+    attrib(3, jo, 4, gl.UNSIGNED_BYTE, true); attrib(4, we, 4, gl.FLOAT);
+    const torso = new Float32Array(we.length / 4);
+    for (let i = 0; i < torso.length; i++) for (let k = 0; k < 4; k++) if (['hips', 'spine', 'chest', 'clavicle_L', 'clavicle_R'].includes(Rig.names[jo[i * 4 + k]])) torso[i] += we[i * 4 + k];
+    attrib(5, torso, 1, gl.FLOAT);
     const idx = acc(p.indices); buffer(gl.ELEMENT_ARRAY_BUFFER, idx);
     const m = g.materials[p.material], pbr = m.pbrMetallicRoughness;
     gl.bindVertexArray(null);
     Rig.prims.push({ vao, count: idx.length, name: m.name, rough: pbr.roughnessFactor, color: (pbr.baseColorFactor || [1, 1, 1]).slice(0, 3),
+      cpu: { pos: acc(p.attributes.POSITION), j: acc(p.attributes.JOINTS_0), w: acc(p.attributes.WEIGHTS_0), idx },   // for finding his skin (tape, bombs)
       tex: pbr.baseColorTexture ? await tex(pbr.baseColorTexture.index, true) : null, normal: m.normalTexture ? await tex(m.normalTexture.index, false) : null });
   }
 }
@@ -302,8 +316,14 @@ function localRot(p, i) {
 // ======================================================================= guns
 async function loadGun(def, data) {
   const parts = {};
-  for (const k of ['body', 'mag', 'trigger', 'bolt', 'lens']) if (data[k]) parts[k] = staticMesh(new Float32Array(b64bytes(data[k].v).buffer), new Uint32Array(b64bytes(data[k].i).buffer));
+  for (const k of ['body', 'mag', 'trigger', 'bolt', 'lens', 'drum', 'pump']) if (data[k]) parts[k] = staticMesh(new Float32Array(b64bytes(data[k].v).buffer), new Uint32Array(b64bytes(data[k].i).buffer));
   def.parts = parts;
+  if (data.mag) {                                  // the middle of the magazine, for when it is lying on the floor
+    const v = new Float32Array(b64bytes(data.mag.v).buffer), lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+    for (let i = 0; i < v.length; i += 8) for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], v[i + a]); hi[a] = Math.max(hi[a], v[i + a]); }
+    def.magMid = [0, 1, 2].map(a => (lo[a] + hi[a]) / 2);
+    def.magHalf = [0, 1, 2].map(a => (hi[a] - lo[a]) / 2);
+  }
   def.tex = await loadTexture(dataBlob(data.tex.base), true);
   def.normal = await loadTexture(dataBlob(data.tex.normal), false);
   def.orm = await loadTexture(dataBlob(data.tex.orm), false);
@@ -422,6 +442,11 @@ const Sound = (() => {
     // the bomb: k is how close to going off it is (0 to 1): the bip gets a touch higher and shorter
     beep: (v, k) => { k = k || 0; chirp(1870 * (1 + 0.07 * k), 0.085 - 0.03 * k, 0.32 * v); },
     key: (v, k) => { chirp([1175, 1397, 1047, 1568][(k || 0) % 4], 0.05, 0.16 * v); burst(0.008, 2600, 0.06 * v, 'bandpass', 0, 3); },
+    rip: v => {                                       // a long strip yanked off the roll: a ragged tearing crackle that speeds up, with a hiss under it
+      let at = 0;
+      for (let i = 0; i < 38; i++) { at += 0.016 - i * 0.00018 + Math.random() * 0.004; burst(0.01 + Math.random() * 0.012, 1100 + Math.random() * 3200 + i * 40, (0.2 + Math.random() * 0.16) * v, 'bandpass', at, 2.2); }
+      swell(0.04, 0.5, 3600, 0.16 * v, 0);
+    },
     tape: v => {                                      // duct tape peeling off the roll: a fast, ragged crackle that sweeps up
       for (let i = 0; i < 22; i++) burst(0.012 + Math.random() * 0.012, 1400 + i * 110 + Math.random() * 900, (0.16 + Math.random() * 0.12) * v * (1 - i / 30), 'bandpass', i * 0.019 + Math.random() * 0.006, 2.5);
       burst(0.45, 2200, 0.08 * v, 'bandpass', 0, 0.8);
@@ -469,7 +494,28 @@ const Sound = (() => {
       }
     },
     ring: v => { tone(3300, 3300, 3.2, 0.045 * v, 0.25, 'sine', 'clear'); },
-    ting: v => { tone(2100, 2100, 0.5, 0.25 * v, 0, 'sine'); tone(3150, 3150, 0.35, 0.14 * v, 0.04, 'sine'); }
+    ting: v => { tone(2100, 2100, 0.5, 0.25 * v, 0, 'sine'); tone(3150, 3150, 0.35, 0.14 * v, 0.04, 'sine'); },
+    mp5: v => { burst(0.035, 5600, 0.7 * v, 'highpass'); burst(0.18, 3200, 0.8 * v); tone(190, 55, 0.1, 0.6 * v); burst(0.3, 700, 0.12 * v, null, 0.04); },
+    p90: v => { burst(0.03, 6800, 0.75 * v, 'highpass'); burst(0.14, 4400, 0.7 * v); tone(260, 80, 0.07, 0.5 * v); burst(0.25, 1100, 0.1 * v, null, 0.03); },
+    shotgun: v => { burst(0.06, 4200, 1.2 * v, 'highpass'); burst(0.55, 2400, 1.5 * v); tone(100, 28, 0.35, 1.4 * v); burst(1.0, 420, 0.4 * v, null, 0.1); },
+    thoomp: v => { tone(210, 55, 0.2, 1.2 * v); burst(0.12, 900, 0.8 * v); burst(0.25, 500, 0.35 * v, 'bandpass', 0.05, 2); },
+    boom: v => { burst(0.04, 6000, 1.4 * v, 'highpass', 0, 0, 'grit'); burst(0.8, 2600, 1.6 * v, null, 0, 0, 'grit'); tone(110, 28, 0.6, 1.8 * v); burst(1.8, 700, 0.6 * v, null, 0.05, 0, 'verb'); },
+    pumpback: v => { burst(0.08, 1300, 0.8 * v, 'bandpass', 0, 3); tone(500, 300, 0.05, 0.12 * v, 0.03, 'square'); },
+    pumpfwd: v => { burst(0.07, 1900, 0.9 * v, 'bandpass', 0, 3); burst(0.03, 3600, 0.4 * v, 'bandpass', 0.06, 5); },
+    shellin: v => { burst(0.04, 1500, 0.6 * v, 'bandpass', 0, 5); burst(0.03, 3000, 0.35 * v, 'bandpass', 0.05, 6); },
+    vest: v => { burst(0.16, 900, 0.5 * v, 'bandpass', 0, 1.5); burst(0.1, 2400, 0.35 * v, 'bandpass', 0.14, 3); tone(300, 600, 0.12, 0.2 * v, 0.28, 'triangle'); },
+    thwack: v => { tone(260, 90, 0.1, 0.7 * v, 0, 'triangle'); burst(0.07, 1400, 0.6 * v, 'bandpass', 0, 2); },
+    ooo: (v, k) => {                                  // a slow, wondering "ooo?" that goes up at the end
+      const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain(), pitch = 135 * (1 + 0.1 * (k || 0));
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(pitch, t); o.frequency.linearRampToValueAtTime(pitch * 0.94, t + 0.32); o.frequency.exponentialRampToValueAtTime(pitch * 1.75, t + 0.72);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.9 * v, t + 0.08); g.gain.setValueAtTime(0.9 * v, t + 0.55); g.gain.exponentialRampToValueAtTime(0.001, t + 0.78);
+      for (const [f, q, a] of [[330, 6, 1], [800, 8, 0.45], [2300, 10, 0.06]]) {            // the shape of an "oo" mouth
+        const b = ac.createBiquadFilter(), x = ac.createGain(); b.type = 'bandpass'; b.frequency.value = f; b.Q.value = q; x.gain.value = a;
+        o.connect(b); b.connect(x); x.connect(g);
+      }
+      g.connect(master); o.start(t); o.stop(t + 0.82);
+    }
   };
   return {
     init,

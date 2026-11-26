@@ -161,7 +161,11 @@ function setChests(name) {
     for (const c of plateChests) { c.t = -1; c.open = c.openV = c.wobble = 0; c.forced = false; chests.push(c); }
     return;
   }
-  const gun = () => { const r = Math.random(); return r < 0.5 ? 'glock' : r < 0.85 ? 'ak' : 'awp'; };
+  // what a chest holds, and how often
+  const odds = [['glock', 0.30], ['ak', 0.20], ['mp5', 0.14], ['shotgun', 0.11], ['p90', 0.09], ['awp', 0.08], ['vest', 0.05], ['mgl', 0.03]];
+  const gun = () => { let r = Math.random(); for (const [id, share] of odds) if ((r -= share) < 0) return id; return 'glock'; };
+  // TEMPORARY, for testing: one chest of everything in front of the "something cool here" sign
+  [...SLOTS, 'vest'].forEach((id, k) => chests.push(newChest(id, (k - SLOTS.length / 2) * 1.35, 2.6)));
   const tryAt = (x, z) => { if (goodChestSpot(x, z, chests)) chests.push(newChest(gun(), x, z)); };
   // one or two at the back of every cave, with better odds of the rifles
   for (const c of CAVES) {
