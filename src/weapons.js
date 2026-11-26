@@ -237,4 +237,3 @@ function drawHeldVest(prog, R, p) {
   flat(prog, BLACK, 0.6, 0.1); drawMesh(prog, vestShape.trim, R, p);
 }
 const itemName = id => id === 'vest' ? 'bulletproof vest' : GUNS[id].name;
-const CHEST_COLOURS = { ak: [0.75, 0.45, 0.08], awp: [0.10, 0.28, 0.08], glock: [0.30, 0.32, 0.35], mp5: [0.06, 0.16, 0.55], p90: [0.34, 0.07, 0.50], shotgun: [0.55, 0.05, 0.03], mgl: [0.80, 0.22, 0.01], vest: [0.025, 0.03, 0.025] };

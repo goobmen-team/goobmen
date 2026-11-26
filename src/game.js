@@ -100,10 +100,7 @@ const plate = (() => {
   attrib(0, new Float32Array([-HALF, 0, HALF, HALF, 0, HALF, HALF, 0, -HALF, -HALF, 0, HALF, HALF, 0, -HALF, -HALF, 0, -HALF]), 3, gl.FLOAT);
   gl.bindVertexArray(null); return vao;
 })();
-const meshes = {
-  chest: mergeMesh([boxData(0.9, 0.05, 0.56, 0, 0.025, 0), boxData(0.9, 0.44, 0.05, 0, 0.22, 0.255), boxData(0.9, 0.44, 0.05, 0, 0.22, -0.255), boxData(0.05, 0.44, 0.46, 0.425, 0.22, 0), boxData(0.05, 0.44, 0.46, -0.425, 0.22, 0)]), lid: boxMesh(0.94, 0.14, 0.60, 0, 0.07, 0.30), band: boxMesh(0.07, 0.47, 0.59, 0, 0.225, 0),
-  lidband: boxMesh(0.07, 0.165, 0.62, 0, 0.07, 0.30), strap: boxMesh(0.07, 0.45, 0.035, 0, 0.225, 0), lock: boxMesh(0.11, 0.13, 0.03, 0, 0.34, 0.29), shell: boxMesh(1, 1, 1)
-};
+const meshes = { shell: boxMesh(1, 1, 1) };
 // ---- settings: shadow quality and render distance, remembered in this browser
 // size: the moving shadows round you. baked: the island's long ones. area: how far round you the moving ones reach
 const SHADOWS = [
@@ -1064,13 +1061,7 @@ function drawStatics(prog, textured, hideSelf) {
   for (const c of chests) {
     if (world.map === 'island' && Math.hypot(c.pos[0] - player.pos[0], c.pos[2] - player.pos[2]) > chestRange) continue;
     const tip = M3.rz(Math.sin(game.time * 38) * c.wobble * 0.09), hinge = V.add(c.pos, M3.vec(tip, [0, 0.44, -0.30])), lid = M3.mul(tip, M3.rx(-1.9 * c.open));
-    flat(prog, [0.19, 0.095, 0.035], 0.75, 0.0); drawMesh(prog, meshes.chest, tip, c.pos); drawMesh(prog, meshes.lid, lid, hinge);
-    flat(prog, CHEST_COLOURS[c.gun], 0.38, 0.9);
-    for (const x of [-0.3, 0.3]) {
-      for (const z of [0.272, -0.272]) drawMesh(prog, meshes.strap, tip, V.add(c.pos, M3.vec(tip, [x, 0, z])));
-      drawMesh(prog, meshes.lidband, lid, V.add(hinge, M3.vec(tip, [x, 0, 0])));
-    }
-    drawMesh(prog, meshes.lock, tip, c.pos);
+    drawChest(prog, textured, tip, c.pos, lid, hinge);
   }
   drawProps(prog, textured);
   drawSends(prog);
