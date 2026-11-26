@@ -571,7 +571,7 @@ gl.bindVertexArray(null);
 // low: the optimized island for weaker computers. asking: the map choice is on screen
 const world = { map: 'plate', low: false, asking: false };
 // the land climbs from the beach to a meadow, hills and one mountain; past the coast it drops to the sea floor
-const SEA = { level: -0.2, floor: -1.0, wade: 5, swim: 22, grace: 0.6, every: 0.5, bite: 8 };
+const SEA = { level: -0.2, floor: -1.0, wade: 5, swim: 60, grace: 0.6, every: 0.5, bite: 8 };
 const SKY = { plate: [219 / 255, 219 / 255, 219 / 255], island: [0.66, 0.80, 0.91] };
 // how far the coast is from the middle, in each direction (the same formula is in the water shader)
 const bulge = (a, at, wide) => Math.exp(-((Math.sin((a - at) / 2) / wide) ** 2));
@@ -657,7 +657,7 @@ function confine(f) {
   const d = Math.hypot(p[0], p[2]), max = coast(Math.atan2(p[0], p[2])) + (f.isPlayer ? SEA.swim : -1.5);
   if (d > max) { p[0] *= max / d; p[2] *= max / d; }
 }
-// cliffs: a step that climbs or drops too sharply is refused, sliding along the face if it can
+// cliffs: you cannot walk up a sheer face (slide along it instead), but you can step off the top
 const STEEP = 1.3;
 function cliffs(f, x0, z0) {
   if (world.map !== 'island') return;
@@ -666,7 +666,7 @@ function cliffs(f, x0, z0) {
     if (d < 1e-5) return false;
     // look a little ahead, so a single frame's tiny step cannot creep up a face
     const k = Math.max(1, 0.5 / d), y = groundAt(x0 + (x - x0) * k, z0 + (z - z0) * k);
-    return Math.abs(y - groundAt(x0, z0)) > STEEP * d * k;
+    return y - groundAt(x0, z0) > STEEP * d * k;
   };
   const p = f.pos;
   if (!sheer(p[0], p[2])) return;
@@ -1038,18 +1038,20 @@ function buildFlora(low) {
       return corners.get(key);
     };
     const m = cur.big;
+    let reach = 0, top = 0;
     for (const face of ball(depth)) {
       const pts = face.map(carve);
       let n = V.norm(V.cross(V.sub(pts[1], pts[0]), V.sub(pts[2], pts[0])));
       if (V.dot(n, M3.vec(turn, face[0])) < 0) n = V.mul(n, -1);
       const base = m.v.length / 9, tone = shadeOf(col, rnd(0.86, 1.14));
-      for (const q of pts) vert(m, q, tone, n);
+      for (const q of pts) { vert(m, q, tone, n); reach += Math.hypot(q[0] - at[0], q[2] - at[2]) / (ball(depth).length * 3); top = Math.max(top, q[1] - at[1]); }
       m.i.push(base, base + 1, base + 2);
     }
+    return { reach, top };
   };
   const boulder = (at, s, shade) => {
     const grey = 0.36 + shade * 0.10, col = [grey + 0.02, grey, grey - 0.035];
-    stone(at, s * 0.95, col, s > 0.8 ? 2 : 1);
+    const main = stone(at, s * 0.95, col, s > 0.8 ? 2 : 1);
     if (s > 0.8) {                                            // big ones are a heap: a slab leaning on the main lump
       const a = rnd(0, 6.3);
       stone(V.add(at, [Math.cos(a) * s * 0.65, 0, Math.sin(a) * s * 0.65]), s * rnd(0.5, 0.65), shadeOf(col, rnd(0.88, 1.08)), 1);
@@ -1059,6 +1061,7 @@ function buildFlora(low) {
       const far = s * rnd(1.05, 1.5), x = at[0] + Math.cos(a) * far, z = at[2] + Math.sin(a) * far;
       stone([x, groundHeight(x, z) - r * 0.25, z], r, shadeOf(col, rnd(0.85, 1.1)), 0);        // each on its own patch of ground
     }
+    return main;
   };
 
   // one chance every few metres, nudged about; woods grow where the noise says so
@@ -1071,14 +1074,15 @@ function buildFlora(low) {
     const woods = roll(x - 50, z + 30, 31);
     cur = patch(x, z); seed = 1 + Math.floor(r(8) * 2147483000);
     if (e > -22 && y < 3) {
-      if (r(4) < 0.2) { palm(at, s, r(5) * 6.3); if (first) solids.push({ x, z, y, r: 0.24 * s, h: 4.4 * s }); }
+      if (r(4) < 0.2) { palm(at, s, r(5) * 6.3); if (first) solids.push({ x, z, y, r: 0.24 * s, h: 2.2 * s }); }
     } else if (slope < 0.8 && y < 18 && r(4) < (woods > 0.04 ? 0.7 : 0.05)) {
       (woods > 0.17 || y > 9 ? pine : leafy)(at, s, r(5));
       if (first) { solids.push({ x, z, y, r: 0.3 * s, h: 3.5 * s }); leaves.push([x, y + 4.4 * s, z, 1.9 * s]); }
     } else if (r(6) < (y > 12 || slope > 0.8 ? 0.2 : 0.07)) {
       const size = 0.35 + r(7) ** 2 * 1.9;
-      boulder([x, y - 0.1 - Math.min(slope, 1) * size * 0.6, z], size, r(5));        // sunk in, so none hang off a slope
-      if (size > 0.6 && first) solids.push({ x, z, y, r: size * 0.85, h: size });
+      const base = y - 0.1 - Math.min(slope, 1) * size * 0.6;                         // sunk in, so none hang off a slope
+      const rock = boulder([x, base, z], size, r(5)), high = base + rock.top - y;
+      if (size > 0.6 && high > 0.45 && first) solids.push({ x, z, y, r: rock.reach * 0.85, h: high * 0.85, rock: true });
     } else if (slope < 0.7 && y < 16 && r(6) < (woods > 0 ? 0.5 : 0.17)) bush(at, s, r(5));
   }
 
@@ -2640,7 +2644,13 @@ function locomotion(f, mx, my, sprint, dt) {
   f.pos[2] += Math.cos(dir) * pace * dt;
   confine(f);
   cliffs(f, x0, z0);
-  if (f.dead < 0) f.pos[1] = groundAt(f.pos[0], f.pos[2]);
+  if (f.dead < 0) {
+    const floor = groundAt(f.pos[0], f.pos[2]);
+    if (f.pos[1] - floor > 0.3) {                             // stepped off a ledge: fall
+      f.drop = (f.drop || 0) + JUMP.gravity * dt;
+      f.pos[1] = Math.max(floor, f.pos[1] - f.drop * dt);
+    } else { f.pos[1] = floor; f.drop = 0; }
+  }
   if (f.isPlayer && looting) return;
   for (const c of chests) push(f, c.pos, 0.72);
   for (const o of fighters) if (o !== f && o.dead < 0) push(f, o.pos, 0.55);

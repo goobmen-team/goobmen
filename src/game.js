@@ -543,7 +543,13 @@ function locomotion(f, mx, my, sprint, dt) {
   f.pos[2] += Math.cos(dir) * pace * dt;
   confine(f);
   cliffs(f, x0, z0);
-  if (f.dead < 0) f.pos[1] = groundAt(f.pos[0], f.pos[2]);
+  if (f.dead < 0) {
+    const floor = groundAt(f.pos[0], f.pos[2]);
+    if (f.pos[1] - floor > 0.3) {                             // stepped off a ledge: fall
+      f.drop = (f.drop || 0) + JUMP.gravity * dt;
+      f.pos[1] = Math.max(floor, f.pos[1] - f.drop * dt);
+    } else { f.pos[1] = floor; f.drop = 0; }
+  }
   if (f.isPlayer && looting) return;
   for (const c of chests) push(f, c.pos, 0.72);
   for (const o of fighters) if (o !== f && o.dead < 0) push(f, o.pos, 0.55);
