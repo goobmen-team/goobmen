@@ -173,13 +173,38 @@ function solveArm(arm, S, goal) {
   const u = V.norm(V.sub(E, S)), f = V.norm(V.sub(W, E));
   const Ru = M3.frame(Rig.offset[arm.fore], [0, 0, -1], u, side);
   let Rf = M3.frame(Rig.offset[arm.hand], [0, 0, -1], f, side);
-  const restD = [arm.x, 0, 0], Rh = M3.frame(restD, [0, -1, 0], goal.dir, goal.palm);
+  // natural: the hand mostly carries on the line of the forearm (a number: how much of the asked-for angle to keep)
+  let hd = goal.dir, hp = goal.palm;
+  if (goal.natural !== undefined) { hd = V.norm(V.lerp(f, goal.dir || f, goal.natural)); hp = V.orth(goal.palm || [0, -1, 0], hd); }
+  const restD = [arm.x, 0, 0], Rh = M3.frame(restD, [0, -1, 0], hd, hp);
   // share the wrist twist with the forearm so the skin does not wring
   const a0 = V.orth(M3.vec(Rf, [0, 1, 0]), f), a1 = V.orth(M3.vec(Rh, [0, 1, 0]), f);
   const twist = Math.atan2(V.dot(V.cross(a0, a1), f), V.dot(a0, a1));
   Rf = M3.mul(M3.axis(f, clamp(twist, -2.2, 2.2) * 0.65), Rf);
   return [Ru, Rf, Rh];
 }
+
+// an arm posed by its joints, the way an animator keys it, instead of by where the hand should be.
+// All angles in radians, relative to the chest: ab lifts the arm out sideways from hanging (pi/2: straight out),
+// sw swings it forward (pi/2: pointing ahead, pi: straight up), tw turns the elbow out, el bends the elbow (forearm comes
+// forward), wf bends the wrist towards the palm, wr rolls the hand. Arcs and elbows come out natural by themselves.
+function fkArm(arm, chestR, k) {
+  const x = arm.x, c = v => M3.vec(chestR, v);
+  const swing = M3.rx(-(k.sw || 0));
+  let dir = M3.vec(swing, [x * Math.sin(k.ab || 0), -Math.cos(k.ab || 0), 0]);
+  let side = V.norm(V.orth(M3.vec(swing, [0, 0, -1]), dir));          // where the elbow points: behind
+  side = M3.vec(M3.axis(dir, x * (k.tw || 0)), side);
+  const el = k.el || 0, fdir = V.norm(V.sub(V.mul(dir, Math.cos(el)), V.mul(side, Math.sin(el)))), fside = V.norm(V.add(V.mul(side, Math.cos(el)), V.mul(dir, Math.sin(el))));
+  const Ru = M3.frame(Rig.offset[arm.fore], [0, 0, -1], c(dir), c(side));
+  const Rf = M3.frame(Rig.offset[arm.hand], [0, 0, -1], c(fdir), c(fside));
+  let palm = V.norm(M3.vec(M3.axis(fdir, x * (k.wr || 0)), V.cross(fdir, fside).map(v => -v * x)));   // palm towards his body when the arm hangs
+  const wf = k.wf || 0, hdir = V.norm(V.add(V.mul(fdir, Math.cos(wf)), V.mul(palm, Math.sin(wf))));
+  palm = V.norm(V.sub(V.mul(palm, Math.cos(wf)), V.mul(fdir, Math.sin(wf))));
+  const Rh = M3.frame([x, 0, 0], [0, -1, 0], c(hdir), c(palm));
+  return [Ru, Rf, Rh];
+}
+// the same, blended: a = fk keys, then mixed
+const fkMix = (a, b, w) => { const o = {}; for (const key of ['ab', 'sw', 'tw', 'el', 'wf', 'wr']) o[key] = (a[key] || 0) + ((b[key] || 0) - (a[key] || 0)) * w; return o; };
 
 // where the gun is this frame, in the fighter's own space
 function gunTransform(f, g, chestPos) {
@@ -208,8 +233,8 @@ function gunTransform(f, g, chestPos) {
   R = M3.mul(R, M3.mul(M3.rz(0.30 * work - 0.9 * down * (g.draw ? 1 : 0)), M3.rx(0.05 * bp.back)));
   R = M3.mul(R, M3.mul(M3.ry(0.75 * look1 - 0.35 * look2), M3.mul(M3.rx(-0.25 * look1 - 0.45 * look2), M3.rz(-1.0 * look1 + 1.15 * look2))));
   const peer = peerAmount(f);                                 // the gun sags while he stares into the magazine
-  R = M3.mul(R, M3.rx(0.34 * peer));
-  p = V.add(p, [-0.03 * peer, -0.09 * peer, -0.03 * peer]);
+  R = M3.mul(R, M3.rx(0.14 * peer));
+  p = V.add(p, [-0.03 * peer, -0.05 * peer, -0.02 * peer]);
   p = V.add(p, [0.03 * sp + 0.2 * rl, -0.07 * sp - 0.25 * down - 0.03 * rl, -0.03 * rl]);   // and brought in to the middle of his chest, where both hands reach
   p = V.mad(p, aim, -f.kick);
   p = V.add(p, [0.03 * (look1 + look2), 0.05 * (look1 + look2) + 0.012 * work, -0.04 * work]);
@@ -296,7 +321,7 @@ function poseFighter(f) {
         else if (i === l.foot) wr[i] = M3.mix(wr[i], leg.foot, J.w);
         if (!g && !punching) {
           const arm = J.arms[s];
-          if (i === a.up) { jumpIK[s] = solveArm(a, wp[i], arm); wr[i] = M3.mix(wr[i], jumpIK[s][0], J.w); }
+          if (i === a.up) { jumpIK[s] = arm.fk ? fkArm(a, wr[IDX.chest], arm.fk) : solveArm(a, wp[i], arm); wr[i] = M3.mix(wr[i], jumpIK[s][0], J.w); }
           else if (i === a.fore) wr[i] = M3.mix(wr[i], jumpIK[s][1], J.w);
           else if (i === a.hand) wr[i] = M3.mix(wr[i], jumpIK[s][2], J.w);
         }

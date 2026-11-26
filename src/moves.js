@@ -55,18 +55,19 @@ function jumpShape(f) {
     }
     const spread = flow([[0, 0], [D, 0], [D + 0.07, 0.04], [E, 0]], t);
     shape.legs[s] = { ankle: V.add(rest, [x * spread, up, fwd]), foot: M3.rx(toe), pole: [x * 0.3, 0, 1] };
-    // arms: back on the dip, forward and up to chest height as he goes, out a little at the top, forward for the landing
+    // arms, by their joints: relaxed, back on the dip, swung forward and up as he goes, out a little at the top, forward and
+    // bent for the landing. Running, they swing opposite the legs.
+    const K = (ab, sw, el, wf) => ({ ab, sw, el, wf, tw: 0.15 });
     let keys;
     if (moving) {
       const o = (lead ? -1 : 1) * way;                                // the arm opposite the lead leg goes forward
-      keys = [[0, [x * 0.44, 0.68, 0.03]], [P, [x * 0.44, 0.7, 0.0]], [at(0.3), [x * 0.42, 1.05 + 0.15 * Math.max(0, o), 0.3 * o]], [at(0.7), [x * 0.5, 1.0, 0.18 * o]], [D, [x * 0.5, 0.9, 0.1]], [D + 0.08, [x * 0.46, 0.8, 0.2]], [E, [x * 0.44, 0.68, 0.03]]];
+      keys = [[0, K(0.15, 0.05, 0.4, 0)], [P, K(0.18, 0.1 * o, 0.55, 0)], [at(0.22), K(0.3, 0.75 * o + 0.1, 0.8, 0.1)], [at(0.6), K(0.55, 0.35 * o + 0.1, 0.6, 0)], [D, K(0.6, 0.15, 0.45, 0)], [D + 0.08, K(0.3, 0.35, 0.7, 0)], [E, K(0.15, 0.05, 0.4, 0)]];
     } else {
-      keys = [[0, [x * 0.44, 0.68, 0.03]], [P, [x * 0.4, 0.72, -0.24]], [at(0.22), [x * 0.36, 1.2, 0.34]], [at(0.55), [x * 0.52, 1.18, 0.2]], [at(0.9), [x * 0.54, 1.02, 0.18]], [D + 0.08, [x * 0.42, 0.84, 0.3]], [E, [x * 0.44, 0.68, 0.03]]];
+      keys = [[0, K(0.15, 0.05, 0.3, 0)], [P, K(0.22, -0.6, 0.25, -0.1)], [at(0.14), K(0.3, 0.95, 0.45, 0.1)], [at(0.42), K(0.75, 0.3, 0.4, 0)], [at(0.82), K(0.8, 0.15, 0.3, 0)], [D + 0.07, K(0.35, 0.4, 0.65, 0.1)], [E, K(0.15, 0.05, 0.3, 0)]];
     }
-    const wrist = flow(keys, t);
-    const along = V.sub(wrist, [x * 0.22, 1.42, -0.02]);
-    const dir = V.len(along) > 0.12 ? V.norm(V.add(along, [0, -0.15, 0])) : [x * 0.3, -0.9, 0.2];
-    shape.arms[s] = { wrist, dir, palm: V.orth([-x, -0.6, 0.2], dir), pole: [x, -0.4, -0.6], curl: [0.75, 0.8] };   // loose fists
+    const fk = {};
+    for (const key of ['ab', 'sw', 'el', 'wf', 'tw']) fk[key] = flow(keys.map(([kt, kv]) => [kt, kv[key]]), t);
+    shape.arms[s] = { fk, curl: [0.75, 0.8] };
   }
   return shape;
 }
