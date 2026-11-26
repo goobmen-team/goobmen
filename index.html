@@ -620,7 +620,9 @@ const heights = new Float32Array((GRID.n + 1) * (GRID.n + 1));
 for (let j = 0; j <= GRID.n; j++) for (let i = 0; i <= GRID.n; i++) heights[j * (GRID.n + 1) + i] = shape(i * GRID.cell - GRID.half, j * GRID.cell - GRID.half);
 
 function groundAt(x, z) {
-  if (world.map !== 'island') return 0;
+  return world.map === 'island' ? groundHeight(x, z) : 0;
+}
+function groundHeight(x, z) {
   const u = (x + GRID.half) / GRID.cell, v = (z + GRID.half) / GRID.cell;
   if (u < 0 || v < 0 || u >= GRID.n || v >= GRID.n) return SEA.floor;
   const i = Math.floor(u), j = Math.floor(v), a = u - i, b = v - j, k = j * (GRID.n + 1) + i;
@@ -739,21 +741,82 @@ function setMap(name) {
 const FOG = `
 uniform vec3 uSky;
 vec3 fogged(vec3 col, vec3 w) { return mix(col, uSky, smoothstep(90.0, 420.0, length(w - uEye))); }`;
+// ground and plants share one shader: the colour comes from the mesh, the fine grain is made up here
 const landProg = program(`layout(location=0) in vec3 aPos; layout(location=1) in vec3 aCol; layout(location=2) in vec3 aNrm; uniform mat4 uViewProj; out vec3 vW; out vec3 vC; out vec3 vN;
 void main() { vW = aPos; vC = aCol; vN = aNrm; gl_Position = uViewProj * vec4(aPos, 1.0); }`, `
 in vec3 vW; in vec3 vC; in vec3 vN; out vec4 o;
+uniform int uKind;                                          // 0 the ground, 1 things standing on it
+uniform highp sampler2DShadow uBaked; uniform mat4 uBakedLight;
 ${COMMON}
 ${FOG}
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float hash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 float noise(vec2 p) {
   vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
 }
+// distance to the nearest of a scatter of points, and a random number for that one
+vec2 stones(vec2 p) {
+  vec2 i = floor(p), f = fract(p), best = vec2(9.0, 0.0);
+  for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) {
+    vec2 c = vec2(x, y), at = c + vec2(hash(i + c), hash(i + c + 19.7));
+    float d = length(at - f);
+    if (d < best.x) best = vec2(d, hash(i + c + 41.3));
+  }
+  return best;
+}
+// shadows of the whole island, drawn once
+float bakedShadow(vec3 w) {
+  vec4 q = uBakedLight * vec4(w, 1.0); vec3 p = q.xyz / q.w * 0.5 + 0.5;
+  if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0 || p.z > 1.0) return 1.0;
+  float sum = 0.0; vec2 t = 1.0 / vec2(textureSize(uBaked, 0));
+  for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) sum += texture(uBaked, vec3(p.xy + vec2(x, y) * t * 1.2, p.z - 0.0008));
+  return sum / 9.0;
+}
 void main() {
-  vec3 col = vC * (0.86 + 0.18 * noise(vW.xz * 1.7) + 0.12 * noise(vW.xz * 0.23));
-  vec3 N = normalize(vN);
-  col *= (0.50 + 0.65 * max(dot(N, uSun), 0.0)) * mix(0.56, 1.0, shadowAt(vW));
-  col += flashLight(vW, vec3(0.0, 1.0, 0.0)) * 0.35;
+  vec3 N = normalize(vN), col = vC;
+  float far = length(vW - uEye), near = 1.0 - smoothstep(14.0, 55.0, far);   // fine grain fades out before it can shimmer
+  if (uKind == 0) {
+    vec2 p = vW.xz;
+    float sat = max(col.r, max(col.g, col.b)) - min(col.r, min(col.g, col.b));
+    float rock = 1.0 - smoothstep(0.10, 0.19, sat);
+    float sand = (1.0 - rock) * smoothstep(0.62, 0.74, col.r);
+    float grass = (1.0 - rock) * (1.0 - sand) * smoothstep(-0.10, -0.06, col.g - col.r);
+    float dirt = max(0.0, 1.0 - rock - sand - grass);
+    float broad = noise(p * 0.23), middle = noise(p * 1.1), fine = noise(p * 5.0), grit = noise(p * 17.0);
+    float tone = 0.80 + 0.22 * broad + 0.18 * middle + near * (0.22 * (fine - 0.5) + 0.20 * (grit - 0.5));
+    col *= tone;
+    // grass: streaky blades, bare and yellowed patches, the odd flower
+    float blades = noise(vec2(p.x * 22.0 + 3.0 * middle, p.y * 6.0)) * noise(vec2(p.x * 6.0, p.y * 22.0 - 3.0 * fine));
+    col *= 1.0 + grass * near * (blades - 0.27) * 0.7;
+    col = mix(col, col * vec3(1.14, 1.05, 0.84), grass * smoothstep(0.56, 0.80, noise(p * 0.62 + 7.0)));
+    vec2 flower = stones(p * 1.9);
+    col = mix(col, flower.y > 0.975 ? vec3(0.92, 0.85, 0.30) : vec3(0.90, 0.90, 0.86), grass * near * step(0.95, flower.y) * (1.0 - smoothstep(0.07, 0.11, flower.x)));
+    // sand: wind ripples and grains
+    float ripple = sin(p.x * 7.0 + p.y * 2.5 + 5.0 * noise(p * 0.7));
+    col *= 1.0 + sand * near * (0.07 * ripple + 0.22 * (noise(p * 38.0) - 0.5));
+    // pebbles in the dirt and sand
+    vec2 pebble = stones(p * 4.2);
+    float stone = near * (1.0 - smoothstep(0.07 + 0.14 * fract(pebble.y * 3.0), 0.14 + 0.14 * fract(pebble.y * 3.0), pebble.x)) * (dirt * step(0.70, pebble.y) + sand * step(0.975, pebble.y) + grass * step(0.97, pebble.y));
+    col = mix(col, vec3(0.44, 0.40, 0.34) + 0.28 * fract(pebble.y * 7.0), stone);
+    // rock: layers up the cliffs, speckle and cracks
+    float layer = noise(vec2(vW.y * 2.3 + 1.6 * noise(p * 0.35), 3.0));
+    float crack = 1.0 - smoothstep(0.0, 0.07, abs(noise(p * 0.9 + vW.y * 0.8) - 0.5));
+    col *= 1.0 + rock * (0.42 * (layer - 0.5) - 0.30 * crack * (0.4 + 0.6 * near) + near * 0.25 * (noise(vec2(p.x * 9.0, p.y * 9.0 + vW.y * 9.0)) - 0.5));
+    // a bumpy surface for the light to catch
+    vec2 e = vec2(0.09, 0.0);
+    float h0 = noise(p * 2.6) + 0.4 * noise(p * 8.0);
+    float hx = noise((p + e.xy) * 2.6) + 0.4 * noise((p + e.xy) * 8.0), hz = noise((p + e.yx) * 2.6) + 0.4 * noise((p + e.yx) * 8.0);
+    N = normalize(N - vec3(hx - h0, 0.0, hz - h0) * (0.35 + 0.65 * rock) * (0.25 + 0.75 * near));
+  } else {
+    float bark = step(col.g, col.r);                          // trunks and rocks are not greener than they are red
+    float grain = noise(vec2((vW.x + vW.z) * 14.0, vW.y * 3.5));
+    col *= mix(0.84 + 0.32 * noise(vW.xz * 3.0 + vW.y * 2.0), 0.70 + 0.62 * grain, bark);
+  }
+  float sh = min(shadowAt(vW + N * 0.02), bakedShadow(vW + N * 0.22));
+  float sun = max(dot(N, uSun), 0.0);
+  vec3 sky = mix(vec3(0.42, 0.39, 0.34), vec3(0.54, 0.60, 0.72), N.y * 0.5 + 0.5);
+  col *= sky * 0.95 + vec3(0.86, 0.80, 0.66) * sun * sh;
+  col += flashLight(vW, vec3(0.0, 1.0, 0.0)) * col;
   o = vec4(fogged(col, vW), 1.0);
 }`);
 const seaProg = program(`layout(location=0) in vec3 aPos; uniform mat4 uViewProj; out vec3 vW;
@@ -774,21 +837,24 @@ void main() {
   o = vec4(fogged(col, vW), mix(0.62, 1.0, smoothstep(1.0, 12.0, past)));
 }`);
 
-// the grid as a mesh, coloured by height and steepness: sand, grass, bare rock, pale summit
+const SAND = [0.80, 0.70, 0.47], GRASS = [0.31, 0.45, 0.20], LUSH = [0.17, 0.33, 0.13], DRY = [0.45, 0.46, 0.21], DIRT = [0.52, 0.40, 0.25], ROCK = [0.40, 0.36, 0.31], PEAK = [0.66, 0.63, 0.58], DEEP = [0.30, 0.34, 0.27];
+function groundColour(x, z, h, up) {
+  let col = V.lerp(GRASS, LUSH, smooth(-0.1, 0.2, roll(x, z, 29)));
+  col = V.lerp(col, DRY, smooth(0.08, 0.28, roll(x + 90, z, 23)));
+  col = V.lerp(SAND, col, smooth(0.7, 1.5, h));
+  col = V.lerp(col, DIRT, smooth(7, 4, pathDistance(x, z, GORGE)));
+  col = V.lerp(col, ROCK, Math.max(smooth(0.17, 0.30, 1 - up), smooth(17, 21, h)));
+  col = V.lerp(col, PEAK, smooth(24, 28, h));
+  return V.lerp(col, DEEP, smooth(0, 0.8, -h));
+}
+// the grid as a mesh
 const land = (() => {
   const n = GRID.n, row = n + 1, v = [], idx = [];
-  const SAND = [0.80, 0.70, 0.47], GRASS = [0.31, 0.45, 0.20], LUSH = [0.17, 0.33, 0.13], DRY = [0.55, 0.52, 0.24], DIRT = [0.52, 0.40, 0.25], ROCK = [0.40, 0.36, 0.31], PEAK = [0.66, 0.63, 0.58], DEEP = [0.30, 0.34, 0.27];
   const at = (i, j) => heights[clamp(j, 0, n) * row + clamp(i, 0, n)];
   for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
     const h = at(i, j), nrm = V.norm([at(i - 1, j) - at(i + 1, j), 2 * GRID.cell, at(i, j - 1) - at(i, j + 1)]);
     const x = i * GRID.cell - GRID.half, z = j * GRID.cell - GRID.half;
-    let col = V.lerp(GRASS, LUSH, smooth(-0.1, 0.2, roll(x, z, 29)));
-    col = V.lerp(col, DRY, smooth(0.08, 0.28, roll(x + 90, z, 23)));
-    col = V.lerp(SAND, col, smooth(0.7, 1.5, h));
-    col = V.lerp(col, DIRT, smooth(7, 4, pathDistance(x, z, GORGE)));
-    col = V.lerp(col, ROCK, Math.max(smooth(0.17, 0.30, 1 - nrm[1]), smooth(17, 21, h)));
-    col = V.lerp(col, PEAK, smooth(24, 28, h));
-    col = V.lerp(col, DEEP, smooth(0, 0.8, -h));
+    const col = groundColour(x, z, h, nrm[1]);
     v.push(x, h, z, ...col, ...nrm);
   }
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const k = j * row + i; idx.push(k, k + row + 1, k + 1, k, k + row, k + row + 1); }
@@ -798,46 +864,137 @@ const land = (() => {
   gl.bindVertexArray(null);
   return { vao, count: idx.length };
 })();
-// ---------------------------------------------------------------- trees and rocks
+// ---------------------------------------------------------------- trees, bushes, rocks and grass
 const solids = [], leaves = [];                              // what you bump into, what the camera avoids
+// built in square patches, so only the ones in view get drawn
+const PATCH = 44, patches = new Map();
 const flora = (() => {
-  const v = [], idx = [];
-  const add = (m, at, col, R) => {                           // m: pos, normal, uv from the mesh helpers
-    const base = v.length / 9;
-    for (let k = 0; k < m.v.length; k += 8) {
-      let p = [m.v[k], m.v[k + 1], m.v[k + 2]], n = [m.v[k + 3], m.v[k + 4], m.v[k + 5]];
+  let cur = null, seed = 1;
+  const rnd = (a, b) => { seed = seed * 16807 % 2147483647; return a + (b - a) * seed / 2147483647; };
+  const patch = (x, z) => {
+    const i = Math.floor((x + GRID.half) / PATCH), j = Math.floor((z + GRID.half) / PATCH), key = i * 100 + j;
+    if (!patches.has(key)) patches.set(key, { x: (i + 0.5) * PATCH - GRID.half, z: (j + 0.5) * PATCH - GRID.half, big: { v: [], i: [] }, grass: { v: [], i: [] } });
+    return patches.get(key);
+  };
+  const vert = (m, p, col, n) => { m.v.push(p[0], p[1], p[2], col[0], col[1], col[2], n[0], n[1], n[2]); };
+  const add = (mesh, at, col, R) => {                        // mesh: pos, normal, uv from the mesh helpers
+    const m = cur.big, base = m.v.length / 9;
+    for (let k = 0; k < mesh.v.length; k += 8) {
+      let p = [mesh.v[k], mesh.v[k + 1], mesh.v[k + 2]], n = [mesh.v[k + 3], mesh.v[k + 4], mesh.v[k + 5]];
       if (R) { p = M3.vec(R, p); n = M3.vec(R, n); }
-      v.push(at[0] + p[0], at[1] + p[1], at[2] + p[2], ...col, ...n);
+      vert(m, V.add(at, p), col, n);
     }
-    for (const i of m.i) idx.push(base + i);
+    for (const i of mesh.i) m.i.push(base + i);
   };
-  const trunk = (r0, r1, h, lean) => {
-    const m = { v: [], i: [] }, n = 6;
+  // a tapering limb from a to b
+  const limb = (a, b, r0, r1, col, sides) => {
+    const m = cur.big, base = m.v.length / 9, n = sides || 7;
+    const y = V.norm(V.sub(b, a)), x = V.norm(V.cross(y, Math.abs(y[1]) > 0.95 ? [1, 0, 0] : [0, 1, 0])), z = V.cross(x, y);
     for (let k = 0; k <= n; k++) {
-      const a = k / n * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
-      m.v.push(c * r0, 0, s * r0, c, 0, s, 0, 0, c * r1 + lean, h, s * r1, c, 0, s, 0, 0);
+      const t = k / n * Math.PI * 2, d = V.add(V.mul(x, Math.cos(t)), V.mul(z, Math.sin(t)));
+      vert(m, V.mad(a, d, r0), col, d); vert(m, V.mad(b, d, r1), col, d);
     }
-    for (let k = 0; k < n; k++) { const p = k * 2; m.i.push(p, p + 1, p + 2, p + 2, p + 1, p + 3); }
-    return m;
+    for (let k = 0; k < n; k++) { const q = base + k * 2; m.i.push(q, q + 1, q + 2, q + 2, q + 1, q + 3); }
   };
-  const BARK = [0.24, 0.15, 0.08], PALM = [0.45, 0.33, 0.18];
-  const palm = (at, s, turn) => {
-    const lean = 0.9 * s, R = M3.ry(turn), h = 4.6 * s;
-    add(trunk(0.22 * s, 0.13 * s, h, lean), at, PALM, R);
-    const top = V.add(at, M3.vec(R, [lean, h, 0]));
-    for (let k = 0; k < 6; k++) add(blob(0.34 * s, 0.05 * s, 1.5 * s, [0, 0, 1.35 * s], 0, 6), top, [0.13, 0.40 + (k % 2) * 0.07, 0.10], M3.mul(M3.ry(k * 1.05 + turn), M3.rx(0.38)));
-    add(blob(0.22 * s, 0.2 * s, 0.22 * s, [0, -0.15 * s, 0], 0, 6), top, BARK);
+  // a single pointed leaf: it starts at `from`, runs along `along` and is as wide as `side`
+  const leaf = (from, along, side, col, nrm) => {
+    const m = cur.big, base = m.v.length / 9, mid = V.mad(from, along, 0.45);
+    for (const p of [from, V.add(mid, side), V.add(from, along), V.sub(mid, side)]) vert(m, p, col, nrm);
+    m.i.push(base, base + 1, base + 2, base, base + 2, base + 3);
   };
-  const pine = (at, s, shade) => {
-    add(trunk(0.26 * s, 0.16 * s, 3.4 * s, 0), at, BARK);
-    for (let k = 0; k < 3; k++) add(coneData((1.8 - k * 0.45) * s, (2.1 - k * 0.2) * s, 9), [at[0], at[1] + (3.0 + k * 1.15) * s, at[2]], [0.07 + shade * 0.04, 0.25 + shade * 0.1, 0.11]);
+  const anyway = () => V.norm([rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)]);
+  const shadeOf = (col, k) => [col[0] * k, col[1] * k, col[2] * k];
+  // a ball of leaves with a darker heart, ragged round the edge
+  const clump = (c, r, count, size, col) => {
+    add(blob(r * 0.58, r * 0.48, r * 0.58, [0, 0, 0], 0.5, 6), c, shadeOf(col, 0.6));
+    for (let k = 0; k < count; k++) {
+      const d = anyway(), at = V.add(c, [d[0] * r * rnd(0.6, 1.02), d[1] * r * 0.8 * rnd(0.6, 1.02), d[2] * r * rnd(0.6, 1.02)]);
+      const along = V.norm(V.add(anyway(), V.mul(d, 0.7))), side = V.norm(V.cross(along, anyway()));
+      leaf(at, V.mul(along, size * rnd(0.8, 1.3)), V.mul(side, size * 0.34), shadeOf(col, rnd(0.8, 1.3) * (0.92 + 0.18 * d[1])), V.norm(V.add(d, [0, 0.35, 0])));
+    }
   };
+  const BARK = [0.27, 0.17, 0.10], PALM = [0.46, 0.34, 0.19];
+
   const leafy = (at, s, shade) => {
-    add(trunk(0.3 * s, 0.2 * s, 4.0 * s, 0), at, BARK);
-    for (const [x, y, z, r] of [[0, 4.8, 0, 1.6], [0.9, 4.3, 0.3, 1.0], [-0.8, 4.4, -0.5, 1.1]])
-      add(blob(r * s, r * 0.8 * s, r * s, [x * s, y * s, z * s], 0.25, 7), at, [0.16 + shade * 0.08, 0.36 + shade * 0.08, 0.08]);
+    const up = (x, y, z) => V.add(at, [x * s, y * s, z * s]), col = [0.15 + shade * 0.10, 0.37 + shade * 0.09, 0.09];
+    const bend = [rnd(-0.25, 0.25), rnd(-0.25, 0.25)];
+    limb(up(0, 0, 0), up(0, 0.55, 0), 0.52 * s, 0.31 * s, BARK, 9);
+    limb(up(0, 0.55, 0), up(bend[0], 2.5, bend[1]), 0.31 * s, 0.24 * s, BARK, 9);
+    limb(up(bend[0], 2.5, bend[1]), up(0, 4.3, 0), 0.24 * s, 0.13 * s, BARK);
+    for (let k = 0; k < 4; k++) {                             // roots
+      const a = k * 1.6 + rnd(0, 0.7);
+      limb(up(0, 0.4, 0), up(Math.cos(a) * 0.75, -0.05, Math.sin(a) * 0.75), 0.17 * s, 0.03 * s, BARK, 5);
+    }
+    const start = rnd(0, 6.3);
+    for (let k = 0; k < 5; k++) {                             // boughs, each carrying its own leaves
+      const a = start + k * 1.26 + rnd(-0.25, 0.25), reach = rnd(1.1, 1.8), high = rnd(3.7, 5.0), from = up(bend[0] * 0.8, rnd(2.4, 3.4), bend[1] * 0.8);
+      const knee = up(Math.cos(a) * reach * 0.55, high - 0.65, Math.sin(a) * reach * 0.55), end = up(Math.cos(a) * reach, high, Math.sin(a) * reach);
+      limb(from, knee, 0.13 * s, 0.09 * s, BARK, 5); limb(knee, end, 0.09 * s, 0.03 * s, BARK, 5);
+      clump(end, rnd(0.8, 1.1) * s, 75, 0.34 * s, col);
+    }
+    clump(up(0, 5.2, 0), 1.3 * s, 120, 0.34 * s, col);
   };
-  const boulder = (at, s, shade) => add(blob(s, s * 0.75, s * 0.9, [0, s * 0.3, 0], 0.5, 7), at, [0.34 + shade * 0.1, 0.32 + shade * 0.09, 0.29 + shade * 0.08], M3.ry(shade * 20));
+
+  const pine = (at, s, shade) => {
+    const up = (x, y, z) => V.add(at, [x * s, y * s, z * s]), col = [0.07 + shade * 0.05, 0.25 + shade * 0.09, 0.13];
+    limb(up(0, 0, 0), up(0, 0.5, 0), 0.42 * s, 0.27 * s, BARK, 8);
+    limb(up(0, 0.5, 0), up(0, 7.4, 0), 0.27 * s, 0.03 * s, BARK, 8);
+    const TIERS = 10;
+    for (let t = 0; t < TIERS; t++) {
+      const u = t / TIERS, y = 2.25 + t * 0.52, reach = 2.2 * (1 - u * 0.82) * rnd(0.9, 1.1), turn = rnd(0, 6.3), arms = 9;
+      for (let k = 0; k < arms; k++) {
+        const a = turn + k * Math.PI * 2 / arms + rnd(-0.18, 0.18), out = [Math.cos(a), 0, Math.sin(a)], across = [-out[2], 0, out[0]];
+        const len = reach * rnd(0.78, 1.12), drop = rnd(0.25, 0.5), from = up(0, y + rnd(-0.1, 0.1), 0);
+        const nrm = V.norm([out[0] * 0.55, 0.85, out[2] * 0.55]), tip = shadeOf(col, rnd(0.85, 1.3));
+        leaf(from, V.mul([out[0], -drop, out[2]], len * s), V.mul(across, len * 0.17 * s), tip, nrm);
+        for (const side of [-1, 1]) for (const v of [0.28, 0.55]) {       // needles off each side of the bough
+          const root = V.add(from, V.mul([out[0], -drop, out[2]], len * v * s));
+          const dir = V.norm([out[0] + across[0] * side * 0.9, -drop - 0.15, out[2] + across[2] * side * 0.9]);
+          leaf(root, V.mul(dir, len * 0.42 * s), V.mul(V.norm(V.cross(dir, [0, 1, 0])), len * 0.07 * s), shadeOf(tip, 0.9), nrm);
+        }
+      }
+    }
+    for (let k = 0; k < 6; k++) leaf(up(0, 7.1, 0), V.mul([Math.cos(k) * 0.28, 0.75, Math.sin(k) * 0.28], s), V.mul([-Math.sin(k), 0, Math.cos(k)], 0.1 * s), col, V.norm([Math.cos(k), 0.6, Math.sin(k)]));
+  };
+
+  const palm = (at, s, turn) => {
+    const R = M3.ry(turn), lean = rnd(0.7, 1.5), h = rnd(4.4, 5.4);
+    const spine = u => V.add(at, M3.vec(R, [lean * u * u * s, h * u * s, 0]));
+    const SEGS = 11;
+    for (let k = 0; k < SEGS; k++) {                          // ringed trunk, each ring flaring at the top
+      const r = (0.25 - 0.11 * k / SEGS) * s;
+      limb(spine(k / SEGS), spine((k + 1) / SEGS), r * 0.88, r * 1.13, shadeOf(PALM, k % 2 ? 1.08 : 0.9), 8);
+    }
+    const top = spine(1);
+    for (let f = 0; f < 10; f++) {
+      const a = turn + f * Math.PI * 0.2 + rnd(-0.2, 0.2), rise = f % 2 ? rnd(0.5, 0.9) : rnd(0.0, 0.4), len = rnd(2.4, 3.1) * s;
+      const out = [Math.cos(a), 0, Math.sin(a)], across = [-out[2], 0, out[0]], col = [0.14, rnd(0.36, 0.50), 0.09];
+      const at_ = u => V.add(top, [out[0] * len * u, len * (rise * u - 0.95 * u * u), out[2] * len * u]);
+      for (let k = 0; k < 9; k++) {
+        const u = k / 9, here = at_(u), next = at_(u + 1 / 9), ahead = V.norm(V.sub(next, here));
+        limb(here, next, 0.035 * s * (1 - u * 0.7), 0.035 * s * (1 - (u + 0.11) * 0.7), [0.30, 0.40, 0.10], 4);
+        const wide = (0.9 - 0.5 * u) * s;
+        for (const side of [-1, 1]) {
+          const dir = V.norm(V.add(V.mul(across, side), V.add(V.mul(ahead, 0.75), [0, -0.35, 0])));
+          leaf(here, V.mul(dir, wide), V.mul(ahead, 0.17 * s), shadeOf(col, rnd(0.85, 1.2)), V.norm([out[0] * 0.3, 1, out[2] * 0.3]));
+        }
+      }
+    }
+    for (let k = 0; k < 4; k++) add(blob(0.15 * s, 0.17 * s, 0.15 * s, [0, 0, 0], 0.1, 6), V.add(top, [Math.cos(k * 1.7) * 0.2 * s, -0.22 * s, Math.sin(k * 1.7) * 0.2 * s]), [0.24, 0.15, 0.06]);
+  };
+
+  const bush = (at, s, shade) => {
+    const col = [0.17 + shade * 0.12, 0.34 + shade * 0.12, 0.08];
+    for (let k = 0; k < 3; k++) clump(V.add(at, [rnd(-0.45, 0.45) * s, rnd(0.25, 0.5) * s, rnd(-0.45, 0.45) * s]), rnd(0.35, 0.55) * s, 32, 0.2 * s, col);
+  };
+  const boulder = (at, s, shade) => {
+    const col = [0.37 + shade * 0.10, 0.34 + shade * 0.09, 0.30 + shade * 0.08];
+    add(blob(s, s * 0.75, s * 0.9, [0, s * 0.3, 0], 0.55, 11), at, col, M3.ry(shade * 20));
+    for (let k = 0; k < 3; k++) {                             // rubble round the foot
+      const a = rnd(0, 6.3), r = s * rnd(0.12, 0.3);
+      add(blob(r, r * 0.7, r, [0, r * 0.3, 0], 0.6, 6), V.add(at, [Math.cos(a) * s * 1.1, 0.1, Math.sin(a) * s * 1.1]), shadeOf(col, rnd(0.85, 1.1)), M3.ry(a));
+    }
+  };
 
   // one chance every few metres, nudged about; woods grow where the noise says so
   const STEP = 5.5;
@@ -845,11 +1002,12 @@ const flora = (() => {
     const r = k => bump(i * 3 + k * 17, j * 5 - k * 11);
     const x = (i + r(1) - 0.5) * STEP, z = (j + r(2) - 0.5) * STEP, e = pastCoast(x, z);
     if (e > -4 || Math.hypot(x, z) < 17 || pathDistance(x, z, GORGE) < 5) continue;
-    const y = shape(x, z), slope = Math.hypot(shape(x + 1, z) - y, shape(x, z + 1) - y), s = 0.75 + r(3) * 0.6, at = [x, y - 0.15, z];
+    const y = groundHeight(x, z), slope = Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y), s = 0.75 + r(3) * 0.6, at = [x, y - 0.15, z];
     const woods = roll(x - 50, z + 30, 31);
+    cur = patch(x, z); seed = 1 + Math.floor(r(8) * 2147483000);
     if (e > -22 && y < 3) {
       if (r(4) < 0.2) { palm(at, s, r(5) * 6.3); solids.push({ x, z, y, r: 0.24 * s, h: 4.4 * s }); }
-    } else if (slope < 0.8 && y < 18 && r(4) < (woods > 0.04 ? 0.75 : 0.05)) {
+    } else if (slope < 0.8 && y < 18 && r(4) < (woods > 0.04 ? 0.7 : 0.05)) {
       (woods > 0.17 || y > 9 ? pine : leafy)(at, s, r(5));
       solids.push({ x, z, y, r: 0.3 * s, h: 3.5 * s });
       leaves.push([x, y + 4.4 * s, z, 1.9 * s]);
@@ -857,19 +1015,64 @@ const flora = (() => {
       const size = 0.35 + r(7) ** 2 * 1.9;
       boulder(at, size, r(5));
       if (size > 0.6) solids.push({ x, z, y, r: size * 0.85, h: size });
+    } else if (slope < 0.7 && y < 16 && r(6) < (woods > 0 ? 0.5 : 0.17)) bush(at, s, r(5));
+  }
+
+  // tufts of grass wherever the ground is green
+  const CELL = 1.5, half = Math.floor(135 / CELL);
+  for (let i = -half; i <= half; i++) for (let j = -half; j <= half; j++) {
+    const r = k => bump(i * 7 + k * 13, j * 3 + k * 29);
+    const x = (i + r(1) - 0.5) * CELL, z = (j + r(2) - 0.5) * CELL, y = groundHeight(x, z);
+    if (y < 1.4 || y > 16 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7 || r(3) < 0.22) continue;
+    if (Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y) > 0.6) continue;
+    const m = patch(x, z).grass, col = groundColour(x, z, y, 1), tall = 0.13 + r(4) * r(5) * 0.34;
+    for (let k = 0; k < 6; k++) {
+      const a = r(6 + k) * 6.3, d = r(12 + k) * 0.28, bx = x + Math.cos(a) * d, bz = z + Math.sin(a) * d, by = groundHeight(bx, bz) - 0.02;
+      const base = m.v.length / 9, w = 0.022, sx = -Math.sin(a) * w, sz = Math.cos(a) * w, h = tall * (0.7 + r(18 + k) * 0.6);
+      vert(m, [bx - sx, by, bz - sz], col, [0, 1, 0]); vert(m, [bx + sx, by, bz + sz], col, [0, 1, 0]);
+      vert(m, [bx + Math.cos(a) * h * 0.55, by + h, bz + Math.sin(a) * h * 0.55], [col[0] * 1.15, col[1] * 1.3, col[2] * 1.05], [0, 1, 0]);
+      m.i.push(base, base + 1, base + 2);
     }
   }
-  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
-  attrib(0, new Float32Array(v), 3, gl.FLOAT, false, 36, 0); attrib(1, null, 3, gl.FLOAT, false, 36, 12); attrib(2, null, 3, gl.FLOAT, false, 36, 24);
-  buffer(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(idx));
-  gl.bindVertexArray(null);
-  return { vao, count: idx.length };
+
+  const upload = m => {
+    const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+    attrib(0, new Float32Array(m.v), 3, gl.FLOAT, false, 36, 0); attrib(1, null, 3, gl.FLOAT, false, 36, 12); attrib(2, null, 3, gl.FLOAT, false, 36, 24);
+    buffer(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(m.i));
+    gl.bindVertexArray(null);
+    return { vao, count: m.i.length };
+  };
+  return [...patches.values()].map(p => ({ x: p.x, z: p.z, big: upload(p.big), grass: upload(p.grass) }));
 })();
-// shadows of the trees and rocks
+const drawPart = m => { if (m.count) { gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES, m.count, gl.UNSIGNED_INT, 0); } };
+// moving shadows only cover the ground round you, so only the patches there are needed
 function drawFloraShadow(light, eye) {
   globals(staticDepth, light, light, eye);
   gl.uniformMatrix4fv(staticDepth.u.uModel, false, m4(M3.id(), [0, 0, 0]));
-  gl.bindVertexArray(flora.vao); gl.drawElements(gl.TRIANGLES, flora.count, gl.UNSIGNED_INT, 0);
+  for (const p of flora) if (Math.hypot(p.x - player.pos[0], p.z - player.pos[2]) < PATCH * 0.75 + 16) drawPart(p.big);
+}
+
+// ---------------------------------------------------------------- shadows of the whole island
+// the land and everything on it never moves, so its shadows are drawn once, the first time they are needed
+let baked = null;
+function bakeShadows() {
+  const SIZE = Math.min(4096, gl.getParameter(gl.MAX_TEXTURE_SIZE));
+  const tex = gl.createTexture(); gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, SIZE, SIZE, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE], [gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  const fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, tex, 0); gl.drawBuffers([gl.NONE]);
+  const light = mul4(ortho(GRID.half, GRID.half, 1, 500), lookAt(V.mul(SUN, 250), [0, 0, 0]));
+  gl.viewport(0, 0, SIZE, SIZE); gl.clear(gl.DEPTH_BUFFER_BIT);
+  globals(staticDepth, light, light, [0, 0, 0]);
+  gl.uniformMatrix4fv(staticDepth.u.uModel, false, m4(M3.id(), [0, 0, 0]));
+  drawPart(land);
+  for (const p of flora) drawPart(p.big);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fbo);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, tex);       // it stays on unit 4
+  return { tex, light };
 }
 const seaVao = (() => {
   const vao = gl.createVertexArray(), S = 900, y = SEA.level; gl.bindVertexArray(vao);
@@ -877,9 +1080,20 @@ const seaVao = (() => {
   gl.bindVertexArray(null); return vao;
 })();
 function drawLand(vp, light, eye) {
+  if (!baked) baked = bakeShadows();
   globals(landProg, vp, light, eye); gl.uniform3fv(landProg.u.uSky, SKY.island);
-  gl.bindVertexArray(land.vao); gl.drawElements(gl.TRIANGLES, land.count, gl.UNSIGNED_INT, 0);
-  gl.bindVertexArray(flora.vao); gl.drawElements(gl.TRIANGLES, flora.count, gl.UNSIGNED_INT, 0);
+  gl.uniform1i(landProg.u.uBaked, 4); gl.uniformMatrix4fv(landProg.u.uBakedLight, false, baked.light);
+  gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, baked.tex);
+  gl.uniform1i(landProg.u.uKind, 0); drawPart(land);
+  gl.uniform1i(landProg.u.uKind, 1);
+  // skip the patches behind you or off to the side; grass is only drawn close by
+  const R = PATCH * 0.75;
+  for (const p of flora) {
+    const x = vp[0] * p.x + vp[4] * 8 + vp[8] * p.z + vp[12], w = vp[3] * p.x + vp[7] * 8 + vp[11] * p.z + vp[15];
+    if (w < -R || Math.abs(x) > Math.max(w, 0) + R * 2.5) continue;
+    drawPart(p.big);
+    if (Math.hypot(p.x - eye[0], p.z - eye[2]) < 45 + R) drawPart(p.grass);
+  }
 }
 // after everything solid, so legs show through the water
 function drawSea(vp, light, eye) {
