@@ -61,7 +61,7 @@ function edgeOf(o, x, z) {
 function pushSolids(f, pad) {
   const p = f.pos;
   for (const o of solidsNear(p[0], p[2])) {
-    if (p[1] > o.y + o.h - 0.2 || (o.thin && p[1] < o.y - 0.6)) continue;   // above it, or under a bridge rail
+    if (p[1] > o.y + o.h - 0.2 || p[1] < o.y - 2.5 || (o.thin && p[1] < o.y - 0.6)) continue;   // above it, or under a bridge rail
     const e = edgeOf(o, p[0], p[2]);
     if (e.d >= pad) continue;
     const dx = p[0] - e.at[0], dz = p[2] - e.at[1], len = Math.hypot(dx, dz);
@@ -86,7 +86,7 @@ function solidHit(origin, dir) {
   let best = Infinity;
   if (a < 1e-6) return best;
   for (const o of solids) {
-    if (o.thin) continue;
+    if (o.thin || o.wall) continue;
     const x = origin[0] - o.x, z = origin[2] - o.z, b = x * dir[0] + z * dir[2], disc = b * b - a * (x * x + z * z - o.r * o.r);
     if (disc < 0 || (-b + Math.sqrt(disc)) < 0) continue;
     const near = (-b - Math.sqrt(disc)) / a;
@@ -143,7 +143,7 @@ const CHEST_AREAS = [
 // level ground, room to stand in front of the lid, nothing growing through it
 function goodChestSpot(x, z, taken) {
   if (Math.hypot(x, z) < 34 || pastCoast(x, z) > -7 || !reachMap().has(x, z)) return false;
-  if (riverDistance(x, z) < RIVER.bank + 2 || nearBridge(x, z, 3)) return false;
+  if (riverDistance(x, z) < RIVER.bank + 2 || nearBridge(x, z, 3) || caveAt(x, z, 2) || caveClear(x, z)) return false;
   const y = groundHeight(x, z);
   if (y < 1.0) return false;
   for (const [dx, dz, most] of [[0.6, 0, 0.16], [-0.6, 0, 0.16], [0, 0.4, 0.16], [0, -0.4, 0.16], [0, 0.8, 0.2], [0, 1.5, 0.3]])
@@ -163,6 +163,12 @@ function setChests(name) {
   }
   const gun = () => { const r = Math.random(); return r < 0.5 ? 'glock' : r < 0.85 ? 'ak' : 'awp'; };
   const tryAt = (x, z) => { if (goodChestSpot(x, z, chests)) chests.push(newChest(gun(), x, z)); };
+  // one or two at the back of every cave, with better odds of the rifles
+  for (const c of CAVES) {
+    const mid = c.x + c.bend, z = c.z - CAVE.end + 2.6, rare = () => (Math.random() < 0.45 ? 'awp' : 'ak');
+    chests.push(newChest(rare(), mid + rand(-0.4, 0.4), z));
+    if (Math.random() < 0.5) chests.push(newChest(rare(), mid + (Math.random() < 0.5 ? -2.2 : 2.2), z + 1.8));
+  }
   for (const [ax, az, radius, count] of CHEST_AREAS) {
     const want = Math.min(CHEST_COUNT, chests.length + count);
     for (let k = 0; k < count * 80 && chests.length < want; k++) {
@@ -182,7 +188,7 @@ function enemySpot(avoid) {
   let pick = cells[0];
   for (let k = 0; k < 200; k++) {
     pick = cells[Math.floor(Math.random() * cells.length)];
-    if (Math.hypot(pick[0] - avoid[0], pick[1] - avoid[2]) > 50 && Math.hypot(pick[0], pick[1]) > 45 && pastCoast(pick[0], pick[1]) < -8 && riverDistance(pick[0], pick[1]) > RIVER.bank + 2) break;
+    if (Math.hypot(pick[0] - avoid[0], pick[1] - avoid[2]) > 50 && Math.hypot(pick[0], pick[1]) > 45 && pastCoast(pick[0], pick[1]) < -8 && riverDistance(pick[0], pick[1]) > RIVER.bank + 2 && !caveAt(pick[0], pick[1], 2)) break;
   }
   return [pick[0], walkHeight(pick[0], pick[1]), pick[1]];
 }
@@ -258,7 +264,7 @@ function buildPlaces(T) {
   const post = (x, z, r, h) => { if (first) solids.push({ x, z, y: ground(x, z), r, h }); };
   const GREY = [0.42, 0.40, 0.37], IVORY = [0.80, 0.74, 0.60], HIDE = [0.50, 0.34, 0.20], BARK = [0.27, 0.17, 0.10];
 
-  if (first) addRails();
+  if (first) { addRails(); addCaveWalls(); }
   // the sign in the middle is solid too
   if (first) {
     const y = ground(0, 0), a = [-1.8, y + 0.2, 0.05], b = [1.8, y + 0.2, 0.05], c = [1.8, y + 2.4, 0.05], d = [-1.8, y + 2.4, 0.05];

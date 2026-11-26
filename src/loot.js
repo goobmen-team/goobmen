@@ -124,7 +124,7 @@ function propStep(o, h) {
   let touch = false, hit = 0, deep = 0, n = null;
   const under = [];
   for (const q of o.pts) {
-    const r = M3.vec(o.R, q), x = o.p[0] + r[0], z = o.p[2] + r[2], g = floorAt(x, z), d = g - (o.p[1] + r[1]);
+    const r = M3.vec(o.R, q), x = o.p[0] + r[0], z = o.p[2] + r[2], g = floorAt(x, z, o.p[1] + r[1]), d = g - (o.p[1] + r[1]);
     if (d > -0.004) { under.push(r); if (d > deep) { deep = d; n = groundNormal(x, z); } }
   }
   if (under.length) {

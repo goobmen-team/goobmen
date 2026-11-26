@@ -561,7 +561,7 @@ function locomotion(f, mx, my, sprint, dt) {
   cliffs(f, x0, z0);
   if (!f.isPlayer && inSea(f.pos) && !inSea([x0, 0, z0])) { f.pos[0] = x0; f.pos[2] = z0; }   // enemies stay out of the water
   if (f.dead < 0) {
-    const floor = groundAt(f.pos[0], f.pos[2]);
+    const floor = groundAt(f.pos[0], f.pos[2], f.pos[1]);
     if (f.pos[1] - floor > 0.3) {                             // stepped off a ledge: fall
       f.drop = (f.drop || 0) + JUMP.gravity * dt;
       f.pos[1] = Math.max(floor, f.pos[1] - f.drop * dt);
@@ -618,7 +618,7 @@ function camVectors() {
 function cameraEye() {
   const { fwd, right } = camVectors();
   const at = [player.pos[0] + right[0] * cam.side, player.pos[1] + cam.height + (player.dead < 0 ? player.air * 0.45 : 0), player.pos[2] + right[2] * cam.side];
-  if (world.map === 'island') at[1] = Math.max(at[1], floorAt(at[0], at[2]) + 0.4);     // beside a steep bank
+  if (world.map === 'island') at[1] = Math.max(at[1], floorAt(at[0], at[2], at[1]) + 0.4);     // beside a steep bank
   let dist = cam.dist;
   if (fwd[1] > 0) dist = Math.min(dist, (at[1] - 0.18) / fwd[1]);
   if (world.map === 'island' && !FLY.on) dist = cameraRoom(at, fwd, cam.dist);
@@ -741,7 +741,7 @@ function effectsStep(dt) {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i]; p.life -= dt;
     if (p.life <= 0) { particles.splice(i, 1); continue; }
-    p.v[1] -= p.grav * dt; p.p = V.mad(p.p, p.v, dt); const low = floorAt(p.p[0], p.p[2]) + 0.01; if (p.p[1] < low) { p.p[1] = low; p.v = [0, 0, 0]; }
+    p.v[1] -= p.grav * dt; p.p = V.mad(p.p, p.v, dt); const low = floorAt(p.p[0], p.p[2], p.p[1]) + 0.01; if (p.p[1] < low) { p.p[1] = low; p.v = [0, 0, 0]; }
     if (p.grow) { p.size += p.grow * dt; p.v = V.mul(p.v, Math.exp(-dt * 3)); }
   }
   for (let i = tracers.length - 1; i >= 0; i--) if ((tracers[i].life -= dt) <= 0) tracers.splice(i, 1);
@@ -751,7 +751,7 @@ function effectsStep(dt) {
     if (s.life <= 0) { shells.splice(i, 1); continue; }
     if (s.rest) continue;
     s.v[1] -= 9.8 * dt; s.p = V.mad(s.p, s.v, dt); s.a += dt * 14;
-    const low = floorAt(s.p[0], s.p[2]) + 0.008;
+    const low = floorAt(s.p[0], s.p[2], s.p[1]) + 0.008;
     if (s.p[1] < low) { s.p[1] = low; if (Math.abs(s.v[1]) < 0.7) { s.rest = true; } s.v = [s.v[0] * 0.5, -s.v[1] * 0.35, s.v[2] * 0.5]; }
   }
 }
@@ -937,7 +937,7 @@ function render() {
   const hideSelf = sc > 0.55;
   const sh = cam.shake * cam.shake * 0.012;
   const eye = V.add(view.eye, [rand(-sh, sh), rand(-sh, sh), rand(-sh, sh)]);
-  if (world.map === 'island') eye[1] = Math.max(eye[1], floorAt(eye[0], eye[2]) + 0.18);   // never inside a hill
+  if (world.map === 'island') eye[1] = Math.max(eye[1], floorAt(eye[0], eye[2], eye[1]) + 0.18);   // never inside a hill
   const fov = cam.fov + (0.17 - cam.fov) * smooth(0.45, 1, sc);
   const proj = perspective(fov, w / Math.max(1, h), 0.08, world.map !== 'island' ? 160 : FLY.on ? 2200 : world.low ? 300 : 600);
   const vp = mul4(proj, lookAt(eye, V.add(eye, view.fwd)));
@@ -1055,7 +1055,7 @@ window.__game = {
   ready: true, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
-  resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork,
+  resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE,
   look(eye, at) { testView = eye ? { eye, at } : null; },
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },

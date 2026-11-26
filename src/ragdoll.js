@@ -116,7 +116,7 @@ function ragStep(f, dt) {
       hinges(R);
       if (drag) { const g = R.p[drag.pt], to = drag.to; R.p[drag.pt] = V.lerp(g, to, 0.35); }
       for (let i = 0; i < n; i++) {                               // the ground, and the things standing on it
-        const p = R.p[i], r = def.rad[i], g = floorAt(p[0], p[2]) + r;
+        const p = R.p[i], r = def.rad[i], g = floorAt(p[0], p[2], p[1]) + r;
         if (p[1] < g) {
           const sink = R.q[i][1] - p[1];
           if (sink > fall) fall = sink;
@@ -141,7 +141,7 @@ function ragStep(f, dt) {
     R.thudAt = game.time;
     const vol = clamp(speed / 7, 0.15, 1) * (f.isPlayer ? 1 : 0.6) * clamp(1.4 - V.len(V.sub(R.p[0], player.pos)) / 30, 0.1, 1);
     Sound.play('thud', vol);
-    if (speed > 3.5) puff([R.p[0][0], floorAt(R.p[0][0], R.p[0][2]) + 0.05, R.p[0][2]], 10, [0.52, 0.50, 0.46, 0.7], 1.0, 0.07, 0.5, 1.2);
+    if (speed > 3.5) puff([R.p[0][0], floorAt(R.p[0][0], R.p[0][2], R.p[0][1]) + 0.05, R.p[0][2]], 10, [0.52, 0.50, 0.46, 0.7], 1.0, 0.07, 0.5, 1.2);
   }
   // fall asleep once he has stopped moving
   let move = 0; for (let i = 0; i < n; i++) move = Math.max(move, V.len(V.sub(R.p[i], R.q[i])) / h);
@@ -153,7 +153,7 @@ function ragStep(f, dt) {
   if (Math.hypot(back[0], back[2]) > 0.05) { back = V.norm(back); f.yaw = Math.atan2(-back[0], -back[2]); }
   else back = [-Math.sin(f.yaw), 0, -Math.cos(f.yaw)];
   const x = H[0] - back[0] * 0.72, z = H[2] - back[2] * 0.72;
-  f.pos = [x, floorAt(x, z), z];
+  f.pos = [x, floorAt(x, z, H[1]), z];
 }
 // knees bend forward, elbows bend back: if one went the wrong way, fold it back
 function hinges(R) {

@@ -76,6 +76,63 @@ for (const path of RIVERS) {
   MOUTHS.push(...found[0], ...found[found.length - 1]);      // one at each end
 }
 const bump = (i, j) => { const n = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return n - Math.floor(n); };
+// caves. every mouth faces +z, on ground levelled for it
+const CAVE = { depth: 3.9, half: 1.9, length: 12, room: 4.3, want: 12, cut: 3.4 };    // cut: how deep the doorway is dug in
+CAVE.end = CAVE.length + CAVE.room * 2 - 1.4;
+const CAVES = [];
+// a good spot on a south-facing flank: clear of the water and the landmarks, with ground behind to hold the roof
+function caveSite(x, z, base) {
+  const back = z - CAVE.end / 2;
+  if (Math.hypot(x, back) < 55 || pastCoast(x, back) > -40 || pastCoast(x, z + 10) > -30) return false;
+  if (riverDistance(x, back) < RIVER.valley + 6 || riverDistance(x, z + 6) < RIVER.valley) return false;
+  if (Object.entries(SPOTS).some(([name, [px, pz, r]]) => name !== 'volcano' && Math.hypot(x - px, back - pz) < r + 26)) return false;
+  if (pathDistance(x, back, GORGE) < 28 || pathDistance(x, back, CANYON) < 28) return false;
+  // the ground in front has to fall away so the way in comes out in the open, without becoming a drop
+  const ahead = natural(x, z + 8);
+  if (ahead > base + 0.9 || ahead < base - 2.6) return false;
+  for (const s of [2, 5, 9]) for (const dx of [-2.5, 2.5]) if (natural(x + dx, z - s) < base + 2.4) return false;
+  if (Math.abs(natural(x - 4.5, z) - natural(x + 4.5, z)) > 3.2) return false;
+  return CAVES.every(c => Math.hypot(c.x - x, c.z - z) > 60);
+}
+function findCaves() {
+  const mounds = [[...PEAK_AT, 74], [...TWIN_AT, 48], [SPOTS.volcano[0], SPOTS.volcano[1], 105], [...MESA_AT, 42],
+    ...HILLS.filter(h => h[2] >= 7).map(([x, z, , r]) => [x, z, r])];
+  for (const [hx, hz, r] of mounds) {
+    if (CAVES.length >= CAVE.want) break;
+    search: for (const off of [0, -0.2, 0.2, -0.38, 0.38, -0.55, 0.55]) {
+      const x = hx + off * r;
+      for (let z = hz + r * 1.05; z > hz + 3; z -= 1.2) {      // walk up the south side until it is steep enough
+        const base = natural(x, z) - CAVE.cut;
+        if (base < 3.0 || natural(x, z) - natural(x, z + 6) < 1.1 || !caveSite(x, z, base)) continue;
+        const k = CAVES.length;
+        let lip = 0;
+        for (let s = 0.5; s <= 4.5; s += 0.5) lip = Math.max(lip, natural(x, z - s) - base, 3.7);
+        CAVES.push({ x, z, base, depth: Math.min(CAVE.depth, base - 0.7), lip: lip + 0.4, bend: (bump(k, 911) < 0.5 ? -1 : 1) * (1.2 + bump(k, 1201) * 1.8) });
+        break search;
+      }
+    }
+  }
+}
+// the only change to the land: a cutting up to the mouth, and enough earth over the roof
+function cutCaves(x, z, h) {
+  for (const c of CAVES) {
+    const s = c.z - z, t = Math.abs(x - c.x);
+    if (s < -15 || s > CAVE.end + 5 || t > CAVE.room + 7) continue;
+    if (s < 2.0) {                                             // level a little way in, so no ramp crosses the door
+      // ragged banks, never closer than the doorway is wide
+      const ragged = roll(x, z, 6) * 2.4 * smooth(CAVE.half + 0.4, CAVE.half + 2.0, t);
+      const open = smooth(CAVE.half + 3.8, CAVE.half + 1.0, t + ragged) * smooth(-14, -8, s);
+      // near the door the floor is level; further out only what stands above it is dug away
+      const level = s > -4.5 ? c.base : Math.min(h, c.base);
+      h += (level - h) * open;
+    } else {
+      const need = c.base - c.depth * smooth(1.5, 11.5, s) + 3.8 + 0.8 * smooth(CAVE.length - 1, CAVE.length + 2.5, s);
+      const over = smooth(CAVE.room + 3.5, CAVE.room + 0.8, t) * smooth(CAVE.end + 4, CAVE.end, s);
+      if (need > h) h += (need - h) * over;
+    }
+  }
+  return h;
+}
 function roll(x, z, size) {
   const u = x / size, v = z / size, i = Math.floor(u), j = Math.floor(v), a = smooth(0, 1, u - i), b = smooth(0, 1, v - j);
   return (bump(i, j) * (1 - a) + bump(i + 1, j) * a) * (1 - b) + (bump(i, j + 1) * (1 - a) + bump(i + 1, j + 1) * a) * b - 0.5;
@@ -88,7 +145,8 @@ function pathDistance(x, z, path) {
   }
   return best;
 }
-function shape(x, z) {
+function shape(x, z) { return cutCaves(x, z, natural(x, z)); }
+function natural(x, z) {
   const e = pastCoast(x, z);
   return carveRivers(x, z, e >= 0 ? SEA.floor * clamp(e / SEA.wade, 0, 1) : rawGround(x, z, e), e);
 }
@@ -161,10 +219,11 @@ function rawGround(x, z, e) {
 const GRID = { half: 660, n: 760 };
 GRID.cell = GRID.half * 2 / GRID.n;
 const heights = new Float32Array((GRID.n + 1) * (GRID.n + 1));
+findCaves();
 for (let j = 0; j <= GRID.n; j++) for (let i = 0; i <= GRID.n; i++) heights[j * (GRID.n + 1) + i] = shape(i * GRID.cell - GRID.half, j * GRID.cell - GRID.half);
 
-function groundAt(x, z) {
-  return world.map === 'island' ? walkHeight(x, z) : 0;
+function groundAt(x, z, y) {
+  return world.map === 'island' ? walkHeight(x, z, y) : 0;
 }
 function groundHeight(x, z) {
   const u = (x + GRID.half) / GRID.cell, v = (z + GRID.half) / GRID.cell;
@@ -176,7 +235,7 @@ function groundHeight(x, z) {
 }
 const inSea = p => groundAt(p[0], p[2]) < SEA.level;
 // what loose things come to rest on
-const floorAt = (x, z) => world.map === 'island' ? Math.max(groundAt(x, z), SEA.level) : 0;
+const floorAt = (x, z, y) => world.map === 'island' ? Math.max(groundAt(x, z, y), SEA.level) : 0;
 
 // keeps a fighter on the map: bots stay on land, you can wade out a bit further
 function confine(f) {
@@ -197,8 +256,8 @@ function cliffs(f, x0, z0) {
     const d = Math.hypot(x - x0, z - z0);
     if (d < 1e-5) return false;
     // look a little ahead, so a single frame's tiny step cannot creep up a face
-    const k = Math.max(1, 0.5 / d), y = groundAt(x0 + (x - x0) * k, z0 + (z - z0) * k);
-    return y - groundAt(x0, z0) > STEEP * d * k;
+    const k = Math.max(1, 0.5 / d), y = groundAt(x0 + (x - x0) * k, z0 + (z - z0) * k, f.pos[1]);
+    return y - groundAt(x0, z0, f.pos[1]) > STEEP * d * k;
   };
   const p = f.pos;
   if (!sheer(p[0], p[2])) return;
@@ -215,7 +274,7 @@ function surfaceHit(origin, dir) {
     return Math.abs(p[0]) < HALF && Math.abs(p[2]) < HALF ? { t, kind: 'ground' } : null;
   }
   const solid = solidHit(origin, dir);
-  const under = t => origin[1] + dir[1] * t < floorAt(origin[0] + dir[0] * t, origin[2] + dir[2] * t);
+  const under = t => { const p = V.mad(origin, dir, t); return p[1] < floorAt(p[0], p[2], p[1] + 1) || caveRock(p); };
   for (let last = 0, t = 0.4; t < Math.min(90, solid); last = t, t += 0.4 + t * 0.012) {
     if (!under(t)) continue;
     let lo = last, hi = t;
@@ -235,7 +294,8 @@ function cameraRoom(at, fwd, dist) {
   if (world.map !== 'island') return dist;
   for (let d = 0.2; d <= dist; d += 0.2) {
     const p = V.mad(at, fwd, -d);
-    if (p[1] < floorAt(p[0], p[2]) + 0.2 || leaves.some(c => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]) < c[3])) return Math.max(0.4, d - 0.2);
+    if (caveCamera(p)) return Math.max(0.35, d - 0.25);
+    if (p[1] < floorAt(p[0], p[2], p[1]) + 0.2 || leaves.some(c => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]) < c[3])) return Math.max(0.4, d - 0.2);
   }
   return dist;
 }
@@ -286,6 +346,20 @@ in vec3 vW; in vec3 vC; in vec3 vN; out vec4 o;
 uniform int uKind;                                          // 0 the ground, 1 things standing on it
 uniform int uLow;                                           // optimized: no fine detail, one shadow sample
 uniform highp sampler2DShadow uBaked; uniform mat4 uBakedLight;
+uniform int uCut; uniform vec4 uCaves[12];                  // each cave mouth: x, z, floor height at the door, how far down it goes
+// is this bit of ground standing in the way into a cave?
+bool doorway(vec3 w) {
+  for (int k = 0; k < 12; k++) {
+    vec4 c = uCaves[k];
+    float s = c.y - w.z;
+    if (s < -0.2 || s > 8.0 || abs(w.x - c.x) > 5.0) continue;
+    float rel = w.y - (c.z - c.w * smoothstep(1.5, 11.5, s));
+    if (rel < (s < 0.4 ? 0.06 : -0.4) || rel > 3.9) continue;
+    float across = pow(abs(w.x - c.x) / (2.05 + 0.5 * smoothstep(0.3, 1.5, s)), 1.667), up = pow(max(rel, 0.0) / (3.1 + 0.6 * smoothstep(0.3, 1.5, s)), 1.333);   // wider once behind the rock face
+    if (across * across + up * up < 1.0) return true;
+  }
+  return false;
+}
 ${COMMON}
 ${FOG}
 float hash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
@@ -302,6 +376,7 @@ float bakedShadow(vec3 w) {
   return sum / 9.0;
 }
 void main() {
+  if (uCut == 1 && doorway(vW)) discard;
   vec3 N = normalize(vN), col = vC;
   float far = length(vW - uEye), near = 1.0 - smoothstep(14.0, 55.0, far);   // fine grain fades out before it can shimmer
   if (uKind == 0 && uLow == 1) {
@@ -409,7 +484,10 @@ const land = (() => {
   const PIECE = 50, pieces = [];
   for (let pj = 0; pj < n; pj += PIECE) for (let pi = 0; pi < n; pi += PIECE) {
     const from = idx.length;
-    for (let j = pj; j < Math.min(n, pj + PIECE); j++) for (let i = pi; i < Math.min(n, pi + PIECE); i++) { const k = j * row + i; idx.push(k, k + row + 1, k + 1, k, k + row, k + row + 1); }
+    for (let j = pj; j < Math.min(n, pj + PIECE); j++) for (let i = pi; i < Math.min(n, pi + PIECE); i++) {
+      const k = j * row + i;
+      idx.push(k, k + row + 1, k + 1, k, k + row, k + row + 1);
+    }
     pieces.push({ x: (pi + PIECE / 2) * GRID.cell - GRID.half, z: (pj + PIECE / 2) * GRID.cell - GRID.half, from, count: idx.length - from });
   }
   const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
@@ -607,7 +685,7 @@ function buildFlora() {
     if (Math.hypot(x, z) > GRID.half) continue;
     const e = pastCoast(x, z);
     if (e > -4 || Math.hypot(x, z) < 17 || pathDistance(x, z, GORGE) < 5 || pathDistance(x, z, CANYON) < 6) continue;
-    if (riverDistance(x, z) < RIVER.bank + 1 || nearBridge(x, z, 4)) continue;
+    if (riverDistance(x, z) < RIVER.bank + 1 || nearBridge(x, z, 4) || caveClear(x, z)) continue;
     if (Object.values(SPOTS).some(([px, pz, r]) => Math.hypot(x - px, z - pz) < r)) continue;
     const y = groundHeight(x, z), slope = Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y), s = 0.75 + r(3) * 0.6, at = [x, y - 0.15, z];
     const woods = roll(x - 50, z + 30, 31);
@@ -679,7 +757,7 @@ const TURF = 18, turf = new Map();                           // square patches o
 let grassNow = false;
 const grassHere = (x, z) => {
   const y = groundHeight(x, z);
-  if (y < 1.4 || y > 16 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7 || pathDistance(x, z, CANYON) < 8 || riverDistance(x, z) < RIVER.bank || nearBridge(x, z, 0.5)) return null;
+  if (y < 1.4 || y > 18 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7 || pathDistance(x, z, CANYON) < 8 || riverDistance(x, z) < RIVER.bank || nearBridge(x, z, 0.5) || CAVES.some(c => Math.abs(x - c.x) < CAVE.room + 1 && c.z - z > -0.5 && c.z - z < 4)) return null;
   return Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y) > 0.6 ? null : y;
 };
 function growTurf(ti, tj, low) {
@@ -752,9 +830,10 @@ function drawGrass(eye) {
 const drawPart = m => { if (m.count) { gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES, m.count, gl.UNSIGNED_INT, 0); } };
 // moving shadows only cover the ground round you, so only the patches there are needed
 function drawFloraShadow(light, eye) {
-  if (world.low) return;
   globals(staticDepth, light, light, eye);
   gl.uniformMatrix4fv(staticDepth.u.uModel, false, m4(M3.id(), [0, 0, 0]));
+  drawCaveShadow();                                          // in both versions: it keeps the sun out
+  if (world.low) return;
   drawBridgeShadow();
   for (const p of flora) if (Math.hypot(p.x - player.pos[0], p.z - player.pos[2]) < PATCH * 0.75 + 16) { const m = meshOf(p, 0); if (m) drawPart(m); }
 }
@@ -785,6 +864,7 @@ function bakeShadows(shade, at) {
   for (const p of land.pieces) if (Math.hypot(p.x - at[0], p.z - at[2]) < REACH + land.reach) gl.drawElements(gl.TRIANGLES, p.count, gl.UNSIGNED_INT, p.from * 4);
   for (const p of flora) if (Math.hypot(p.x - at[0], p.z - at[2]) < REACH + PATCH) { const m = p.mesh[1] || p.mesh[0]; if (m) drawPart(m); }
   drawBridgeShadow();
+  drawCaveShadow();
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, canvas.width, canvas.height);
   return shade;
@@ -801,6 +881,11 @@ const seaVao = (() => {
   gl.bindVertexArray(null); return vao;
 })();
 const fogRange = () => FLY.on ? [450, 1400] : world.low ? [70, 200] : [90, 330];
+let doorwayList = null;
+const doorways = () => doorwayList || (doorwayList = new Float32Array(Array.from({ length: 12 }, (_, k) => {
+  const c = CAVES[k];
+  return c ? [c.x, c.z, c.base, c.depth] : [1e6, 1e6, 0, 0];
+}).flat()));
 function drawLand(vp, light, eye) {
   const k = world.low ? 1 : 0;
   // skip what is behind you, off to the side or lost in the haze
@@ -821,13 +906,18 @@ function drawLand(vp, light, eye) {
   gl.uniform1i(landProg.u.uLow, k);
   gl.uniform1i(landProg.u.uBaked, 4); gl.uniformMatrix4fv(landProg.u.uBakedLight, false, shade.light);
   gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, shade.tex);
+  gl.uniform4fv(landProg.u.uCaves, doorways()); gl.uniform1i(landProg.u.uCut, 1);
   gl.uniform1i(landProg.u.uKind, 0); gl.bindVertexArray(land.vao);
   for (const p of land.pieces) if (seen(p, land.reach)) gl.drawElements(gl.TRIANGLES, p.count, gl.UNSIGNED_INT, p.from * 4);
+  gl.uniform1i(landProg.u.uCut, 0);
+  drawCaveFaces();
   gl.uniform1i(landProg.u.uKind, 1);
   for (const [d, p] of shown) { const m = meshOf(p, d); if (m) drawPart(m); }
+  drawCaveRocks();
   drawGrass(eye);
   drawSign(vp, light, eye);
   drawBridges(vp, light, eye);
+  drawCaveInsides(vp, light, eye);
 }
 // after everything solid, so legs show through the water
 function drawSea(vp, light, eye) {

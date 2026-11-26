@@ -748,6 +748,63 @@ for (const path of RIVERS) {
   MOUTHS.push(...found[0], ...found[found.length - 1]);      // one at each end
 }
 const bump = (i, j) => { const n = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return n - Math.floor(n); };
+// caves. every mouth faces +z, on ground levelled for it
+const CAVE = { depth: 3.9, half: 1.9, length: 12, room: 4.3, want: 12, cut: 3.4 };    // cut: how deep the doorway is dug in
+CAVE.end = CAVE.length + CAVE.room * 2 - 1.4;
+const CAVES = [];
+// a good spot on a south-facing flank: clear of the water and the landmarks, with ground behind to hold the roof
+function caveSite(x, z, base) {
+  const back = z - CAVE.end / 2;
+  if (Math.hypot(x, back) < 55 || pastCoast(x, back) > -40 || pastCoast(x, z + 10) > -30) return false;
+  if (riverDistance(x, back) < RIVER.valley + 6 || riverDistance(x, z + 6) < RIVER.valley) return false;
+  if (Object.entries(SPOTS).some(([name, [px, pz, r]]) => name !== 'volcano' && Math.hypot(x - px, back - pz) < r + 26)) return false;
+  if (pathDistance(x, back, GORGE) < 28 || pathDistance(x, back, CANYON) < 28) return false;
+  // the ground in front has to fall away so the way in comes out in the open, without becoming a drop
+  const ahead = natural(x, z + 8);
+  if (ahead > base + 0.9 || ahead < base - 2.6) return false;
+  for (const s of [2, 5, 9]) for (const dx of [-2.5, 2.5]) if (natural(x + dx, z - s) < base + 2.4) return false;
+  if (Math.abs(natural(x - 4.5, z) - natural(x + 4.5, z)) > 3.2) return false;
+  return CAVES.every(c => Math.hypot(c.x - x, c.z - z) > 60);
+}
+function findCaves() {
+  const mounds = [[...PEAK_AT, 74], [...TWIN_AT, 48], [SPOTS.volcano[0], SPOTS.volcano[1], 105], [...MESA_AT, 42],
+    ...HILLS.filter(h => h[2] >= 7).map(([x, z, , r]) => [x, z, r])];
+  for (const [hx, hz, r] of mounds) {
+    if (CAVES.length >= CAVE.want) break;
+    search: for (const off of [0, -0.2, 0.2, -0.38, 0.38, -0.55, 0.55]) {
+      const x = hx + off * r;
+      for (let z = hz + r * 1.05; z > hz + 3; z -= 1.2) {      // walk up the south side until it is steep enough
+        const base = natural(x, z) - CAVE.cut;
+        if (base < 3.0 || natural(x, z) - natural(x, z + 6) < 1.1 || !caveSite(x, z, base)) continue;
+        const k = CAVES.length;
+        let lip = 0;
+        for (let s = 0.5; s <= 4.5; s += 0.5) lip = Math.max(lip, natural(x, z - s) - base, 3.7);
+        CAVES.push({ x, z, base, depth: Math.min(CAVE.depth, base - 0.7), lip: lip + 0.4, bend: (bump(k, 911) < 0.5 ? -1 : 1) * (1.2 + bump(k, 1201) * 1.8) });
+        break search;
+      }
+    }
+  }
+}
+// the only change to the land: a cutting up to the mouth, and enough earth over the roof
+function cutCaves(x, z, h) {
+  for (const c of CAVES) {
+    const s = c.z - z, t = Math.abs(x - c.x);
+    if (s < -15 || s > CAVE.end + 5 || t > CAVE.room + 7) continue;
+    if (s < 2.0) {                                             // level a little way in, so no ramp crosses the door
+      // ragged banks, never closer than the doorway is wide
+      const ragged = roll(x, z, 6) * 2.4 * smooth(CAVE.half + 0.4, CAVE.half + 2.0, t);
+      const open = smooth(CAVE.half + 3.8, CAVE.half + 1.0, t + ragged) * smooth(-14, -8, s);
+      // near the door the floor is level; further out only what stands above it is dug away
+      const level = s > -4.5 ? c.base : Math.min(h, c.base);
+      h += (level - h) * open;
+    } else {
+      const need = c.base - c.depth * smooth(1.5, 11.5, s) + 3.8 + 0.8 * smooth(CAVE.length - 1, CAVE.length + 2.5, s);
+      const over = smooth(CAVE.room + 3.5, CAVE.room + 0.8, t) * smooth(CAVE.end + 4, CAVE.end, s);
+      if (need > h) h += (need - h) * over;
+    }
+  }
+  return h;
+}
 function roll(x, z, size) {
   const u = x / size, v = z / size, i = Math.floor(u), j = Math.floor(v), a = smooth(0, 1, u - i), b = smooth(0, 1, v - j);
   return (bump(i, j) * (1 - a) + bump(i + 1, j) * a) * (1 - b) + (bump(i, j + 1) * (1 - a) + bump(i + 1, j + 1) * a) * b - 0.5;
@@ -760,7 +817,8 @@ function pathDistance(x, z, path) {
   }
   return best;
 }
-function shape(x, z) {
+function shape(x, z) { return cutCaves(x, z, natural(x, z)); }
+function natural(x, z) {
   const e = pastCoast(x, z);
   return carveRivers(x, z, e >= 0 ? SEA.floor * clamp(e / SEA.wade, 0, 1) : rawGround(x, z, e), e);
 }
@@ -833,10 +891,11 @@ function rawGround(x, z, e) {
 const GRID = { half: 660, n: 760 };
 GRID.cell = GRID.half * 2 / GRID.n;
 const heights = new Float32Array((GRID.n + 1) * (GRID.n + 1));
+findCaves();
 for (let j = 0; j <= GRID.n; j++) for (let i = 0; i <= GRID.n; i++) heights[j * (GRID.n + 1) + i] = shape(i * GRID.cell - GRID.half, j * GRID.cell - GRID.half);
 
-function groundAt(x, z) {
-  return world.map === 'island' ? walkHeight(x, z) : 0;
+function groundAt(x, z, y) {
+  return world.map === 'island' ? walkHeight(x, z, y) : 0;
 }
 function groundHeight(x, z) {
   const u = (x + GRID.half) / GRID.cell, v = (z + GRID.half) / GRID.cell;
@@ -848,7 +907,7 @@ function groundHeight(x, z) {
 }
 const inSea = p => groundAt(p[0], p[2]) < SEA.level;
 // what loose things come to rest on
-const floorAt = (x, z) => world.map === 'island' ? Math.max(groundAt(x, z), SEA.level) : 0;
+const floorAt = (x, z, y) => world.map === 'island' ? Math.max(groundAt(x, z, y), SEA.level) : 0;
 
 // keeps a fighter on the map: bots stay on land, you can wade out a bit further
 function confine(f) {
@@ -869,8 +928,8 @@ function cliffs(f, x0, z0) {
     const d = Math.hypot(x - x0, z - z0);
     if (d < 1e-5) return false;
     // look a little ahead, so a single frame's tiny step cannot creep up a face
-    const k = Math.max(1, 0.5 / d), y = groundAt(x0 + (x - x0) * k, z0 + (z - z0) * k);
-    return y - groundAt(x0, z0) > STEEP * d * k;
+    const k = Math.max(1, 0.5 / d), y = groundAt(x0 + (x - x0) * k, z0 + (z - z0) * k, f.pos[1]);
+    return y - groundAt(x0, z0, f.pos[1]) > STEEP * d * k;
   };
   const p = f.pos;
   if (!sheer(p[0], p[2])) return;
@@ -887,7 +946,7 @@ function surfaceHit(origin, dir) {
     return Math.abs(p[0]) < HALF && Math.abs(p[2]) < HALF ? { t, kind: 'ground' } : null;
   }
   const solid = solidHit(origin, dir);
-  const under = t => origin[1] + dir[1] * t < floorAt(origin[0] + dir[0] * t, origin[2] + dir[2] * t);
+  const under = t => { const p = V.mad(origin, dir, t); return p[1] < floorAt(p[0], p[2], p[1] + 1) || caveRock(p); };
   for (let last = 0, t = 0.4; t < Math.min(90, solid); last = t, t += 0.4 + t * 0.012) {
     if (!under(t)) continue;
     let lo = last, hi = t;
@@ -907,7 +966,8 @@ function cameraRoom(at, fwd, dist) {
   if (world.map !== 'island') return dist;
   for (let d = 0.2; d <= dist; d += 0.2) {
     const p = V.mad(at, fwd, -d);
-    if (p[1] < floorAt(p[0], p[2]) + 0.2 || leaves.some(c => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]) < c[3])) return Math.max(0.4, d - 0.2);
+    if (caveCamera(p)) return Math.max(0.35, d - 0.25);
+    if (p[1] < floorAt(p[0], p[2], p[1]) + 0.2 || leaves.some(c => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]) < c[3])) return Math.max(0.4, d - 0.2);
   }
   return dist;
 }
@@ -958,6 +1018,20 @@ in vec3 vW; in vec3 vC; in vec3 vN; out vec4 o;
 uniform int uKind;                                          // 0 the ground, 1 things standing on it
 uniform int uLow;                                           // optimized: no fine detail, one shadow sample
 uniform highp sampler2DShadow uBaked; uniform mat4 uBakedLight;
+uniform int uCut; uniform vec4 uCaves[12];                  // each cave mouth: x, z, floor height at the door, how far down it goes
+// is this bit of ground standing in the way into a cave?
+bool doorway(vec3 w) {
+  for (int k = 0; k < 12; k++) {
+    vec4 c = uCaves[k];
+    float s = c.y - w.z;
+    if (s < -0.2 || s > 8.0 || abs(w.x - c.x) > 5.0) continue;
+    float rel = w.y - (c.z - c.w * smoothstep(1.5, 11.5, s));
+    if (rel < (s < 0.4 ? 0.06 : -0.4) || rel > 3.9) continue;
+    float across = pow(abs(w.x - c.x) / (2.05 + 0.5 * smoothstep(0.3, 1.5, s)), 1.667), up = pow(max(rel, 0.0) / (3.1 + 0.6 * smoothstep(0.3, 1.5, s)), 1.333);   // wider once behind the rock face
+    if (across * across + up * up < 1.0) return true;
+  }
+  return false;
+}
 ${COMMON}
 ${FOG}
 float hash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
@@ -974,6 +1048,7 @@ float bakedShadow(vec3 w) {
   return sum / 9.0;
 }
 void main() {
+  if (uCut == 1 && doorway(vW)) discard;
   vec3 N = normalize(vN), col = vC;
   float far = length(vW - uEye), near = 1.0 - smoothstep(14.0, 55.0, far);   // fine grain fades out before it can shimmer
   if (uKind == 0 && uLow == 1) {
@@ -1081,7 +1156,10 @@ const land = (() => {
   const PIECE = 50, pieces = [];
   for (let pj = 0; pj < n; pj += PIECE) for (let pi = 0; pi < n; pi += PIECE) {
     const from = idx.length;
-    for (let j = pj; j < Math.min(n, pj + PIECE); j++) for (let i = pi; i < Math.min(n, pi + PIECE); i++) { const k = j * row + i; idx.push(k, k + row + 1, k + 1, k, k + row, k + row + 1); }
+    for (let j = pj; j < Math.min(n, pj + PIECE); j++) for (let i = pi; i < Math.min(n, pi + PIECE); i++) {
+      const k = j * row + i;
+      idx.push(k, k + row + 1, k + 1, k, k + row, k + row + 1);
+    }
     pieces.push({ x: (pi + PIECE / 2) * GRID.cell - GRID.half, z: (pj + PIECE / 2) * GRID.cell - GRID.half, from, count: idx.length - from });
   }
   const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
@@ -1279,7 +1357,7 @@ function buildFlora() {
     if (Math.hypot(x, z) > GRID.half) continue;
     const e = pastCoast(x, z);
     if (e > -4 || Math.hypot(x, z) < 17 || pathDistance(x, z, GORGE) < 5 || pathDistance(x, z, CANYON) < 6) continue;
-    if (riverDistance(x, z) < RIVER.bank + 1 || nearBridge(x, z, 4)) continue;
+    if (riverDistance(x, z) < RIVER.bank + 1 || nearBridge(x, z, 4) || caveClear(x, z)) continue;
     if (Object.values(SPOTS).some(([px, pz, r]) => Math.hypot(x - px, z - pz) < r)) continue;
     const y = groundHeight(x, z), slope = Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y), s = 0.75 + r(3) * 0.6, at = [x, y - 0.15, z];
     const woods = roll(x - 50, z + 30, 31);
@@ -1351,7 +1429,7 @@ const TURF = 18, turf = new Map();                           // square patches o
 let grassNow = false;
 const grassHere = (x, z) => {
   const y = groundHeight(x, z);
-  if (y < 1.4 || y > 16 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7 || pathDistance(x, z, CANYON) < 8 || riverDistance(x, z) < RIVER.bank || nearBridge(x, z, 0.5)) return null;
+  if (y < 1.4 || y > 18 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7 || pathDistance(x, z, CANYON) < 8 || riverDistance(x, z) < RIVER.bank || nearBridge(x, z, 0.5) || CAVES.some(c => Math.abs(x - c.x) < CAVE.room + 1 && c.z - z > -0.5 && c.z - z < 4)) return null;
   return Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y) > 0.6 ? null : y;
 };
 function growTurf(ti, tj, low) {
@@ -1424,9 +1502,10 @@ function drawGrass(eye) {
 const drawPart = m => { if (m.count) { gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES, m.count, gl.UNSIGNED_INT, 0); } };
 // moving shadows only cover the ground round you, so only the patches there are needed
 function drawFloraShadow(light, eye) {
-  if (world.low) return;
   globals(staticDepth, light, light, eye);
   gl.uniformMatrix4fv(staticDepth.u.uModel, false, m4(M3.id(), [0, 0, 0]));
+  drawCaveShadow();                                          // in both versions: it keeps the sun out
+  if (world.low) return;
   drawBridgeShadow();
   for (const p of flora) if (Math.hypot(p.x - player.pos[0], p.z - player.pos[2]) < PATCH * 0.75 + 16) { const m = meshOf(p, 0); if (m) drawPart(m); }
 }
@@ -1457,6 +1536,7 @@ function bakeShadows(shade, at) {
   for (const p of land.pieces) if (Math.hypot(p.x - at[0], p.z - at[2]) < REACH + land.reach) gl.drawElements(gl.TRIANGLES, p.count, gl.UNSIGNED_INT, p.from * 4);
   for (const p of flora) if (Math.hypot(p.x - at[0], p.z - at[2]) < REACH + PATCH) { const m = p.mesh[1] || p.mesh[0]; if (m) drawPart(m); }
   drawBridgeShadow();
+  drawCaveShadow();
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, canvas.width, canvas.height);
   return shade;
@@ -1473,6 +1553,11 @@ const seaVao = (() => {
   gl.bindVertexArray(null); return vao;
 })();
 const fogRange = () => FLY.on ? [450, 1400] : world.low ? [70, 200] : [90, 330];
+let doorwayList = null;
+const doorways = () => doorwayList || (doorwayList = new Float32Array(Array.from({ length: 12 }, (_, k) => {
+  const c = CAVES[k];
+  return c ? [c.x, c.z, c.base, c.depth] : [1e6, 1e6, 0, 0];
+}).flat()));
 function drawLand(vp, light, eye) {
   const k = world.low ? 1 : 0;
   // skip what is behind you, off to the side or lost in the haze
@@ -1493,13 +1578,18 @@ function drawLand(vp, light, eye) {
   gl.uniform1i(landProg.u.uLow, k);
   gl.uniform1i(landProg.u.uBaked, 4); gl.uniformMatrix4fv(landProg.u.uBakedLight, false, shade.light);
   gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, shade.tex);
+  gl.uniform4fv(landProg.u.uCaves, doorways()); gl.uniform1i(landProg.u.uCut, 1);
   gl.uniform1i(landProg.u.uKind, 0); gl.bindVertexArray(land.vao);
   for (const p of land.pieces) if (seen(p, land.reach)) gl.drawElements(gl.TRIANGLES, p.count, gl.UNSIGNED_INT, p.from * 4);
+  gl.uniform1i(landProg.u.uCut, 0);
+  drawCaveFaces();
   gl.uniform1i(landProg.u.uKind, 1);
   for (const [d, p] of shown) { const m = meshOf(p, d); if (m) drawPart(m); }
+  drawCaveRocks();
   drawGrass(eye);
   drawSign(vp, light, eye);
   drawBridges(vp, light, eye);
+  drawCaveInsides(vp, light, eye);
 }
 // after everything solid, so legs show through the water
 function drawSea(vp, light, eye) {
@@ -1572,7 +1662,7 @@ function edgeOf(o, x, z) {
 function pushSolids(f, pad) {
   const p = f.pos;
   for (const o of solidsNear(p[0], p[2])) {
-    if (p[1] > o.y + o.h - 0.2 || (o.thin && p[1] < o.y - 0.6)) continue;   // above it, or under a bridge rail
+    if (p[1] > o.y + o.h - 0.2 || p[1] < o.y - 2.5 || (o.thin && p[1] < o.y - 0.6)) continue;   // above it, or under a bridge rail
     const e = edgeOf(o, p[0], p[2]);
     if (e.d >= pad) continue;
     const dx = p[0] - e.at[0], dz = p[2] - e.at[1], len = Math.hypot(dx, dz);
@@ -1597,7 +1687,7 @@ function solidHit(origin, dir) {
   let best = Infinity;
   if (a < 1e-6) return best;
   for (const o of solids) {
-    if (o.thin) continue;
+    if (o.thin || o.wall) continue;
     const x = origin[0] - o.x, z = origin[2] - o.z, b = x * dir[0] + z * dir[2], disc = b * b - a * (x * x + z * z - o.r * o.r);
     if (disc < 0 || (-b + Math.sqrt(disc)) < 0) continue;
     const near = (-b - Math.sqrt(disc)) / a;
@@ -1654,7 +1744,7 @@ const CHEST_AREAS = [
 // level ground, room to stand in front of the lid, nothing growing through it
 function goodChestSpot(x, z, taken) {
   if (Math.hypot(x, z) < 34 || pastCoast(x, z) > -7 || !reachMap().has(x, z)) return false;
-  if (riverDistance(x, z) < RIVER.bank + 2 || nearBridge(x, z, 3)) return false;
+  if (riverDistance(x, z) < RIVER.bank + 2 || nearBridge(x, z, 3) || caveAt(x, z, 2) || caveClear(x, z)) return false;
   const y = groundHeight(x, z);
   if (y < 1.0) return false;
   for (const [dx, dz, most] of [[0.6, 0, 0.16], [-0.6, 0, 0.16], [0, 0.4, 0.16], [0, -0.4, 0.16], [0, 0.8, 0.2], [0, 1.5, 0.3]])
@@ -1674,6 +1764,12 @@ function setChests(name) {
   }
   const gun = () => { const r = Math.random(); return r < 0.5 ? 'glock' : r < 0.85 ? 'ak' : 'awp'; };
   const tryAt = (x, z) => { if (goodChestSpot(x, z, chests)) chests.push(newChest(gun(), x, z)); };
+  // one or two at the back of every cave, with better odds of the rifles
+  for (const c of CAVES) {
+    const mid = c.x + c.bend, z = c.z - CAVE.end + 2.6, rare = () => (Math.random() < 0.45 ? 'awp' : 'ak');
+    chests.push(newChest(rare(), mid + rand(-0.4, 0.4), z));
+    if (Math.random() < 0.5) chests.push(newChest(rare(), mid + (Math.random() < 0.5 ? -2.2 : 2.2), z + 1.8));
+  }
   for (const [ax, az, radius, count] of CHEST_AREAS) {
     const want = Math.min(CHEST_COUNT, chests.length + count);
     for (let k = 0; k < count * 80 && chests.length < want; k++) {
@@ -1693,7 +1789,7 @@ function enemySpot(avoid) {
   let pick = cells[0];
   for (let k = 0; k < 200; k++) {
     pick = cells[Math.floor(Math.random() * cells.length)];
-    if (Math.hypot(pick[0] - avoid[0], pick[1] - avoid[2]) > 50 && Math.hypot(pick[0], pick[1]) > 45 && pastCoast(pick[0], pick[1]) < -8 && riverDistance(pick[0], pick[1]) > RIVER.bank + 2) break;
+    if (Math.hypot(pick[0] - avoid[0], pick[1] - avoid[2]) > 50 && Math.hypot(pick[0], pick[1]) > 45 && pastCoast(pick[0], pick[1]) < -8 && riverDistance(pick[0], pick[1]) > RIVER.bank + 2 && !caveAt(pick[0], pick[1], 2)) break;
   }
   return [pick[0], walkHeight(pick[0], pick[1]), pick[1]];
 }
@@ -1769,7 +1865,7 @@ function buildPlaces(T) {
   const post = (x, z, r, h) => { if (first) solids.push({ x, z, y: ground(x, z), r, h }); };
   const GREY = [0.42, 0.40, 0.37], IVORY = [0.80, 0.74, 0.60], HIDE = [0.50, 0.34, 0.20], BARK = [0.27, 0.17, 0.10];
 
-  if (first) addRails();
+  if (first) { addRails(); addCaveWalls(); }
   // the sign in the middle is solid too
   if (first) {
     const y = ground(0, 0), a = [-1.8, y + 0.2, 0.05], b = [1.8, y + 0.2, 0.05], c = [1.8, y + 2.4, 0.05], d = [-1.8, y + 2.4, 0.05];
@@ -2021,7 +2117,8 @@ function deckAt(x, z) {
   }
   return -Infinity;
 }
-const walkHeight = (x, z) => Math.max(groundHeight(x, z), deckAt(x, z));
+// y: how high the thing asking is. left out, the inside of a cave counts
+const walkHeight = (x, z, y) => { const floor = caveFloor(x, z); return floor !== null && (y === undefined || y < floor + 3.3) ? floor : Math.max(groundHeight(x, z), deckAt(x, z)); };
 const nearBridge = (x, z, pad) => bridges.some(b => {
   const rx = x - b.from[0], rz = z - b.from[1], along = rx * b.dir[0] + rz * b.dir[1], side = rz * b.dir[0] - rx * b.dir[1];
   return along > -pad && along < b.span + pad && Math.abs(side) < DECK.half + pad;
@@ -2265,6 +2362,355 @@ function flyStep(f, dt) {
   f.speed = 0; f.legYaw = 0; f.ads = 0; f.sprintW = 0; f.time += dt;
   for (const n of CLIP_NAMES) f.weights[n] = n === 'Idle' ? 1 : 0;
   f.target = V.mad(cameraEye().eye, fwd, 40);
+}
+// ======================================================================= caves
+// stone caves cut into the south flanks of the hills and mountains: a mouth in the slope, a passage that slopes down and a chamber
+// at the back. the hill is the island's own (island.js digs the way in); the mouth and everything inside is here
+const CAVE_ROCK = 2.4;                                       // how thick the walls are that you bump into
+const caveShift = (c, s) => c.bend * smooth(3, 12, s);        // the passage swings a little to one side
+const caveWide = s => {                                       // half the width of the hollow, s metres in
+  const sc = CAVE.length + CAVE.room - 1, in_ = s - sc, room = Math.abs(in_) < CAVE.room ? Math.sqrt(CAVE.room * CAVE.room - in_ * in_) : 0;
+  return s <= sc ? Math.max(CAVE.half, room) : Math.max(room, 0.4);
+};
+const caveFloorAt = (s, c) => c.base - c.depth * smooth(1.5, 11.5, s);
+const caveRoof = (s, c) => caveFloorAt(s, c) + 3.0 + 0.8 * smooth(CAVE.length - 1, CAVE.length + 2.5, s);
+// where a point is, measured from a cave: s inward from the mouth (the mouths face +z), t to the side
+function caveAt(x, z, pad) {
+  for (const c of CAVES) {
+    const s = c.z - z;
+    if (s < -0.6 || s > CAVE.end + (pad || 0) + CAVE_ROCK || Math.abs(x - c.x) > CAVE.room + CAVE_ROCK + (pad || 0) + 3) continue;
+    const t = x - c.x - caveShift(c, s), wide = caveWide(clamp(s, 0, CAVE.end));
+    if (Math.abs(t) < wide + CAVE_ROCK + (pad || 0)) return { c, s, t, wide, hollow: s >= 0 && s <= CAVE.end && Math.abs(t) < wide };
+  }
+  return null;
+}
+// the approach to the mouth and the shallow part over the passage, where no tree or boulder may stand
+const caveClear = (x, z) => CAVES.some(c => { const s = c.z - z; return s > -14 && s < 10 && Math.abs(x - c.x) < CAVE.room + 5; });
+// the floor under a point inside a cave, or null anywhere else
+function caveFloor(x, z) {
+  if (world.map !== 'island') return null;
+  const c = caveAt(x, z);
+  if (c && c.hollow) return caveFloorAt(c.s, c.c);
+  // the doorstep is level too, so the rock rising beside it never reads as a wall across the way in
+  const door = CAVES.find(k => { const s = k.z - z; return s > -1.8 && s < 0 && Math.abs(x - k.x) < CAVE.half + 0.2; });
+  return door ? door.base : null;
+}
+// is this point inside solid rock? (bullets and the camera)
+function caveRock(p) {
+  if (world.map !== 'island') return false;
+  const c = caveAt(p[0], p[2]);
+  if (!c || c.s < 0 || p[1] > c.c.base + c.c.lip) return false;
+  if (c.hollow) return p[1] > caveRoof(c.s, c.c) - 0.15;
+  return p[1] > c.c.base - 0.2;
+}
+// the camera must not poke through a wall or the roof
+function caveCamera(p) {
+  const c = world.map === 'island' ? caveAt(p[0], p[2]) : null;
+  if (!c || c.s < 0 || p[1] > c.c.base + c.c.lip) return false;
+  if (c.s <= CAVE.end && Math.abs(c.t) < c.wide - 0.25) return p[1] > caveRoof(c.s, c.c) - 0.3 || p[1] < caveFloorAt(c.s, c.c) + 0.2;
+  return true;
+}
+
+// the sides of the hollow as a list of points, round the whole cave from one side of the mouth to the other
+function caveEdge(c) {
+  const left = [], right = [];
+  for (let s = 0; s <= CAVE.end + 0.01; s += 1) {
+    const mid = c.x + caveShift(c, s), w = caveWide(s);
+    left.push([mid - w, c.z - s]); right.push([mid + w, c.z - s]);
+  }
+  return left.concat([[c.x + caveShift(c, CAVE.end), c.z - CAVE.end - 0.3]], right.reverse());
+}
+// walls you cannot walk through
+function addCaveWalls() {
+  for (const c of CAVES) {
+    const edge = caveEdge(c);
+    for (let k = 0; k + 1 < edge.length; k++) {
+      const [ax, az] = edge[k], [bx, bz] = edge[k + 1], dx = bx - ax, dz = bz - az, len = Math.hypot(dx, dz) || 1;
+      // outward, away from the middle of the cave
+      let nx = dz / len, nz = -dx / len;
+      const mid = [(ax + bx) / 2, (az + bz) / 2], axis = [c.x + caveShift(c, clamp(c.z - mid[1], 0, CAVE.end - 2)), clamp(mid[1], c.z - CAVE.end + 2, c.z)];
+      if (nx * (mid[0] - axis[0]) + nz * (mid[1] - axis[1]) < 0) { nx = -nx; nz = -nz; }
+      const hull = outline([[ax, az], [bx, bz], [ax + nx * 1.5, az + nz * 1.5], [bx + nx * 1.5, bz + nz * 1.5]]);
+      if (hull.length < 3) continue;
+      const x = mid[0] + nx * 0.75, z = mid[1] + nz * 0.75;
+      solids.push({ x, z, y: c.base - c.depth - 1, r: len / 2 + 1, h: c.depth + 4.5, hull, wall: true });
+    }
+  }
+}
+
+// ---------------------------------------------------------------- the stone inside
+// daylight spills in from the mouth, two torches do the rest, and the rock is painted point by point
+const caveProg = program(`layout(location=0) in vec3 aPos; layout(location=1) in vec3 aCol; layout(location=2) in vec3 aNrm; uniform mat4 uViewProj, uModel; out vec3 vW; out vec3 vC; out vec3 vN;
+void main() { vec4 w = uModel * vec4(aPos, 1.0); vW = w.xyz; vC = aCol; vN = aNrm; gl_Position = uViewProj * w; }`, `
+in vec3 vW; in vec3 vC; in vec3 vN; out vec4 o;
+uniform float uTime, uMouth; uniform vec3 uTorchA, uTorchB;
+${COMMON}
+${FOG}
+float hash(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
+float noise(vec3 p) {
+  vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x), mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x), mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+float lumps(vec3 p) { return noise(p * 2.3) + 0.5 * noise(p * 6.1) + 0.25 * noise(p * 15.0); }
+vec3 torch(vec3 at, vec3 N, float wobble) {
+  vec3 d = at - vW; float r2 = dot(d, d);
+  return vec3(1.0, 0.84, 0.66) * wobble * (0.2 + 0.8 * max(dot(N, d * inversesqrt(r2 + 1e-4)), 0.0)) * 2.1 / (1.0 + r2 * 0.20);
+}
+void main() {
+  if (vC.r > 1.5) { o = vec4(vC.r - 1.5, vC.g, vC.b, 1.0); return; }          // flames light themselves
+  vec3 N = normalize(vN);
+  if (dot(N, uEye - vW) < 0.0) N = -N;
+  // rough surface: tip the normal with the same lumps the colour uses
+  float h = lumps(vW), e = 0.07;
+  vec3 slope = vec3(lumps(vW + vec3(e, 0, 0)), lumps(vW + vec3(0, e, 0)), lumps(vW + vec3(0, 0, e))) - h;
+  N = normalize(N - (slope - N * dot(N, slope)) * 1.5);
+  // stone: broad blotches, soft tilted beds of rock, grain and speckle
+  float broad = noise(vW * 0.55), bed = noise(vec3((vW.y + vW.x * 0.12 + 0.9 * broad) * 2.4, 0.0, 0.0));
+  vec3 col = vC * (0.66 + 0.40 * broad + 0.24 * (bed - 0.5) + 0.12 * (h - 0.9) + 0.08 * (noise(vW * 34.0) - 0.5));
+  float day = exp(-max(0.0, uMouth - vW.z) / 4.2);
+  vec3 light = vec3(0.17, 0.20, 0.26) + vec3(0.85, 0.90, 1.0) * day * (0.45 + 0.4 * max(dot(N, normalize(vec3(0.0, 0.5, 1.0))), 0.0));
+  light += torch(uTorchA, N, 1.0 + 0.09 * sin(uTime * 11.0) * sin(uTime * 6.7));
+  light += torch(uTorchB, N, 1.0 + 0.09 * sin(uTime * 9.3 + 2.0) * sin(uTime * 7.9));
+  col = col * light + flashLight(vW, N) * col;
+  o = vec4(fogged(col / (1.0 + col * 0.25), vW), 1.0);
+}`);
+
+let caveWork = null;
+function makeCaves() {
+  // smooth lumpy noise in three directions, so neighbouring faces agree with each other
+  const dice = (i, j, k) => { const n = Math.sin(i * 127.1 + j * 311.7 + k * 74.7) * 43758.5453; return n - Math.floor(n); };
+  const lump = (p, size) => {
+    const q = V.mul(p, 1 / size), i = q.map(Math.floor), f = q.map((v, n) => { const u = v - i[n]; return u * u * (3 - 2 * u); });
+    let sum = 0;
+    for (let c = 0; c < 8; c++) {
+      const a = c & 1, b = (c >> 1) & 1, d = c >> 2;
+      sum += dice(i[0] + a, i[1] + b, i[2] + d) * (a ? f[0] : 1 - f[0]) * (b ? f[1] : 1 - f[1]) * (d ? f[2] : 1 - f[2]);
+    }
+    return sum;
+  };
+  let seed = 31;
+  const rnd = (a, b) => { seed = seed * 16807 % 2147483647; return a + (b - a) * seed / 2147483647; };
+
+  const list = [];
+  for (const c of CAVES) {
+    const m = { v: [], i: [] };
+    const tri = (pts, col, away) => {
+      const base = m.v.length / 9;
+      let n = V.norm(V.cross(V.sub(pts[1], pts[0]), V.sub(pts[2], pts[0])));
+      if (away && V.dot(n, V.sub(pts[0], away)) < 0) n = V.mul(n, -1);
+      pts.forEach(p => m.v.push(...p, ...col, ...n));
+      m.i.push(base, base + 1, base + 2);
+    };
+    const grey = k => [0.39 * k, 0.40 * k, 0.43 * k];
+    const torches = [[c.x + caveShift(c, 7) - caveWide(7) + 0.35, caveFloorAt(7, c) + 1.85, c.z - 7],
+      [c.x + caveShift(c, CAVE.end - 1.3) + 0.2, caveFloorAt(CAVE.end, c) + 2.2, c.z - CAVE.end + 1.2]];
+
+    // the walls and roof: rings from the foot of one wall, over the top, to the foot of the other
+    const ARC = 20, steps = [];
+    for (let s = 0; s < CAVE.end; s += 0.6) steps.push(s);
+    steps.push(CAVE.end);
+    const rings = steps.map(s => {
+      const mid = c.x + caveShift(c, s), floor = caveFloorAt(s, c), wide = caveWide(s), tall = caveRoof(s, c) - floor;
+      return Array.from({ length: ARC + 1 }, (_, k) => {
+        const a = Math.PI * (1 - k / ARC), cx = Math.cos(a), sn = Math.sin(a);
+        const p = [mid + Math.sign(cx) * Math.pow(Math.abs(cx), 0.6) * wide, floor + Math.pow(sn, 0.75) * tall, c.z - s];
+        // knobbly rock: big bulges and small, pushed outward only so nobody walks into it
+        const push = Math.max(0, lump(p, 1.7) - 0.32) * 1.3 + Math.max(0, lump(p, 0.6) - 0.4) * 0.5;
+        return [p[0] + cx * push, p[1] + sn * push * 0.8 - (k === 0 || k === ARC ? 0.15 : 0), p[2] + (lump(p, 0.9) - 0.5) * 0.45 * smooth(0.3, 1.2, s)];
+      });
+    });
+    const toneOf = p => { const k = 0.8 + 0.45 * lump(p, 2.6), warm = lump(p, 4.0) - 0.5; return [0.40 * k + 0.02 * warm, 0.41 * k, 0.43 * k - 0.02 * warm]; };
+    for (let n = 0; n + 1 < rings.length; n++) for (let k = 0; k < ARC; k++) {
+      const a = rings[n], b = rings[n + 1];
+      for (const t of [[a[k], b[k], b[k + 1]], [a[k], b[k + 1], a[k + 1]]]) tri(t, toneOf(t[0]));
+    }
+    // the floor: trodden grit with bumps and loose pebbles
+    const FLOOR = 8;
+    const floorPoint = (n, k) => {
+      const a = rings[n][0], b = rings[n][ARC], p = V.lerp(a, b, k / FLOOR), s = c.z - p[2];
+      return [p[0], caveFloorAt(s, c) + (k > 0 && k < FLOOR ? (lump(p, 0.5) - 0.5) * 0.1 : -0.12), p[2]];
+    };
+    for (let n = 0; n + 1 < rings.length; n++) for (let k = 0; k < FLOOR; k++) {
+      const q = [floorPoint(n, k), floorPoint(n + 1, k), floorPoint(n + 1, k + 1), floorPoint(n, k + 1)];
+      const tone = [0.27, 0.27, 0.275].map(v => v * (0.75 + 0.6 * lump(q[0], 1.3)));
+      tri([q[0], q[1], q[2]], tone); tri([q[0], q[2], q[3]], tone);
+    }
+    // close the back of the chamber
+    {
+      const last = rings[rings.length - 1], mid = V.lerp(V.lerp(last[0], last[ARC], 0.5), last[ARC / 2], 0.5), hub = [mid[0], mid[1], mid[2] - 0.9];
+      for (let k = 0; k <= ARC; k++) { const t = [last[k], last[(k + 1) % (ARC + 1)], hub]; tri(t, toneOf(t[0])); }
+    }
+    // a rough stone: a point pushed out of a ring of corners
+    const spike = (foot, size, tip, col, sides) => {
+      const ring = Array.from({ length: sides }, (_, n) => { const a = n / sides * 6.283 + rnd(-0.3, 0.3), r = size * rnd(0.7, 1.25); return [foot[0] + Math.cos(a) * r, foot[1] + rnd(-0.05, 0.05), foot[2] + Math.sin(a) * r]; });
+      const waist = ring.map(p => V.add(V.lerp(p, tip, 0.45), [rnd(-0.04, 0.04), 0, rnd(-0.04, 0.04)]));
+      const core = V.lerp(foot, tip, 0.4);
+      for (let n = 0; n < sides; n++) {
+        const j = (n + 1) % sides;
+        tri([ring[n], ring[j], waist[j]], col, core); tri([ring[n], waist[j], waist[n]], col, core); tri([waist[n], waist[j], tip], col, core);
+      }
+    };
+    // stalactites hang in clumps, stalagmites and fallen rock keep to the sides
+    for (let k = 0; k < 26; k++) {
+      const s = rnd(2.5, CAVE.end - 0.8), mid = c.x + caveShift(c, s), w = caveWide(s) - 0.3, x = mid + rnd(-0.75, 0.75) * w, z = c.z - s;
+      const side = Math.abs(x - mid) / (w + 0.3), roof = caveFloorAt(s, c) + Math.pow(Math.sin(Math.acos(Math.pow(side, 1 / 0.6))), 0.75) * (caveRoof(s, c) - caveFloorAt(s, c));
+      const long = rnd(0.2, 0.9) * (k % 7 ? 1 : 1.5);
+      spike([x, roof + 0.18, z], rnd(0.09, 0.24), [x + rnd(-0.06, 0.06), Math.max(roof - long, caveFloorAt(s, c) + 2.15), z], grey(rnd(0.85, 1.15)), 6);
+    }
+    for (let k = 0; k < 30; k++) {
+      const s = rnd(2, CAVE.end - 0.6), mid = c.x + caveShift(c, s), w = caveWide(s), x = mid + (k % 2 ? 1 : -1) * (w - rnd(0.05, 0.35)), z = c.z - s, y = caveFloorAt(s, c);
+      if (k < 10) spike([x, y - 0.1, z], rnd(0.12, 0.28), [x + rnd(-0.08, 0.08), y + rnd(0.35, 1.0), z + rnd(-0.08, 0.08)], grey(rnd(0.9, 1.15)), 6);
+      else { const size = rnd(0.12, 0.4); spike([x, y - 0.08, z], size, [x + rnd(-0.1, 0.1), y + size * rnd(0.6, 1.1), z + rnd(-0.1, 0.1)], grey(rnd(0.7, 1.1)), 5); }
+    }
+    for (let k = 0; k < 40; k++) {
+      const s = rnd(0.5, CAVE.end - 1), x = c.x + caveShift(c, s) + rnd(-0.8, 0.8) * caveWide(s), z = c.z - s, y = caveFloorAt(s, c), size = rnd(0.03, 0.09);
+      spike([x, y - 0.02, z], size, [x, y + size * 0.8, z], grey(rnd(0.7, 1.2)), 4);
+    }
+    // torches: a stick wedged in the rock with a flame on it
+    for (const t of torches) {
+      spike([t[0], t[1] - 0.65, t[2]], 0.035, [t[0], t[1], t[2]], [0.22, 0.13, 0.06], 5);
+      for (const [r, up, down, base, top] of [[0.11, 0.36, 0.1, [2.5, 0.45, 0.05], [2.5, 0.75, 0.2]], [0.055, 0.2, 0.05, [2.5, 0.85, 0.35], [2.5, 0.97, 0.7]]]) {
+        for (let n = 0; n < 6; n++) {
+          const p = k => [t[0] + Math.cos(k / 6 * 6.283) * r, t[1] + 0.04, t[2] + Math.sin(k / 6 * 6.283) * r];
+          tri([p(n), p(n + 1), [t[0], t[1] + up, t[2]]], n % 2 ? base : top);
+          tri([p(n), p(n + 1), [t[0], t[1] - down, t[2]]], base);
+        }
+      }
+    }
+    list.push({ cave: c, torches, mesh: m, door: rings[0] });
+  }
+
+  // round each mouth: rock showing through the hillside. it starts dark at the passage, and its outer edge
+  // sinks into the slope and takes on the colour of the ground there, so there is no seam to see
+  const face = { v: [], i: [] }, rock = { v: [], i: [] };
+  for (const { cave: c, door } of list) {
+    const tri = (pts, col, away) => {
+      const base = rock.v.length / 9;
+      let n = V.norm(V.cross(V.sub(pts[1], pts[0]), V.sub(pts[2], pts[0])));
+      if (V.dot(n, V.sub(pts[0], away)) < 0) n = V.mul(n, -1);
+      pts.forEach(p => rock.v.push(...p, ...col, ...n));
+      rock.i.push(base, base + 1, base + 2);
+    };
+
+    // the face: a fine sheet from the ragged edge of the passage out to where the hill swallows it
+    const ARC = door.length - 1, LAYERS = 12, salt = rnd(0, 50);
+    const skewL = rnd(0.92, 1.15), skewR = rnd(0.92, 1.15), peak = rnd(-0.1, 0.1), top = Math.min(c.lip, 5.4);
+    const point = (layer, k) => {
+      if (!layer) return door[k];
+      const a = Math.PI * (1 - k / ARC), cx = Math.cos(a), sn = Math.sin(a), u = layer / LAYERS;
+      const out = (CAVE.half + 3.3) * (cx < 0 ? skewL : skewR), high = top * (1 + peak * cx);
+      let x = door[k][0] + (c.x + Math.sign(cx) * Math.pow(Math.abs(cx), 0.5) * out - door[k][0]) * u;
+      let y = door[k][1] + (c.base + Math.pow(sn, 0.55) * high - door[k][1]) * u;
+      let z = c.z + 0.15 - u * u * 4.4;
+      // weathered rock: a few broad bulges with smaller knuckles on them
+      const here = [x * 1.2 + salt, y * 1.5, 0];
+      const rough = smooth(0, 0.25, u) * (1 - smooth(0.7, 1, u));
+      z += ((lump(here, 2.2) - 0.5) * 1.5 + (lump(here, 0.8) - 0.5) * 0.45) * rough;
+      x += (lump([here[1], here[0], 3], 1.6) - 0.5) * 0.5 * rough;
+      y += (lump([here[0], here[1], 7], 1.5) - 0.5) * 0.4 * rough;
+      // the outer edge goes down into the ground that is really there
+      const sink = smooth(0.62, 1, u);
+      const under = Math.abs(x - c.x) < CAVE.half + 0.7 ? Math.max(groundHeight(x, z), c.base + 3.9) : groundHeight(x, z);    // never droops into the door
+      y += (Math.min(y, under - 0.2) - y) * sink;
+      if (k === 0 || k === ARC) y = Math.min(y, c.base - 0.3);
+      return [x, y, z];
+    };
+    const grid = Array.from({ length: LAYERS + 1 }, (_, layer) => Array.from({ length: ARC + 1 }, (_, k) => point(layer, k)));
+    const behind = [c.x, c.base + 1.2, c.z - 7];
+    // one normal per point, so the light runs smoothly over it like it does over the land
+    const normals = grid.map((row, layer) => row.map((p, k) => {
+      const a = grid[Math.max(0, layer - 1)][k], b = grid[Math.min(LAYERS, layer + 1)][k], l = row[Math.max(0, k - 1)], r = row[Math.min(ARC, k + 1)];
+      let n = V.norm(V.cross(V.sub(r, l), V.sub(b, a)));
+      if (V.dot(n, V.sub(p, behind)) < 0) n = V.mul(n, -1);
+      return n;
+    }));
+    const first = face.v.length / 9;
+    for (let layer = 0; layer <= LAYERS; layer++) for (let k = 0; k <= ARC; k++) {
+      const p = grid[layer][k], n = normals[layer][k], u = layer / LAYERS;
+      const stone = V.mul([0.41, 0.37, 0.31], 0.62 + 0.38 * smooth(0, 0.22, u) + (lump(p, 1.4) - 0.5) * 0.25);
+      const ground = groundColour(p[0], p[2], groundHeight(p[0], p[2]), 1);
+      // grass creeps in from the edges and settles on whatever faces up
+      const green = clamp(smooth(0.5, 0.95, u + (lump(p, 1.1) - 0.5) * 0.45) + smooth(0.55, 0.85, n[1]) * smooth(0.35, 0.65, lump(p, 0.9)) * smooth(0.2, 0.45, u), 0, 1);
+      face.v.push(...p, ...V.lerp(stone, ground, green), ...n);
+    }
+    for (let layer = 0; layer < LAYERS; layer++) for (let k = 0; k < ARC; k++) {
+      const q = first + layer * (ARC + 1) + k, up = q + ARC + 1;
+      face.i.push(q, up, up + 1, q, up + 1, q + 1);
+    }
+
+    // two or three boulders resting against the foot of the face, rounded off like the others on the island
+    const T = (1 + Math.sqrt(5)) / 2;
+    const CORNERS = [[-1, T, 0], [1, T, 0], [-1, -T, 0], [1, -T, 0], [0, -1, T], [0, 1, T], [0, -1, -T], [0, 1, -T], [T, 0, -1], [T, 0, 1], [-T, 0, -1], [-T, 0, 1]].map(V.norm);
+    const FACES = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]];
+    const block = (x, z, size) => {
+      const mid = [x, groundHeight(x, z) + size * 0.05, z], turn = M3.ry(rnd(0, 6.3));
+      const pts = CORNERS.map(d => { const q = M3.vec(turn, V.mul(d, rnd(0.8, 1.2))); return [mid[0] + q[0] * size * 1.15, mid[1] + q[1] * size * 0.75, mid[2] + q[2] * size]; });
+      const tone = rnd(0.92, 1.06);
+      for (const f of FACES) tri(f.map(k => pts[k]), [0.39 * tone, 0.36 * tone, 0.31 * tone], mid);
+    };
+    for (const side of rnd(0, 1) < 0.5 ? [-1, 1] : [1, -1]) {
+      block(c.x + side * (CAVE.half + rnd(1.1, 1.7)), c.z + rnd(0, 0.6), rnd(0.55, 0.85));
+      if (rnd(0, 1) < 0.5) block(c.x + side * (CAVE.half + rnd(2.2, 3.2)), c.z + rnd(0.4, 1.4), rnd(0.25, 0.45));
+    }
+
+    // a few tufts and trailing stems along the brow
+    const leaf = (at, along, across, col) => {
+      const mid = V.mad(at, along, 0.45), away = [at[0], at[1], at[2] - 3];
+      tri([at, V.add(mid, across), V.add(at, along)], col, away);
+      tri([at, V.add(at, along), V.sub(mid, across)], col, away);
+    };
+    for (let n = 0; n < 3; n++) {
+      const k = Math.round(rnd(4, ARC - 4));
+      let p = V.add(grid[2][k], [0, 0.05, 0.12]);
+      const long = Math.min(rnd(0.4, 1.1), Math.max(0.2, p[1] - c.base - 2.3));
+      for (let d = 0; d < long; d += 0.15) {
+        const next = [p[0] + rnd(-0.04, 0.04), p[1] - 0.15, p[2] + rnd(-0.02, 0.04)];
+        leaf(p, V.sub(next, p), [0.012, 0, 0], [0.18, 0.24, 0.08]);
+        for (const side of [-1, 1]) leaf(next, [side * rnd(0.07, 0.15), rnd(-0.09, 0.01), rnd(0, 0.06)], [0.01, rnd(0.035, 0.065), 0], [0.18, rnd(0.34, 0.44), 0.09]);
+        p = next;
+      }
+    }
+    for (let n = 0; n < 14; n++) {
+      const k = Math.round(rnd(3, ARC - 3)), at = grid[Math.round(rnd(7, 9))][k];
+      for (let f = 0; f < 9; f++) {
+        const dir = V.norm([rnd(-0.6, 0.6), 1, rnd(-0.3, 0.6)]);
+        leaf(at, V.mul(dir, rnd(0.16, 0.34)), [0.022, 0, 0.008], [rnd(0.22, 0.34), rnd(0.42, 0.55), 0.12]);
+      }
+    }
+  }
+
+  const upload = m => {
+    const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+    buffer(gl.ARRAY_BUFFER, new Float32Array(m.v));
+    attrib(0, null, 3, gl.FLOAT, false, 36, 0); attrib(1, null, 3, gl.FLOAT, false, 36, 12); attrib(2, null, 3, gl.FLOAT, false, 36, 24);
+    buffer(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(m.i));
+    gl.bindVertexArray(null);
+    return { vao, count: m.i.length };
+  };
+  return { list: list.map(e => ({ ...e, mesh: upload(e.mesh) })), face: upload(face), mouths: upload(rock) };
+}
+const loadCaves = () => caveWork || (caveWork = makeCaves());
+// the crag casts shadows, which also keeps the sun off whoever is inside
+function drawCaveShadow() {
+  drawPart(loadCaves().face); drawPart(loadCaves().mouths);
+  const near = CAVES.find(c => Math.abs(player.pos[0] - c.x) < 26 && Math.abs(player.pos[2] - (c.z - CAVE.end / 2)) < 26);
+  if (!near) return;
+  gl.bindVertexArray(land.vao);
+  for (const p of land.pieces) if (Math.abs(p.x - near.x) < land.reach && Math.abs(p.z - near.z + CAVE.end / 2) < land.reach) gl.drawElements(gl.TRIANGLES, p.count, gl.UNSIGNED_INT, p.from * 4);
+}
+// the face is painted like the land it comes out of, the loose rock and leaves like the rest
+function drawCaveFaces() { drawPart(loadCaves().face); }
+function drawCaveRocks() { drawPart(loadCaves().mouths); }
+function drawCaveInsides(vp, light, eye) {
+  globals(caveProg, vp, light, eye);
+  gl.uniform3fv(caveProg.u.uSky, SKY.island); gl.uniform2fv(caveProg.u.uFog, fogRange()); gl.uniform1f(caveProg.u.uTime, game.time);
+  gl.uniformMatrix4fv(caveProg.u.uModel, false, m4(M3.id(), [0, 0, 0]));
+  for (const e of loadCaves().list) {
+    if (Math.hypot(e.cave.x - eye[0], e.cave.z - eye[2]) > 160) continue;
+    gl.uniform1f(caveProg.u.uMouth, e.cave.z); gl.uniform3fv(caveProg.u.uTorchA, e.torches[0]); gl.uniform3fv(caveProg.u.uTorchB, e.torches[1]);
+    drawPart(e.mesh);
+  }
 }
 
 // ======================================================================= fighters
@@ -2849,7 +3295,7 @@ function propStep(o, h) {
   let touch = false, hit = 0, deep = 0, n = null;
   const under = [];
   for (const q of o.pts) {
-    const r = M3.vec(o.R, q), x = o.p[0] + r[0], z = o.p[2] + r[2], g = floorAt(x, z), d = g - (o.p[1] + r[1]);
+    const r = M3.vec(o.R, q), x = o.p[0] + r[0], z = o.p[2] + r[2], g = floorAt(x, z, o.p[1] + r[1]), d = g - (o.p[1] + r[1]);
     if (d > -0.004) { under.push(r); if (d > deep) { deep = d; n = groundNormal(x, z); } }
   }
   if (under.length) {
@@ -4199,7 +4645,7 @@ function ragStep(f, dt) {
       hinges(R);
       if (drag) { const g = R.p[drag.pt], to = drag.to; R.p[drag.pt] = V.lerp(g, to, 0.35); }
       for (let i = 0; i < n; i++) {                               // the ground, and the things standing on it
-        const p = R.p[i], r = def.rad[i], g = floorAt(p[0], p[2]) + r;
+        const p = R.p[i], r = def.rad[i], g = floorAt(p[0], p[2], p[1]) + r;
         if (p[1] < g) {
           const sink = R.q[i][1] - p[1];
           if (sink > fall) fall = sink;
@@ -4224,7 +4670,7 @@ function ragStep(f, dt) {
     R.thudAt = game.time;
     const vol = clamp(speed / 7, 0.15, 1) * (f.isPlayer ? 1 : 0.6) * clamp(1.4 - V.len(V.sub(R.p[0], player.pos)) / 30, 0.1, 1);
     Sound.play('thud', vol);
-    if (speed > 3.5) puff([R.p[0][0], floorAt(R.p[0][0], R.p[0][2]) + 0.05, R.p[0][2]], 10, [0.52, 0.50, 0.46, 0.7], 1.0, 0.07, 0.5, 1.2);
+    if (speed > 3.5) puff([R.p[0][0], floorAt(R.p[0][0], R.p[0][2], R.p[0][1]) + 0.05, R.p[0][2]], 10, [0.52, 0.50, 0.46, 0.7], 1.0, 0.07, 0.5, 1.2);
   }
   // fall asleep once he has stopped moving
   let move = 0; for (let i = 0; i < n; i++) move = Math.max(move, V.len(V.sub(R.p[i], R.q[i])) / h);
@@ -4236,7 +4682,7 @@ function ragStep(f, dt) {
   if (Math.hypot(back[0], back[2]) > 0.05) { back = V.norm(back); f.yaw = Math.atan2(-back[0], -back[2]); }
   else back = [-Math.sin(f.yaw), 0, -Math.cos(f.yaw)];
   const x = H[0] - back[0] * 0.72, z = H[2] - back[2] * 0.72;
-  f.pos = [x, floorAt(x, z), z];
+  f.pos = [x, floorAt(x, z, H[1]), z];
 }
 // knees bend forward, elbows bend back: if one went the wrong way, fold it back
 function hinges(R) {
@@ -4387,7 +4833,7 @@ function locomotion(f, mx, my, sprint, dt) {
   cliffs(f, x0, z0);
   if (!f.isPlayer && inSea(f.pos) && !inSea([x0, 0, z0])) { f.pos[0] = x0; f.pos[2] = z0; }   // enemies stay out of the water
   if (f.dead < 0) {
-    const floor = groundAt(f.pos[0], f.pos[2]);
+    const floor = groundAt(f.pos[0], f.pos[2], f.pos[1]);
     if (f.pos[1] - floor > 0.3) {                             // stepped off a ledge: fall
       f.drop = (f.drop || 0) + JUMP.gravity * dt;
       f.pos[1] = Math.max(floor, f.pos[1] - f.drop * dt);
@@ -4444,7 +4890,7 @@ function camVectors() {
 function cameraEye() {
   const { fwd, right } = camVectors();
   const at = [player.pos[0] + right[0] * cam.side, player.pos[1] + cam.height + (player.dead < 0 ? player.air * 0.45 : 0), player.pos[2] + right[2] * cam.side];
-  if (world.map === 'island') at[1] = Math.max(at[1], floorAt(at[0], at[2]) + 0.4);     // beside a steep bank
+  if (world.map === 'island') at[1] = Math.max(at[1], floorAt(at[0], at[2], at[1]) + 0.4);     // beside a steep bank
   let dist = cam.dist;
   if (fwd[1] > 0) dist = Math.min(dist, (at[1] - 0.18) / fwd[1]);
   if (world.map === 'island' && !FLY.on) dist = cameraRoom(at, fwd, cam.dist);
@@ -4567,7 +5013,7 @@ function effectsStep(dt) {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i]; p.life -= dt;
     if (p.life <= 0) { particles.splice(i, 1); continue; }
-    p.v[1] -= p.grav * dt; p.p = V.mad(p.p, p.v, dt); const low = floorAt(p.p[0], p.p[2]) + 0.01; if (p.p[1] < low) { p.p[1] = low; p.v = [0, 0, 0]; }
+    p.v[1] -= p.grav * dt; p.p = V.mad(p.p, p.v, dt); const low = floorAt(p.p[0], p.p[2], p.p[1]) + 0.01; if (p.p[1] < low) { p.p[1] = low; p.v = [0, 0, 0]; }
     if (p.grow) { p.size += p.grow * dt; p.v = V.mul(p.v, Math.exp(-dt * 3)); }
   }
   for (let i = tracers.length - 1; i >= 0; i--) if ((tracers[i].life -= dt) <= 0) tracers.splice(i, 1);
@@ -4577,7 +5023,7 @@ function effectsStep(dt) {
     if (s.life <= 0) { shells.splice(i, 1); continue; }
     if (s.rest) continue;
     s.v[1] -= 9.8 * dt; s.p = V.mad(s.p, s.v, dt); s.a += dt * 14;
-    const low = floorAt(s.p[0], s.p[2]) + 0.008;
+    const low = floorAt(s.p[0], s.p[2], s.p[1]) + 0.008;
     if (s.p[1] < low) { s.p[1] = low; if (Math.abs(s.v[1]) < 0.7) { s.rest = true; } s.v = [s.v[0] * 0.5, -s.v[1] * 0.35, s.v[2] * 0.5]; }
   }
 }
@@ -4763,7 +5209,7 @@ function render() {
   const hideSelf = sc > 0.55;
   const sh = cam.shake * cam.shake * 0.012;
   const eye = V.add(view.eye, [rand(-sh, sh), rand(-sh, sh), rand(-sh, sh)]);
-  if (world.map === 'island') eye[1] = Math.max(eye[1], floorAt(eye[0], eye[2]) + 0.18);   // never inside a hill
+  if (world.map === 'island') eye[1] = Math.max(eye[1], floorAt(eye[0], eye[2], eye[1]) + 0.18);   // never inside a hill
   const fov = cam.fov + (0.17 - cam.fov) * smooth(0.45, 1, sc);
   const proj = perspective(fov, w / Math.max(1, h), 0.08, world.map !== 'island' ? 160 : FLY.on ? 2200 : world.low ? 300 : 600);
   const vp = mul4(proj, lookAt(eye, V.add(eye, view.fwd)));
@@ -4881,7 +5327,7 @@ window.__game = {
   ready: true, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
-  resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork,
+  resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE,
   look(eye, at) { testView = eye ? { eye, at } : null; },
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },
