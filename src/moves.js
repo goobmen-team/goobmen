@@ -260,7 +260,7 @@ function bombStep(s, dt) {
   h.gone = false; h.script = null; h.scriptW = 0; h.tilt = 0;
   let gait = 'Idle';
   const runTo = (a, b, u) => { h.pos = V.lerp(a, b, u); h.yaw = Math.atan2(b[0] - a[0], b[2] - a[2]); gait = 'Run'; h.phase = (h.phase + dt * 5.5) % 1; h.tilt = 0.38; };
-  const dust = () => puff([h.pos[0], 0.07, h.pos[2]], 3, [0.55, 0.53, 0.49, 0.6], 0.5, 0.1, 0.5, -0.2);
+  const dust = () => puff([h.pos[0], floorAt(h.pos[0], h.pos[2]) + 0.07, h.pos[2]], 3, [0.55, 0.53, 0.49, 0.6], 0.5, 0.1, 0.5, -0.2);
   const arm = (x, wrist, dir, palm, curl) => ({ wrist, dir: dir || [0, -0.3, 1], palm: palm || [-x, 0, 0], pole: [x, -0.4, -0.5], curl: [curl === undefined ? 0.7 : curl, curl === undefined ? 0.7 : curl] });
   const hips0 = Rig.rest[IDX.hips];
   const script = (S, w) => { h.script = S; h.scriptW = w === undefined ? 1 : w; };
@@ -303,6 +303,7 @@ function bombStep(s, dt) {
   } else if (t < 7.1) {                                         // the penny drops. gone
     runTo(wrong, s.from, Math.pow((t - 6.2) / 0.9, 1.8)); dust();
   } else h.gone = true;
+  if (world.map === 'island') h.pos = [h.pos[0], floorAt(h.pos[0], h.pos[2]), h.pos[2]];   // he runs over the hills
   for (const n of CLIP_NAMES) h.weights[n] = n === gait ? 1 : 0;
 
   // ---------- the cues
