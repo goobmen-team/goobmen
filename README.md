@@ -15,6 +15,7 @@ A third-person caveman fighting game with real guns. Loot chests, fight other ca
 | Space / Ctrl | jump / crouch |
 | Hold E | loot a chest or a knocked-out caveman |
 | G / E | drop what you hold / pick it up |
+| Hold X | drag a knocked-out caveman (bodies are ragdolls: shove, shoot or blow them around) |
 | 5, then click | hold C4, plant it (5 s fuse; on a knocked-out caveman too) |
 | R / V | reload / show off your gun |
 | 1, 2, 3, 4 or wheel | AK-74, Glock 17, AWP, fists |

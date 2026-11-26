@@ -83,15 +83,9 @@ function collapsePose(f) {
   const R = M3.mul(M3.ry(f.yaw), M3.rx(-1.5 * flop + 0.07 * bounce));
   return { S, R, p: [f.pos[0], f.pos[1] + f.air + 0.2 * flop, f.pos[2]] };
 }
-function deathCues(f, prev) {
+function deathCues(f, prev) {                                  // the thumps and dust come from the ragdoll hitting the ground
   const crossed = at => prev < at && f.dead >= at, loud = f.isPlayer ? 1 : 0.55;
   if (crossed(0.02)) Sound.play('ugh', loud);
-  if (crossed(0.5)) Sound.play('thud', loud * 0.5);
-  if (crossed(1.0)) {
-    Sound.play('thud', loud);
-    const back = [-Math.sin(f.yaw), 0, -Math.cos(f.yaw)];
-    puff(V.add(V.mad(f.pos, back, 0.9), [0, 0.08, 0]), 16, [0.52, 0.50, 0.46, 0.7], 1.2, 0.08, 0.6, 1.2);
-  }
 }
 
 // ======================================================================= the balloon send-off
@@ -122,7 +116,17 @@ function party() {
 }
 
 function startSend(f, delay, bomb) {
-  const back = [-Math.sin(f.yaw), 0, -Math.cos(f.yaw)], hips = V.mad(f.pos, back, 0.72);
+  const helper = makeFighter(false, [1.2, 1.1, 0.35]);
+  helper.gone = true;
+  const s = { f, helper, t: -(delay || 0), prev: -(delay || 0) - 1, inflate: 0, inflateV: 0, strokes: 0, tied: 0, rise: [0, 0, 0], sparkle: null,
+    bomb: !!bomb, end: bomb ? FUSE_AT + FUSE + 1.3 + TAPE : f.isPlayer ? 7.9 : 10.2 };
+  placeSend(s);
+  f.send = s; sends.push(s); helpers.push(helper);
+  return s;
+}
+// where he comes from and where he works: worked out from where the body lies now (the ragdoll may still be settling)
+function placeSend(s) {
+  const f = s.f, back = [-Math.sin(f.yaw), 0, -Math.cos(f.yaw)], hips = V.mad(f.pos, back, 0.72);
   const perp = [Math.cos(f.yaw), 0, -Math.sin(f.yaw)];
   // he works on the far side of the body, so the camera can see
   const eye = cameraEye().eye;
@@ -132,12 +136,8 @@ function startSend(f, delay, bomb) {
   if (f.isPlayer) away = out;
   const spot = V.add([hips[0], f.pos[1], hips[2]], V.mul(out, 0.92));
   const from = V.add(spot, V.add(V.mul(out, 11), V.mul(back, 9)));
-  const helper = makeFighter(false, [1.2, 1.1, 0.35]);
-  helper.pos = from.slice(); helper.gone = true;
-  const s = { f, helper, t: -(delay || 0), prev: -(delay || 0) - 1, spot, from, hips, out, away, face: Math.atan2(-out[0], -out[2]), inflate: 0, inflateV: 0, strokes: 0, tied: 0, rise: [0, 0, 0], sparkle: null,
-    bomb: !!bomb, end: bomb ? FUSE_AT + FUSE + 1.3 : f.isPlayer ? 7.9 : 10.2 };
-  f.send = s; sends.push(s); helpers.push(helper);
-  return s;
+  Object.assign(s, { spot, from, hips, out, away, face: Math.atan2(-out[0], -out[2]) });
+  s.helper.pos = from.slice();
 }
 function endSend(f) {
   const s = f.send;
@@ -235,7 +235,7 @@ function sendStep(s, dt) {
       S.arms[side] = { wrist: V.lerp([x * 0.82, x > 0 ? 1.22 : 0.94, -0.13], [x * 0.58 + sway, 1.34, 0.42], lift), dir: V.norm([x * 0.4, 0, lift]), palm: [0, 0, 1], pole: [x, 0, -1], curl: [0.4, 0.4] };
       S.legs[side] = { ankle: V.lerp(Rig.rest[IDX['foot_' + side]], [x * 0.27, 0.30 + sway, 0.38], lift), pole: [x * 0.3, 0, 1], footR: M3.rx(-0.4 * lift) };
     }
-    f.script = S; f.scriptW = 1;
+    f.script = S; f.scriptW = smooth(2.4, 2.8, t);               // eases him out of however he fell
   }
   if (crossed(s.end - 0.75)) {
     // a twinkle where he was last seen
@@ -247,7 +247,14 @@ function sendStep(s, dt) {
 
 // ---------------------------------------------------------------- the bomb visit
 // a caveman who has never seen a bomb, planting one
-const bombSpot = s => V.add(bonePos(s.f, 'spine'), [0, 0.25, 0]);          // on top of his belly
+// on top of whichever side faces up: his belly, or his back if he went down face first
+function bellyTop(f) {
+  const side = V.sub(bonePos(f, 'upperArm_L'), bonePos(f, 'upperArm_R')), up = V.sub(bonePos(f, 'neck'), bonePos(f, 'hips'));
+  const n = V.norm(V.cross(side, up));
+  return V.add(bonePos(f, 'spine'), [0, n[1] >= 0 ? 0.25 : 0.19, 0]);
+}
+const bombSpot = s => bellyTop(s.f);
+const TAPE_AT = 1.6, TAPE = 1.0;                                            // after he puts it down, he tapes it on: two strips
 const KNEEL_IN = 0.3;                                                       // how far he shuffles in to reach the belly
 // both hands on the ends of the bomb; c is the bottom middle of the bomb, in his own space
 function holdGoals(c) {
@@ -295,7 +302,8 @@ function explode(c, owner) {
   for (const v of [player, ...bots]) {
     const dd = Math.hypot(v.pos[0] - c[0], v.pos[2] - c[2]);
     // your own bomb counts as your knockout (but blowing yourself up doesn't)
-    if (v.dead < 0 && dd < 8) damage(v, dd < 3 ? 150 : Math.round(25 + 75 * (1 - dd / 8)), { pos: c, isPlayer: !!(owner && owner.isPlayer && v !== owner) });
+    if (v.dead < 0 && dd < 8) damage(v, dd < 3 ? 150 : Math.round(25 + 75 * (1 - dd / 8)), { pos: c, isPlayer: !!(owner && owner.isPlayer && v !== owner), blast: true });
+    else if (v.rag && !v.gone) ragBlast(v, c, 10);            // bodies already down get thrown too
   }
 }
 // what an explosion keeps doing after the bang
@@ -361,6 +369,21 @@ function drawBlasts(quad, right, up, additive) {
   }
 }
 // the C4: the textured brick, its screen lighting up when armed and flashing with each beep
+// grey duct tape: two strips over the brick and down onto whatever it's stuck to; k is how far along the taping is
+function drawTape(prog, at, R0, k) {
+  if (k <= 0) return;
+  const q = o => V.add(at, M3.vec(R0, o));
+  flat(prog, [0.2, 0.21, 0.23], 0.5, 0.15);
+  for (let j = 0; j < 2; j++) {
+    const g = clamp(k * 2 - j, 0, 1), x = j ? 0.09 : -0.09;
+    if (g <= 0) continue;
+    const len = 0.22 * g;
+    drawMesh(prog, meshes.shell, scaled(R0, 0.05, 0.005, len), q([x, 0.096, 0.11 - len / 2]));            // over the top
+    drawMesh(prog, meshes.shell, scaled(R0, 0.05, 0.11, 0.005), q([x, 0.04, 0.109]));                     // down the far side
+    drawMesh(prog, meshes.shell, scaled(R0, 0.05, 0.005, 0.07), q([x, -0.012, 0.14]));                    // stuck to him
+    if (g > 0.92) { drawMesh(prog, meshes.shell, scaled(R0, 0.05, 0.11, 0.005), q([x, 0.04, -0.109])); drawMesh(prog, meshes.shell, scaled(R0, 0.05, 0.005, 0.07), q([x, -0.012, -0.14])); }
+  }
+}
 function drawC4(prog, at, R0, lit, glow) {
   const R = M3.mul(R0, M3.ry(Math.PI / 2)), q = o => V.add(at, M3.vec(R, o));
   if (prog.u.uOrm) {
@@ -376,10 +399,13 @@ function drawC4(prog, at, R0, lit, glow) {
 function bombStep(s, dt) {
   const f = s.f, h = s.helper;
   s.prev = s.t; s.t += dt;
-  const t = s.t;
-  if (t < 0) return;
+  // the taping is slipped in as a pause in his timeline: everything after it runs TAPE seconds later
+  const raw = s.t, warp = x => x < TAPE_AT ? x : x < TAPE_AT + TAPE ? TAPE_AT : x - TAPE;
+  const t = warp(raw), tp = (raw - TAPE_AT) / TAPE, taping = tp >= 0 && tp < 1;
+  s.tape = clamp(tp, 0, 1); s.taping = taping;
+  if (raw < 0) return;
   h.time += dt;
-  const crossed = at => s.prev < at && t >= at;
+  const crossed = at => warp(s.prev) < at && t >= at, crossedRaw = at => s.prev < at && raw >= at;
   const near = clamp(1.5 - V.len(V.sub(s.spot, player.pos)) / 30, 0.25, 1);
   const wrong = V.mad(s.spot, s.away, -3.2);                   // he runs the wrong way first
   h.gone = false; h.script = null; h.scriptW = 0; h.tilt = 0;
@@ -420,6 +446,12 @@ function bombStep(s, dt) {
       const lift = smooth(1.6, 1.72, t) * (1 - smooth(2.05, 2.15, t));
       S.arms.R = hand(V.add(key, [0.02 * Math.sin(t * 40), 0.03 + 0.06 * (1 - tap) * lift + 0.05 * (1 - lift), 0]), [0.25, -0.55, 0.8], [0.3, -0.2, -1], [-1, -1, -0.1], 1.1);
     }
+    if (taping) {                                               // one hand holds it still, the other runs tape over it, far side to near
+      const k = tp < 0.5 ? 0 : 1, u = smooth(0.08, 0.85, (tp - k * 0.5) / 0.5), sx = k ? 0.09 : -0.09;
+      S.arms.R = hand(V.add(onBelly, [sx, 0.12 + 0.04 * Math.sin(u * Math.PI), 0.22 - 0.44 * u]), [0, -0.5, 1], [0, -1, -0.5], [-1, -1, -0.1], 0.5);
+      S.arms.L = hand(V.add(onBelly, [k ? 0.0 : 0.1, 0.1, 0.0]), [0, -0.6, 1], [0, -1, -0.6], [1, -0.6, -0.3], 0.3);
+      S.head = M3.mul(M3.rx(-0.55), M3.ry(-sx * 2));
+    }
     script(S, smooth(1.0, 1.12, t) * (1 - smooth(2.05, 2.2, t)));
     if (t < 1.12) h.carry = holdGoals(CARRY);
   } else if (t < FUSE_AT) {                                     // bangs two rocks to make a spark... and bonks himself
@@ -453,6 +485,8 @@ function bombStep(s, dt) {
   // ---------- the cues
   if (crossed(0.001)) { Sound.play('zoom', near); popWord(V.add(V.lerp(s.from, s.spot, 0.75), [0, 2.0, 0]), 'NYOOOM!', 0.8); }
   if (crossed(0.74)) { Sound.play('screech', near); popWord(V.add(s.spot, [0, 2.05, 0]), 'SKRRT', 0.5); puff(s.spot.slice(), 20, [0.55, 0.53, 0.49, 0.75], 1.7, 0.09, 0.6, 0.8); }
+  for (const at of [TAPE_AT + 0.05, TAPE_AT + TAPE * 0.5 + 0.05]) if (crossedRaw(at)) Sound.play('tape', near);
+  if (crossedRaw(TAPE_AT + TAPE - 0.05)) popWord(V.add(s.spot, [0, 1.5, 0]), 'STICKY.', 0.7);
   if (crossed(1.56)) { Sound.play('set', near); popWord(V.add(s.spot, [0, 1.6, 0]), 'OOK.', 0.7); }
   for (let k = 0; k < 4; k++) if (crossed(1.765 + k * 0.09)) Sound.play('key', near, k);
   for (let k = 0; k < 4; k++) if (crossed(2.2 + k * 0.7 + 0.31) && 2.2 + k * 0.7 < 2.85) { Sound.play('bonk', near * 0.6); puff(V.add(s.spot, M3.vec(M3.ry(s.face), [0, 1.2, 0.42])), 4, [1, 0.8, 0.3, 1], 1.4, 0.03, 0.3, 4); }
@@ -512,7 +546,7 @@ function plantSpot(f) {
   const fwd = [Math.sin(f.yaw), 0, Math.cos(f.yaw)], at = V.mad(f.pos, fwd, 0.62);
   for (const b of bots) {
     if (b.dead < 1 || b.send) continue;
-    const belly = V.add(bonePos(b, 'spine'), [0, 0.25, 0]);
+    const belly = bellyTop(b);
     if (Math.hypot(belly[0] - at[0], belly[2] - at[2]) < 0.8) return { p: belly, body: b };
   }
   return { p: [at[0], floorAt(at[0], at[2]), at[2]] };
@@ -570,10 +604,12 @@ function drawPlanted(prog) {
 }
 
 function sendsStep(dt) {
+  ragsStep(dt);
   blastsStep(dt);
   plantedStep(dt);
   for (const s of sends.slice()) {
     if (!sends.includes(s)) continue;        // your own respawn just cleared everyone's
+    if (!s.placed && s.t + dt >= 0) { s.placed = true; placeSend(s); if (s.f.isPlayer) aimDeathCam(); }
     sendStep(s, dt);
     if (s.t >= s.end) {
       const f = s.f;
@@ -610,7 +646,14 @@ function drawSends(prog) {
       if (s.hold) {                                           // in his hands
         const R = M3.mul(M3.ry(h.yaw), M3.rx(h.tilt));
         drawC4(prog, V.add(h.pos, M3.vec(R, s.hold)), R, false, 0);
-      } else drawC4(prog, bombSpot(s), M3.ry(s.face), !!s.lit, s.lit ? Math.max(0, 1 - (game.time - s.beepAt) / 0.12) : 0);
+      } else {
+        drawC4(prog, bombSpot(s), M3.ry(s.face), !!s.lit, s.lit ? Math.max(0, 1 - (game.time - s.beepAt) / 0.12) : 0);
+        drawTape(prog, bombSpot(s), M3.ry(s.face), s.tape || 0);
+      }
+      if (s.taping && !h.gone) {                              // the roll of tape in his hand
+        flat(prog, [0.2, 0.21, 0.23], 0.5, 0.15);
+        drawMesh(prog, party().pom, scaled(M3.ry(h.yaw), 0.045, 0.022, 0.045), V.add(bonePos(h, 'hand_R'), [0, 0.03, 0]));
+      }
       if (s.bonk > 0 && !h.gone) {                            // seeing stars
         const head = V.add(bonePos(h, 'head'), [0, 0.38, 0]);
         flat(prog, [0.95, 0.65, 0.02], 0.3, 0.7);
