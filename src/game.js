@@ -888,7 +888,7 @@ function drawEffects(vp, eye, fwd) {
 let lastView = null, quality = 1, frameAvg = 0.016, qualityWait = 3;
 function render() {
   const slim = world.map === 'island' && world.low;           // the optimized map also draws fewer pixels
-  const dpr = Math.min(window.devicePixelRatio || 1, slim ? 1 : 1.5) * quality * (slim ? 0.75 : 1);
+  const dpr = Math.min(window.devicePixelRatio || 1, slim ? 1 : 1.5) * quality * (slim ? 0.9 : 1);
   const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   for (const f of fighters.concat(helpers)) poseFighter(f);
@@ -899,7 +899,7 @@ function render() {
   const eye = V.add(view.eye, [rand(-sh, sh), rand(-sh, sh), rand(-sh, sh)]);
   if (world.map === 'island') eye[1] = Math.max(eye[1], floorAt(eye[0], eye[2]) + 0.18);   // never inside a hill
   const fov = cam.fov + (0.17 - cam.fov) * smooth(0.45, 1, sc);
-  const proj = perspective(fov, w / Math.max(1, h), 0.08, world.map !== 'island' ? 160 : world.low ? 220 : 600);
+  const proj = perspective(fov, w / Math.max(1, h), 0.08, world.map !== 'island' ? 160 : world.low ? 300 : 600);
   const vp = mul4(proj, lookAt(eye, V.add(eye, view.fwd)));
   lastView = { vp, w: canvas.clientWidth, h: canvas.clientHeight };
 

@@ -227,7 +227,9 @@ void main() {
   vec3 N = normalize(vN), col = vC;
   float far = length(vW - uEye), near = 1.0 - smoothstep(14.0, 55.0, far);   // fine grain fades out before it can shimmer
   if (uKind == 0 && uLow == 1) {
-    col *= 0.88 + 0.24 * noise(vW.xz * 0.9);
+    float stoneish = 1.0 - smoothstep(0.10, 0.19, max(col.r, max(col.g, col.b)) - min(col.r, min(col.g, col.b)));
+    col *= 0.84 + 0.20 * noise(vW.xz * 0.9) + 0.14 * noise(vW.xz * 0.23) + near * 0.16 * (noise(vW.xz * 5.0) - 0.5);
+    col *= 1.0 + stoneish * 0.30 * (noise(vec2(vW.y * 1.7, 3.0)) - 0.5);
   } else if (uKind == 0) {
     vec2 p = vW.xz;
     float sat = max(col.r, max(col.g, col.b)) - min(col.r, min(col.g, col.b));
@@ -277,7 +279,10 @@ void main() {
   float sh;
   if (uLow == 1) {
     vec3 q = (uBakedLight * vec4(vW + N * 0.4, 1.0)).xyz * 0.5 + 0.5;
-    sh = texture(uBaked, vec3(q.xy, q.z - 0.0012));
+    vec2 d = 0.6 / vec2(textureSize(uBaked, 0));
+    sh = 0.5 * (texture(uBaked, vec3(q.xy + d, q.z - 0.0012)) + texture(uBaked, vec3(q.xy - d, q.z - 0.0012)));
+    vec3 m = (uLight * vec4(vW + N * 0.02, 1.0)).xyz * 0.5 + 0.5;
+    if (m.x > 0.0 && m.x < 1.0 && m.y > 0.0 && m.y < 1.0 && m.z < 1.0) sh = min(sh, texture(uShadow, vec3(m.xy, m.z - 0.0012)));
   } else sh = min(shadowAt(vW + N * 0.02), bakedShadow(vW + N * 0.22));
   float sun = max(dot(N, uSun), 0.0);
   vec3 sky = mix(vec3(0.42, 0.39, 0.34), vec3(0.54, 0.60, 0.72), N.y * 0.5 + 0.5);
@@ -355,7 +360,7 @@ function buildFlora(low) {
   };
   // a tapering limb from a to b
   const limb = (a, b, r0, r1, col, sides) => {
-    const m = cur.big, base = m.v.length / 9, n = low ? 4 : sides || 7;
+    const m = cur.big, base = m.v.length / 9, n = low ? 5 : sides || 7;
     const y = V.norm(V.sub(b, a)), x = V.norm(V.cross(y, Math.abs(y[1]) > 0.95 ? [1, 0, 0] : [0, 1, 0])), z = V.cross(x, y);
     for (let k = 0; k <= n; k++) {
       const t = k / n * Math.PI * 2, d = V.add(V.mul(x, Math.cos(t)), V.mul(z, Math.sin(t)));
@@ -374,7 +379,7 @@ function buildFlora(low) {
   // a ball of leaves with a darker heart, ragged round the edge
   const clump = (c, r, count, size, col) => {
     add(blob(r * 0.58, r * 0.48, r * 0.58, [0, 0, 0], 0.5, 6), c, shadeOf(col, 0.6));
-    if (low) { count = Math.ceil(count / 5); size *= 1.9; }
+    if (low) { count = Math.ceil(count / 3); size *= 1.45; }
     for (let k = 0; k < count; k++) {
       const d = anyway(), at = V.add(c, [d[0] * r * rnd(0.6, 1.02), d[1] * r * 0.8 * rnd(0.6, 1.02), d[2] * r * rnd(0.6, 1.02)]);
       const along = V.norm(V.add(anyway(), V.mul(d, 0.7))), side = V.norm(V.cross(along, anyway()));
@@ -407,7 +412,7 @@ function buildFlora(low) {
     const up = (x, y, z) => V.add(at, [x * s, y * s, z * s]), col = [0.07 + shade * 0.05, 0.25 + shade * 0.09, 0.13];
     limb(up(0, 0, 0), up(0, 0.5, 0), 0.42 * s, 0.27 * s, BARK, 8);
     limb(up(0, 0.5, 0), up(0, 8.25, 0), 0.27 * s, 0.03 * s, BARK, 8);
-    const TIERS = low ? 6 : 10;
+    const TIERS = low ? 7 : 10;
     for (let t = 0; t < TIERS; t++) {
       const u = t / TIERS, y = 3.1 + t * 5.2 / TIERS, reach = 2.2 * (1 - u * 0.82) * rnd(0.9, 1.1), turn = rnd(0, 6.3), arms = low ? 6 : 9;
       for (let k = 0; k < arms; k++) {
@@ -438,14 +443,14 @@ function buildFlora(low) {
       const a = turn + f * Math.PI * 0.2 + rnd(-0.2, 0.2), rise = f % 2 ? rnd(0.5, 0.9) : rnd(0.0, 0.4), len = rnd(2.4, 3.1) * s;
       const out = [Math.cos(a), 0, Math.sin(a)], across = [-out[2], 0, out[0]], col = [0.14, rnd(0.36, 0.50), 0.09];
       const at_ = u => V.add(top, [out[0] * len * u, len * (rise * u - 0.95 * u * u), out[2] * len * u]);
-      const parts = low ? 4 : 9;
+      const parts = low ? 6 : 9;
       for (let k = 0; k < parts; k++) {
         const u = k / parts, here = at_(u), next = at_(u + 1 / parts), ahead = V.norm(V.sub(next, here));
         limb(here, next, 0.035 * s * (1 - u * 0.7), 0.035 * s * (1 - (u + 1 / parts) * 0.7), [0.30, 0.40, 0.10], 4);
         const wide = (0.9 - 0.5 * u) * s;
         for (const side of [-1, 1]) {
           const dir = V.norm(V.add(V.mul(across, side), V.add(V.mul(ahead, 0.75), [0, -0.35, 0])));
-          leaf(here, V.mul(dir, wide), V.mul(ahead, (low ? 0.38 : 0.17) * s), shadeOf(col, rnd(0.85, 1.2)), V.norm([out[0] * 0.3, 1, out[2] * 0.3]));
+          leaf(here, V.mul(dir, wide), V.mul(ahead, (low ? 0.27 : 0.17) * s), shadeOf(col, rnd(0.85, 1.2)), V.norm([out[0] * 0.3, 1, out[2] * 0.3]));
         }
       }
     }
@@ -454,7 +459,7 @@ function buildFlora(low) {
 
   const bush = (at, s, shade) => {
     const col = [0.17 + shade * 0.12, 0.34 + shade * 0.12, 0.08];
-    for (let k = 0; k < (low ? 1 : 3); k++) clump(V.add(at, [rnd(-0.45, 0.45) * s, rnd(0.25, 0.5) * s, rnd(-0.45, 0.45) * s]), rnd(0.35, 0.55) * s, 32, 0.2 * s, col);
+    for (let k = 0; k < (low ? 2 : 3); k++) clump(V.add(at, [rnd(-0.45, 0.45) * s, rnd(0.25, 0.5) * s, rnd(-0.45, 0.45) * s]), rnd(0.35, 0.55) * s, 32, 0.2 * s, col);
   };
   // a ball of triangles, each corner split in four `depth` times
   const ball = depth => {
@@ -492,12 +497,12 @@ function buildFlora(low) {
   };
   const boulder = (at, s, shade) => {
     const grey = 0.36 + shade * 0.10, col = [grey + 0.02, grey, grey - 0.035];
-    stone(at, s * 0.95, col, s > 0.8 && !low ? 2 : 1);
+    stone(at, s * 0.95, col, s > 0.8 ? 2 : 1);
     if (s > 0.8) {                                            // big ones are a heap: a slab leaning on the main lump
       const a = rnd(0, 6.3);
       stone(V.add(at, [Math.cos(a) * s * 0.65, 0, Math.sin(a) * s * 0.65]), s * rnd(0.5, 0.65), shadeOf(col, rnd(0.88, 1.08)), 1);
     }
-    for (let k = 0; k < (low ? 0 : 4); k++) {                 // broken bits round the foot
+    for (let k = 0; k < (low ? 2 : 4); k++) {                 // broken bits round the foot
       const a = rnd(0, 6.3), r = s * rnd(0.1, 0.28);
       const far = s * rnd(1.05, 1.5), x = at[0] + Math.cos(a) * far, z = at[2] + Math.sin(a) * far;
       stone([x, groundHeight(x, z) - r * 0.25, z], r, shadeOf(col, rnd(0.85, 1.1)), 0);        // each on its own patch of ground
@@ -559,7 +564,8 @@ function buildFlora(low) {
       }
     }
   };
-  if (!low) {
+  if (low) sow(2.5, 53, 0.55, 16, 0.34, [0.28, 0.55], 0.032);
+  else {
     sow(1.0, 11, 0.85, 7, 0.24, [0.13, 0.27], 0.022);
     sow(1.9, 53, 0.65, 30, 0.34, [0.32, 0.62], 0.028);
   }
@@ -593,7 +599,7 @@ function drawFloraShadow(light, eye) {
 // the land and everything on it never moves, so its shadows are drawn once, the first time they are needed
 const baked = [];
 function bakeShadows() {
-  const SIZE = Math.min(world.low ? 2048 : 4096, gl.getParameter(gl.MAX_TEXTURE_SIZE));
+  const SIZE = Math.min(world.low ? 3072 : 4096, gl.getParameter(gl.MAX_TEXTURE_SIZE));
   const tex = gl.createTexture(); gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, SIZE, SIZE, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
   for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE], [gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
@@ -616,7 +622,7 @@ const seaVao = (() => {
   attrib(0, new Float32Array([-S, y, S, S, y, S, S, y, -S, -S, y, S, S, y, -S, -S, y, -S]), 3, gl.FLOAT);
   gl.bindVertexArray(null); return vao;
 })();
-const fogRange = () => world.low ? [50, 140] : [90, 420];
+const fogRange = () => world.low ? [70, 200] : [90, 420];
 function drawLand(vp, light, eye) {
   const k = world.low ? 1 : 0, shade = baked[k] || (baked[k] = bakeShadows());
   globals(landProg, vp, light, eye); gl.uniform3fv(landProg.u.uSky, SKY.island); gl.uniform2fv(landProg.u.uFog, fogRange());
@@ -632,7 +638,7 @@ function drawLand(vp, light, eye) {
     if (w < -R || Math.abs(x) > Math.max(w, 0) + R * 2.5) continue;
     if (world.low && Math.hypot(p.x - eye[0], p.z - eye[2]) > fogRange()[1] + R) continue;
     drawPart(p.big);
-    if (Math.hypot(p.x - eye[0], p.z - eye[2]) < 40 + R) drawPart(p.grass);
+    if (Math.hypot(p.x - eye[0], p.z - eye[2]) < (world.low ? 18 : 40) + R) drawPart(p.grass);
   }
 }
 // after everything solid, so legs show through the water
