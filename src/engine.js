@@ -389,8 +389,138 @@ const Sound = (() => {
     if (pan && ac.createStereoPanner) { const p = ac.createStereoPanner(); p.pan.value = pan; g.connect(p); g = p; }
     if (to === 'verb') { g.connect(master); g.connect(verb); }
     else if (to === 'room') { g.connect(master); const s = ac.createGain(); s.gain.value = 0.18; g.connect(s); s.connect(verb); }
-    else if (to === 'grit') g.connect(grit); else if (to === 'clear') g.connect(clear); else g.connect(master);
+    else if (to === 'grit') g.connect(grit); else if (to === 'clear') g.connect(clear); else if (to && to.connect) g.connect(to); else g.connect(master);
   }
+  // ------------------------------------------------------------- the boat trip: music, engine, sea, fire
+  // everything long-running goes through `scene`, so that pausing or muting silences it at once
+  let scene = null, deck = null, meter = null, meterData = null, hushed = false;
+  const loops = {};
+  const level = () => { if (scene) scene.gain.setTargetAtTime(muted || hushed ? 0 : 1, ac.currentTime, 0.03); };
+  function sceneInit() {
+    if (!ac || scene) return !!ac;
+    scene = ac.createGain(); scene.connect(master); level();
+    return true;
+  }
+  // a boombox's own sound: no deep bass, a bit of bite in the middle
+  function makeDeck() {
+    const input = ac.createGain(), low = ac.createBiquadFilter(), mid = ac.createBiquadFilter(), out = ac.createGain();
+    low.type = 'highpass'; low.frequency.value = 55; mid.type = 'peaking'; mid.frequency.value = 2200; mid.Q.value = 0.8; mid.gain.value = 3;
+    meter = ac.createAnalyser(); meter.fftSize = 512; meterData = new Float32Array(512);
+    input.connect(low); low.connect(mid); mid.connect(meter); mid.connect(out); out.connect(scene);
+    return { input, out, next: 0 };
+  }
+  // the player's own song, if they chose one from their computer (it is never part of the game)
+  const song = { bytes: null, buffer: null, bpm: 0, wait: null };
+  // how fast a song is: where its jumps in loudness line up with themselves best
+  function tempo(buf) {
+    const x = buf.getChannelData(0), hop = Math.floor(buf.sampleRate / 100), n = Math.min(6000, Math.floor(x.length / hop)), rise = new Float32Array(n);
+    let last = 0;
+    for (let i = 0; i < n; i++) { let e = 0; for (let k = 0; k < hop; k += 4) e += x[i * hop + k] ** 2; e = Math.sqrt(e); rise[i] = Math.max(0, e - last); last = e; }
+    let best = 120, score = -1;
+    for (let bpm = 80; bpm <= 175; bpm++) {
+      const lag = 6000 / bpm; let s = 0;
+      for (let i = 0; i + 2 * lag + 2 < n; i++) { const j = Math.floor(i + lag), k = Math.floor(i + 2 * lag); s += rise[i] * (rise[j] + rise[j + 1] + 0.5 * (rise[k] + rise[k + 1])); }
+      if (s > score) { score = s; best = bpm; }
+    }
+    return best;
+  }
+  function decodeSong() {
+    if (!ac || !song.bytes || song.buffer) return Promise.resolve(!!song.buffer);
+    if (!song.wait) {
+      const bytes = song.bytes;
+      song.wait = new Promise((ok, no) => ac.decodeAudioData(bytes.slice(0), ok, no)).then(
+        buf => { if (song.bytes !== bytes) return false; song.buffer = buf; song.bpm = tempo(buf); song.wait = null; return true; },
+        () => { if (song.bytes === bytes) { song.bytes = null; song.wait = null; } return false; });
+    }
+    return song.wait;
+  }
+  // the game's own tune, a hype one: 128 beats a minute in E minor, four bars round and round
+  const BEAT = 128;
+  const ROOTS = [41.2, 41.2, 65.41, 73.42], STABS = [[329.6, 392, 493.9], [329.6, 392, 493.9], [261.6, 329.6, 392], [293.7, 370, 440]];
+  // the lead: [which 16th, semitones above A4, how many 16ths]
+  const HOOK = [
+    [[0, -5, 2], [3, -5, 1], [6, 2, 2], [8, 0, 1], [10, -2, 2], [12, -5, 3]],
+    [[0, -5, 2], [3, -5, 1], [6, 3, 2], [8, 2, 4], [14, -2, 2]],
+    [[0, 3, 2], [3, 3, 1], [6, 7, 2], [8, 5, 1], [10, 3, 2], [12, -2, 3]],
+    [[0, 5, 3], [4, 5, 2], [8, 7, 2], [10, 9, 2], [12, 10, 4]]];
+  function step(k, at) {
+    const bar = Math.floor(k / 16) % 4, s = k % 16, out = deck.input, six = 15 / BEAT;
+    const fill = bar === 3 && s >= 12;
+    if (s % 4 === 0 && !(fill && s > 12)) { tone(170, 44, 0.24, 1.15, at, 'sine', out); burst(0.012, 3000, 0.25, 'highpass', at, 0, out); }
+    if (s === 4 || (s === 12 && !fill)) { for (const d of [0, 0.011, 0.022]) burst(0.03, 1500, 0.42, 'bandpass', at + d, 1.1, out); burst(0.17, 1700, 0.38, 'bandpass', at + 0.024, 0.7, out); }
+    if (fill) for (const d of [0, 0.5]) burst(0.07, 2100, 0.2 + (s - 12 + d) * 0.1, 'bandpass', at + d * six, 0.8, out);   // snare roll
+    if (bar === 3 && s === 8) burst(six * 8, 400, 0.01, 'lowpass', at, 0, out), tone(300, 2400, six * 8, 0.07, at, 'sawtooth', out);   // the riser
+    if (s % 4 === 2) burst(0.12, 7800, 0.24, 'highpass', at, 0, out); else if (s % 2 === 1) burst(0.025, 9500, 0.08, 'highpass', at, 0, out);
+    // bass bouncing between the kicks
+    const r = ROOTS[bar], note = { 2: r, 3: r, 6: r * 2, 7: r, 10: r, 11: r * 2, 14: r * 1.498, 15: r * 2 }[s];
+    if (note) { tone(note * 2, note * 1.98, six * 0.95, 0.30, at, 'sawtooth', out); tone(note, note, six * 1.1, 0.8, at, 'sine', out); tone(note * 4, note * 3.9, six * 0.5, 0.07, at, 'square', out); }
+    // brass stabs
+    if (s === 0 || s === 3 || s === 6 || s === 11) for (const f of STABS[bar]) { tone(f, f, six * 1.6, 0.075, at, 'sawtooth', out); tone(f * 1.008, f * 1.008, six * 1.6, 0.065, at, 'sawtooth', out); }
+    // a "hey!" from the crowd
+    if (s === 12 && bar === 1) for (const [f, v] of [[620, 0.30], [1150, 0.20], [2500, 0.06]]) { burst(0.22, f, v * 2.4, 'bandpass', at, 9, out); tone(f * 0.5, f * 0.42, 0.2, v * 0.35, at, 'sawtooth', out); }
+    if (k >= 32) for (const [t, semi, len] of HOOK[bar]) if (t === s) { const f = 440 * 2 ** (semi / 12); tone(f * 0.94, f, 0.05, 0.05, at, 'square', out); tone(f, f, six * len * 1.1, 0.10, at + 0.02, 'square', out); tone(f * 1.007, f * 1.007, six * len * 1.1, 0.08, at, 'sawtooth', out); tone(f * 2, f * 2, six * len * 0.6, 0.03, at, 'triangle', out); }
+  }
+  const music = {
+    get bpm() { return song.buffer ? song.bpm : BEAT; },
+    // seconds the music has been going by the sound card's own clock (null before it starts)
+    time() { return deck ? ac.currentTime - deck.t0 : null; },
+    // call every frame with the seconds since the music was meant to begin; it plays what is due
+    tick(at) {
+      if (!sceneInit() || ac.state !== 'running' || at < 0) return;
+      const six = 15 / BEAT;
+      if (song.bytes && !song.buffer) { decodeSong(); return; }
+      if (!deck) { deck = makeDeck(); deck.t0 = ac.currentTime - at; deck.next = Math.max(0, Math.ceil(at / six)); }
+      const t = ac.currentTime - deck.t0;
+      if (song.buffer) {
+        if (!deck.source) { deck.source = ac.createBufferSource(); deck.source.buffer = song.buffer; deck.source.loop = true; deck.source.connect(deck.input); deck.source.start(0, t % song.buffer.duration); }
+        return;
+      }
+      while (deck.next * six < t + 0.25) { if (deck.next * six >= t - 0.05) step(deck.next, Math.max(0, deck.next * six - t)); deck.next++; }
+    },
+    volume(v, muffle) { if (deck) deck.out.gain.setTargetAtTime(v, ac.currentTime, muffle || 0.08); },
+    // how loud it is right now, 0 to 1 (null when nothing can be heard)
+    loudness() {
+      if (!deck || muted || hushed) return null;
+      meter.getFloatTimeDomainData(meterData);
+      let e = 0; for (const x of meterData) e += x * x;
+      return Math.min(1, Math.sqrt(e / meterData.length) * 3.2);
+    },
+    stop() {
+      if (!deck) return;
+      const d = deck; deck = null;
+      if (d.source) d.source.stop(ac.currentTime + 0.1);
+      d.out.gain.setTargetAtTime(0, ac.currentTime, 0.02);
+      setTimeout(() => d.out.disconnect(), 900);
+    }
+  };
+  // long sounds that stay on until told otherwise
+  function makeLoop(name) {
+    const g = ac.createGain(), sources = [];
+    g.gain.value = 0; g.connect(scene);
+    const noisy = (buf, type, f, q, k) => { const s = ac.createBufferSource(), flt = ac.createBiquadFilter(), a = ac.createGain(); s.buffer = buf; s.loop = true; flt.type = type; flt.frequency.value = f; flt.Q.value = q; a.gain.value = k; s.connect(flt); flt.connect(a); a.connect(g); s.start(0, Math.random() * 3); sources.push(s); return a; };
+    const swing = (target, rate, depth) => { const o = ac.createOscillator(), a = ac.createGain(); o.frequency.value = rate; a.gain.value = depth; o.connect(a); a.connect(target.gain); o.start(); sources.push(o); };
+    if (name === 'motor') {
+      const lp = ac.createBiquadFilter(), a = ac.createGain(); lp.type = 'lowpass'; lp.frequency.value = 420; a.gain.value = 0.22; lp.connect(a); a.connect(g);
+      for (const f of [58, 58.9, 116.5]) { const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.connect(lp); o.start(); sources.push(o); }
+      swing(a, 23, 0.09);
+      noisy(brown, 'lowpass', 700, 0.7, 0.35);
+    } else if (name === 'water') { swing(noisy(noise, 'bandpass', 900, 0.6, 0.22), 0.7, 0.08); noisy(brown, 'lowpass', 500, 0.7, 0.3); }
+    else if (name === 'surf') { swing(noisy(noise, 'lowpass', 700, 0.5, 0.22), 0.13, 0.2); swing(noisy(brown, 'lowpass', 350, 0.5, 0.5), 0.17, 0.4); }
+    else { noisy(brown, 'lowpass', 600, 0.7, 0.8); swing(noisy(noise, 'bandpass', 1800, 0.5, 0.08), 5.3, 0.05); }   // fire
+    return { g, sources, vol: 0, crackle: 0 };
+  }
+  function loop(name, vol) {
+    if (!sceneInit()) return;
+    let l = loops[name];
+    if (!l) { if (vol <= 0.001) return; l = loops[name] = makeLoop(name); }
+    if (Math.abs(vol - l.vol) > 0.004 || vol === 0) { l.vol = vol; l.g.gain.setTargetAtTime(vol, ac.currentTime, 0.15); }
+    if (name === 'fire' && ac.state === 'running' && ac.currentTime > l.crackle) {
+      l.crackle = ac.currentTime + 0.05 + Math.random() * 0.22;
+      burst(0.008 + Math.random() * 0.02, 2200 + Math.random() * 4500, (0.2 + Math.random() * 0.5) * vol, 'bandpass', 0, 5, scene);
+    }
+    if (vol <= 0.001) { delete loops[name]; for (const s of l.sources) s.stop(ac.currentTime + 0.6); setTimeout(() => l.g.disconnect(), 900); }
+  }
+  const loopsOff = () => { for (const name of Object.keys(loops)) loop(name, 0); };
   // a clean electronic bip: a pure tone with a soft 3 ms start (no click), a faint octave for shine,
   // a quick natural fade, and a little room around it. f2 slides the pitch.
   function chirp(f, dur, vol, at, f2) {
@@ -436,6 +566,20 @@ const Sound = (() => {
     ding: v => { for (const at of [0, 0.14]) { tone(2093, 2093, 0.45, 0.2 * v, at, 'sine'); tone(5230, 5230, 0.25, 0.06 * v, at, 'sine'); } },
     skid: v => { burst(0.55, 2300, 0.3 * v, 'bandpass', 0, 5); tone(1500, 1100, 0.5, 0.07 * v, 0, 'sawtooth'); },
     tick: v => { burst(0.012, 3800, 0.3 * v, 'bandpass', 0, 6); },
+    // the boat trip
+    clink: v => { for (const [f, at] of [[2650, 0], [3420, 0.012], [4310, 0.02]]) tone(f, f * 0.995, 0.28, 0.14 * v, at, 'sine', 'room'); burst(0.025, 5200, 0.2 * v, 'highpass'); },
+    pshh: v => { burst(0.03, 2400, 0.5 * v, 'bandpass', 0, 3); burst(0.38, 6500, 0.28 * v, 'highpass', 0.02); },
+    gulp: v => { for (const at of [0, 0.34, 0.68]) { tone(240, 95, 0.12, 0.4 * v, at); burst(0.04, 600, 0.2 * v, 'bandpass', at, 3); } },
+    ahh: v => { burst(0.55, 1100, 0.2 * v, 'bandpass', 0, 2.5); tone(170, 120, 0.5, 0.18 * v, 0, 'sawtooth'); },
+    scratch: v => { for (const [at, f] of [[0, 2600], [0.09, 700], [0.18, 3200], [0.26, 500]]) burst(0.09, f, 0.7 * v, 'bandpass', at, 2); tone(900, 90, 0.4, 0.2 * v, 0, 'sawtooth'); },
+    yell: v => { tone(190, 330, 0.18, 0.4 * v, 0, 'sawtooth'); tone(330, 260, 0.55, 0.4 * v, 0.18, 'sawtooth'); tone(660, 520, 0.55, 0.12 * v, 0.18, 'square'); },
+    crash: v => {
+      burst(0.12, 3800, 1.4 * v, 'highpass', 0, 0, 'grit'); burst(0.8, 1800, 1.4 * v, null, 0, 0, 'grit'); tone(95, 30, 0.8, 1.8 * v);
+      for (let i = 0; i < 22; i++) { const at = Math.random() * 0.9; burst(0.02 + Math.random() * 0.05, 600 + Math.random() * 2600, 0.7 * v * (1 - at * 0.8), 'bandpass', at, 4, 'room'); }
+      tone(480, 130, 0.5, 0.25 * v, 0.05, 'square', 'verb');
+    },
+    splash: v => { burst(1.1, 2600, 0.9 * v, null, 0, 0, 'room'); burst(0.7, 5200, 0.25 * v, 'highpass', 0.08); tone(130, 50, 0.25, 0.5 * v); },
+    snore: v => { for (let i = 0; i < 14; i++) burst(0.06, 160 + i * 9, 0.55 * v * Math.sin(Math.PI * (i + 0.5) / 14), 'lowpass', i * 0.055, 5); tone(620, 900, 0.5, 0.05 * v, 1.0, 'sine'); },
     bonk: v => { tone(620, 190, 0.13, 0.8 * v, 0, 'triangle'); tone(1240, 500, 0.05, 0.25 * v, 0, 'square'); burst(0.04, 900, 0.5 * v); },
     thud: v => { tone(95, 40, 0.2, 0.9 * v); burst(0.18, 420, 0.6 * v); },
     boing: v => { tone(160, 640, 0.18, 0.35 * v, 0, 'sawtooth'); tone(640, 300, 0.25, 0.3 * v, 0.17, 'sine'); tone(300, 480, 0.2, 0.2 * v, 0.4, 'sine'); },
@@ -536,9 +680,13 @@ const Sound = (() => {
     }
   };
   return {
-    init,
+    init, music, loop, loopsOff,
+    hush(on) { if (hushed !== on) { hushed = on; if (ac) level(); } },
+    // an audio file the player chose for the boombox (its bytes), or null for the game's own tune.
+    // resolves to whether it could be read
+    setSong(bytes) { song.bytes = bytes; song.buffer = null; song.wait = null; return bytes && ac ? decodeSong() : Promise.resolve(!!bytes); },
     // p: left/right, -1 to 1 (optional)
     play(name, vol, k, p) { if (ac && !muted && ac.state === 'running') { pan = p || 0; try { play[name](vol === undefined ? 1 : vol, k); } finally { pan = 0; } } },
-    toggle() { muted = !muted; return muted; }
+    toggle() { muted = !muted; if (ac) level(); return muted; }
   };
 })();

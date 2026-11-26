@@ -128,6 +128,7 @@ function makeFighter(isPlayer, tint) {
   };
 }
 const player = makeFighter(true, [1, 1, 1]);
+player.shades = true;                                        // drip
 const bots = [[0.78, 0.95, 0.72], [1.0, 0.72, 0.66], [0.72, 0.82, 1.05]].map(t => makeFighter(false, t));
 const fighters = [player, ...bots];
 function give(f, id, spare) {
@@ -514,20 +515,72 @@ const keys = new Set();
 const mouse = { fire: false, pressed: false, aim: false, drag: null };
 const game = { running: false, locked: false, lockWorked: false, aimToggle: false, enemiesShoot: true, godMode: false, kills: 0, deaths: 0, marker: 0, hurtFade: 0, note: 0, time: 0 };
 const ui = {};
-for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'shootback', 'msg', 'reloadbar', 'boomflash']) ui[id] = document.getElementById(id);
+for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'skipcine', 'songfile', 'songname', 'songoff', 'msg', 'reloadbar', 'boomflash']) ui[id] = document.getElementById(id);
 let hudDirty = true;
 function notify(text) { ui.note.textContent = text; ui.note.style.opacity = 1; game.note = 2.4; }
 
 function setRunning(on) {
   game.running = on;
-  ui.menu.hidden = on; ui.hud.hidden = !on;
+  ui.menu.hidden = on; ui.hud.hidden = !on || cine.on;
+  Sound.hush(!on);
   if (!on) { keys.clear(); mouse.fire = mouse.pressed = mouse.aim = false; askMap(false); }
   hudDirty = true;
 }
 function lockMouse() {
   try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* drag to look instead */ }
 }
-ui.play.addEventListener('click', () => { Sound.init(); game.enemiesShoot = ui.shootback.checked; setRunning(true); ui.play.textContent = 'Resume'; ui.play.blur(); lockMouse(); canvas.focus(); });
+// start (or carry on) playing
+function enterGame() { Sound.init(); game.enemiesShoot = ui.shootback.checked; setRunning(true); ui.play.blur(); ui.island.blur(); lockMouse(); canvas.focus(); }
+// the two tiles on the menu. The island starts with the boat trip, unless he asks to skip it
+function pickMap(name) {
+  const resume = game.started && world.map === name && !(name === 'island' && world.low !== ui.lowend.checked);
+  if (!resume) {
+    Sound.init();
+    cineEnd(false);
+    if (name !== world.map || name === 'island') setMap(name, ui.lowend.checked);
+  }
+  game.started = true;
+  enterGame();
+  if (!resume && name === 'island' && !ui.skipcine.checked) cineStart();
+  else if (!resume && name === 'island') washUp();
+  menuTiles();
+}
+function menuTiles() {
+  ui.menu.classList.toggle('paused', !!game.started);
+  for (const [el, name] of [[ui.play, 'plate'], [ui.island, 'island']]) el.classList.toggle('current', !!game.started && world.map === name);
+}
+ui.play.addEventListener('click', () => pickMap('plate'));
+ui.island.addEventListener('click', () => pickMap('island'));
+
+// the player's own song for the boombox: kept in this browser only
+function songStore(mode, run) {
+  return new Promise(done => {
+    try {
+      const open = indexedDB.open('goobmen', 1);
+      open.onupgradeneeded = () => open.result.createObjectStore('files');
+      open.onerror = () => done(null);
+      open.onsuccess = () => {
+        const tx = open.result.transaction('files', mode), q = run(tx.objectStore('files'));
+        tx.oncomplete = () => { done(q.result); open.result.close(); };
+        tx.onerror = tx.onabort = () => { done(null); open.result.close(); };
+      };
+    } catch (e) { done(null); }
+  });
+}
+function showSong(name) { ui.songname.textContent = name || "the game's own"; ui.songoff.hidden = !name; }
+ui.songfile.addEventListener('change', async () => {
+  const file = ui.songfile.files[0];
+  ui.songfile.value = '';
+  if (!file) return;
+  if (file.size > 30e6) { ui.songname.textContent = 'that file is too big (30 MB at most)'; return; }
+  const bytes = await file.arrayBuffer();
+  Sound.init();
+  if (!(await Sound.setSong(bytes))) { showSong(null); ui.songname.textContent = "couldn't play that file, try an MP3"; return; }
+  showSong(file.name);
+  songStore('readwrite', st => st.put({ name: file.name, bytes }, 'song'));
+});
+ui.songoff.addEventListener('click', () => { Sound.setSong(null); showSong(null); songStore('readwrite', st => st.delete('song')); });
+songStore('readonly', st => st.get('song')).then(saved => { if (saved) { Sound.setSong(saved.bytes); showSong(saved.name); } });
 document.addEventListener('pointerlockchange', () => {
   game.locked = document.pointerLockElement === canvas;
   if (game.locked) game.lockWorked = true; else if (game.running) setRunning(false);
@@ -539,7 +592,7 @@ document.addEventListener('mousemove', e => {
   if (game.locked) look(e.movementX * k, e.movementY * k);
   else if (mouse.drag) { look((e.clientX - mouse.drag[0]) * 0.006, (e.clientY - mouse.drag[1]) * 0.005); mouse.drag = [e.clientX, e.clientY]; }
 });
-function look(dx, dy) { cam.yaw -= dx; cam.pitch = clamp(cam.pitch + dy, -0.75, 1.05); }
+function look(dx, dy) { if (cine.on) return; cam.yaw -= dx; cam.pitch = clamp(cam.pitch + dy, -0.75, 1.05); }
 canvas.addEventListener('mousedown', e => {
   if (!game.running) return;
   Sound.init();
@@ -565,8 +618,17 @@ function fullscreen() {
   if (p && p.then) p.then(() => { if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['KeyW', 'ControlLeft', 'ControlRight']).catch(() => {}); lockMouse(); }).catch(() => {});
 }
 addEventListener('keydown', e => {
-  if (!game.running) { if (e.code === 'Escape' && !game.lockWorked && ui.play.textContent === 'Resume') setRunning(true); return; }
+  if (!game.running) { if (e.code === 'Escape' && !game.lockWorked && game.started) setRunning(true); return; }
   if (e.metaKey || e.altKey) return;
+  if (cine.on) {                                              // watching: only skip, pause, sound and fullscreen
+    e.preventDefault();
+    if (e.repeat) return;
+    if (e.code === 'Space' || e.code === 'Enter') cineSkip();
+    else if (e.code === 'Escape') setRunning(false);
+    else if (e.code === 'KeyF') fullscreen();
+    else if (e.code === 'KeyM') Sound.toggle();
+    return;
+  }
   if (e.key === 'Control') { if (!e.repeat) player.crouch = !player.crouch; return; }
   e.preventDefault();
   keys.add(e.code);
@@ -576,7 +638,7 @@ addEventListener('keydown', e => {
   if (e.code === 'Escape') setRunning(false);
   else if (e.code === 'Space') { if (!FLY.on) startJump(player); }
   else if (e.code === 'KeyR') startReload(player);
-  else if (world.asking && ['Digit1', 'Digit2', 'Numpad1', 'Numpad2'].includes(e.code)) setMap('island', e.code.endsWith('2'));
+  else if (world.asking && ['Digit1', 'Digit2', 'Numpad1', 'Numpad2'].includes(e.code)) { setMap('island', e.code.endsWith('2')); menuTiles(); }
   else if (e.code === 'Digit1') equip(player, 'ak');
   else if (e.code === 'Digit2') equip(player, 'glock');
   else if (e.code === 'Digit3') equip(player, 'awp');
@@ -585,7 +647,7 @@ addEventListener('keydown', e => {
   else if (['Digit6', 'Digit7', 'Digit8', 'Digit9'].includes(e.code)) equip(player, SLOTS[+e.code.slice(5) - 3]);
   else if (e.code === 'KeyG') dropGun(player);
   else if (e.code === 'KeyV') { if (player.weapon && player.reload < 0 && player.cycle < 0 && player.equip >= 1 && player.inspect < 0) player.inspect = 0; }
-  else if (e.code === 'KeyT') { if (world.map === 'island') setMap('plate'); else askMap(!world.asking); }   // temporary, while the map is being made
+  else if (e.code === 'KeyT') { if (world.map === 'island') { setMap('plate'); menuTiles(); } else askMap(!world.asking); }   // temporary, while the map is being made
   else if (e.code === 'KeyQ') game.aimToggle = !game.aimToggle;
   else if (e.code === 'KeyF') fullscreen();
   else if (e.code === 'KeyN') setFly(!FLY.on);                // developer testing
@@ -644,6 +706,7 @@ function locomotion(f, mx, my, sprint, dt) {
   if (f.isPlayer && looting) return;
   for (const c of chests) if (Math.abs(c.pos[1] - f.pos[1]) < 1.4) push(f, c.pos, 0.72);
   for (const o of fighters) if (o !== f && o.dead < 0 && Math.abs(o.pos[1] - f.pos[1]) < 2) push(f, o.pos, 0.55);
+  wreckPush(f);
 }
 function push(f, p, r) {
   const dx = f.pos[0] - p[0], dz = f.pos[2] - p[2], d = Math.hypot(dx, dz);
@@ -834,6 +897,7 @@ function effectsStep(dt) {
   }
 }
 function update(dt) {
+  if (cine.on) return;
   game.time += dt;
   playerStep(dt);
   bots.forEach((b, i) => botStep(b, i, dt));
@@ -850,6 +914,7 @@ function update(dt) {
   effectsStep(dt);
   grenadesStep(dt);
   bikesStep(dt);
+  wreckStep(dt);
   const k = 1 - Math.exp(-dt * 11), a = player.ads;
   propsStep(dt);
   const still = player.weapon && GUNS[player.weapon].scoped ? 0 : a;
@@ -895,6 +960,10 @@ function drawFighters(prog, textured, hideSelf) {
     }
     if (textured) drawWornVest(prog, f);
   }
+}
+// things worn on the head
+function drawWorn(prog, hideSelf) {
+  for (const f of fighters) if (f.shades && !f.gone && !(hideSelf && f.isPlayer)) drawShadesOn(prog, f);
 }
 const modelM = new Float32Array(16);
 function drawMesh(prog, mesh, R, p) {
@@ -1018,8 +1087,15 @@ function drawEffects(vp, eye, fwd) {
   gl.depthMask(true); gl.disable(gl.BLEND);
 }
 let testView = null;
+function menuView() {
+  const a = player.yaw + 0.42 * Math.sin(performance.now() / 4200), d = [Math.sin(a), 0, Math.cos(a)];
+  const wide = canvas.clientWidth > 780, eye = V.add(player.pos, [d[0] * 2.5, 1.52, d[2] * 2.5]);
+  const right = [d[2], 0, -d[0]], at = V.add(player.pos, V.add([0, 1.22, 0], V.mul(right, wide ? -0.78 : 0)));      // right of the menu
+  return { eye, fwd: V.norm(V.sub(at, eye)), at, dist: 2.5 };
+}
 let lastView = null, quality = 1, frameAvg = 0.016, qualityWait = 3;
 function render() {
+  if (cine.on) { cineRender(); return; }
   const slim = world.map === 'island' && world.low;           // the optimized map also draws fewer pixels
   const dpr = Math.min(window.devicePixelRatio || 1, slim ? 1 : 1.5) * quality * (slim ? 0.9 : 1);
   const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
@@ -1027,6 +1103,7 @@ function render() {
   for (const f of fighters.concat(helpers)) poseFighter(f);
   const sc = scopeAmount();
   let view = deathCamera(lootCamera(scopedView(cameraEye(), sc)));
+  if (!game.started) view = menuView();                     // behind the menu: him from the front, shades and all
   if (testView) view = { eye: testView.eye, fwd: V.norm(V.sub(testView.at, testView.eye)), at: testView.at, dist: 1 };   // automated checks only
   const hideSelf = sc > 0.55 || (inCave(player.pos) && V.len(V.sub(view.eye, V.add(player.pos, [0, 1.5, 0]))) < 0.75);
   const sh = cam.shake * cam.shake * 0.012;
@@ -1053,13 +1130,16 @@ function render() {
     flashCol[0] = 30 * k + 2.6 * fire; flashCol[1] = 16 * k + 1.1 * fire; flashCol[2] = 5 * k + 0.25 * fire;
     if (age < 0.5) ui.boomflash.style.opacity = (blast.near * 0.6 + 0.12) * Math.pow(1 - age / 0.5, 2);
   }
+  wreckLight();
 
   gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
   gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, null);
   gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFbo); gl.viewport(0, 0, SHADOW, SHADOW); gl.clear(gl.DEPTH_BUFFER_BIT);
   globals(skinDepth, light, light, eye); drawFighters(skinDepth, false);
-  globals(staticDepth, light, light, eye); drawStatics(staticDepth, false);
+  globals(staticDepth, light, light, eye); drawStatics(staticDepth, false); drawWorn(staticDepth, false);
   if (world.map === 'island') drawFloraShadow(light, eye);
+  globals(skinDepth, light, light, eye); drawBeachSkipper(skinDepth);
+  globals(staticDepth, light, light, eye); drawBeachThings(staticDepth);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
   gl.viewport(0, 0, w, h); gl.clearColor(...SKY[world.map], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -1068,8 +1148,11 @@ function render() {
   else { globals(plateProg, vp, light, eye); gl.bindVertexArray(plate); gl.drawArrays(gl.TRIANGLES, 0, 6); }
   globals(skinProg, vp, light, eye); gl.uniform1i(skinProg.u.uTex, 0); gl.uniform1i(skinProg.u.uNormalMap, 1); drawFighters(skinProg, true, hideSelf);
   globals(pbrProg, vp, light, eye); gl.uniform1i(pbrProg.u.uTex, 0); gl.uniform1i(pbrProg.u.uNormalMap, 1); gl.uniform1i(pbrProg.u.uOrm, 2); drawStatics(pbrProg, true, hideSelf);
+  globals(skinProg, vp, light, eye); drawBeachSkipper(skinProg);
+  globals(propProg, vp, light, eye); gl.uniform1i(propProg.u.uTex, 0); gl.uniform1f(propProg.u.uTime, game.time); drawWorn(propProg, hideSelf); drawBeachThings(propProg);
   if (world.map === 'island') drawSea(vp, light, eye);
   drawEffects(vp, eye, view.fwd);
+  if (wreckNear()) drawFires(vp, eye, view.fwd, wreck.fires, game.time);
 }
 
 // ======================================================================= interface
@@ -1136,13 +1219,15 @@ function frame(now) {
         else if (frameAvg < 0.018 && quality < 1) quality = Math.min(1, quality + 0.08);
       }
     }
-    if (game.running) update(dt); else effectsStep(dt);
-    render(); hud(dt);
+    if (cine.on) { if (game.running) cineStep(Math.min(0.1, raw)); }
+    else if (game.running) update(dt); else effectsStep(dt);
+    if (!game.started) player.time += dt;
+    render(); hud(cine.on ? 0 : dt);
   }
   requestAnimationFrame(frame);
 }
 ui.msg.textContent = '';
-ui.play.disabled = false;
+ui.play.disabled = ui.island.disabled = false;
 player.target = [0, 1.2, -10];
 for (const f of fighters) poseFighter(f);
 update(0.016); render();
@@ -1150,11 +1235,13 @@ requestAnimationFrame(frame);
 
 // hooks used by the automated checks
 window.__game = {
-  ready: true, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
+  ready: true, rig: Rig, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
   resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE, bikes, HOUSES, houseWorld,
   look(eye, at) { testView = eye ? { eye, at } : null; },
+  cine, CINE, TRIP, Sound, cineStart, cineSkip, get wreck() { return wreck; },
+  watch(t) { manual = true; if (!cine.on || t < cine.t) { cineStart(); render(); } while (cine.on && cine.t < t - 1e-6) cineStep(Math.min(1 / 20, t - cine.t)); render(); if (cine.on) cineOverlay(0); },
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },
   get sends() { return sends; },

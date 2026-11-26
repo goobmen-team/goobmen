@@ -371,6 +371,7 @@ function askMap(on) {
 }
 function setMap(name, low) {
   askMap(false);
+  cineEnd(false); wreck = null; smoke.length = 0;
   abortLoot(); endSend(player); FLY.on = false;
   world.map = name; world.low = name === 'island' && !!low;
   if (name === 'island') loadFlora();
@@ -933,7 +934,7 @@ const seaVao = (() => {
   attrib(0, new Float32Array([-S, y, S, S, y, S, S, y, -S, -S, y, S, S, y, -S, -S, y, -S]), 3, gl.FLOAT);
   gl.bindVertexArray(null); return vao;
 })();
-const fogRange = () => FLY.on ? [450, 1400] : world.low ? [70, 200] : [90, 330];
+const fogRange = () => world.cine ? [120, 480] : FLY.on ? [450, 1400] : world.low ? [70, 200] : [90, 330];
 let doorwayList = null;
 const doorways = () => doorwayList || (doorwayList = new Float32Array(Array.from({ length: 12 }, (_, k) => {
   const c = CAVES[k];
