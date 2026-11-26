@@ -1,6 +1,6 @@
 // ======================================================================= the minimap
-// Top right, round, turning with your view so straight ahead is always up. The island's land is drawn once into a
-// picture; on top go the chests, the other cavemen (red, or a grey cross once knocked out) and your planted C4.
+// Top right, square, turning with your view so straight ahead is always up. The island's land is drawn once into a
+// picture; on top goes your planted C4 and you. Enemies and chests are not shown.
 const MINI = { size: 180, range: 55 };                          // pixels across, metres from the middle to the edge
 let miniLand = null;                                            // { img, half, px } for the island, made the first time it's needed
 function miniIsland() {
@@ -29,7 +29,7 @@ function drawMinimap() {
   const toMap = p => { const dx = p[0] - me[0], dz = p[2] - me[2], c = Math.cos(theta), s = Math.sin(theta); return [r + (dx * c - dz * s) * scale, r + (dx * s + dz * c) * scale]; };
   g.clearRect(0, 0, S, S);
   g.save();
-  g.beginPath(); g.arc(r, r, r - 1, 0, Math.PI * 2); g.clip();
+  g.beginPath(); g.rect(0, 0, S, S); g.clip();
   g.translate(r, r); g.rotate(theta);
   if (world.map === 'island') {
     const L = miniIsland(), k = scale / L.px;
@@ -46,27 +46,11 @@ function drawMinimap() {
   }
   g.restore();
   // markers (drawn upright); anything off the edge sits on the rim so you know which way it is
-  const pin = (p, edge) => { let [x, y] = toMap(p); const dx = x - r, dy = y - r, d = Math.hypot(dx, dy), max = r - 7; if (d > max) { if (!edge) return null; x = r + dx / d * max; y = r + dy / d * max; } return [x, y]; };
-  for (const c of chests) {
-    const q = pin(c.pos, false); if (!q) continue;
-    g.fillStyle = c.t >= 0 ? '#6b4a26' : '#c98a3a'; g.strokeStyle = '#1d1208'; g.lineWidth = 1.5;
-    g.fillRect(q[0] - 4, q[1] - 3, 8, 6); g.strokeRect(q[0] - 4, q[1] - 3, 8, 6);
-  }
+  const pin = p => { const [x, y] = toMap(p); return x < 4 || y < 4 || x > S - 4 || y > S - 4 ? null : [x, y]; };
   for (const b of planted) {
     if (!b.armed || Math.sin(game.time * 14) < 0) continue;
-    const q = pin(b.p, false); if (!q) continue;
+    const q = pin(b.p); if (!q) continue;
     g.fillStyle = '#ff3b2f'; g.beginPath(); g.arc(q[0], q[1], 4, 0, Math.PI * 2); g.fill();
-  }
-  for (const b of bots) {
-    if (b.gone) continue;
-    const down = b.dead >= 0, q = pin(b.pos, !down); if (!q) continue;
-    if (down) {
-      g.strokeStyle = b.looted ? 'rgba(200,200,200,.5)' : '#d8d8d8'; g.lineWidth = 2.5;
-      g.beginPath(); g.moveTo(q[0] - 4, q[1] - 4); g.lineTo(q[0] + 4, q[1] + 4); g.moveTo(q[0] + 4, q[1] - 4); g.lineTo(q[0] - 4, q[1] + 4); g.stroke();
-    } else {
-      g.fillStyle = '#ff4a3d'; g.strokeStyle = '#2a0805'; g.lineWidth = 1.5;
-      g.beginPath(); g.arc(q[0], q[1], 4.5, 0, Math.PI * 2); g.fill(); g.stroke();
-    }
   }
   // you: an arrow pointing up, the way you're looking
   g.fillStyle = '#fff'; g.strokeStyle = '#111'; g.lineWidth = 1.5;
