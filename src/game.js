@@ -61,6 +61,7 @@ gl.bindVertexArray(fxVao); gl.bindBuffer(gl.ARRAY_BUFFER, fxBuf);
 attrib(0, null, 3, gl.FLOAT, false, 36, 0); attrib(1, null, 2, gl.FLOAT, false, 36, 12); attrib(2, null, 4, gl.FLOAT, false, 36, 20);
 gl.bindVertexArray(null);
 
+//MAP//
 // ======================================================================= fighters
 function makeFighter(isPlayer, tint) {
   return {
@@ -89,6 +90,7 @@ function spawnBot(b, i) {
   endSend(b);
   const a = Math.PI + (i - 1) * 0.75 + rand(-0.25, 0.25), d = rand(13, 19);
   b.pos = [clamp(player.pos[0] + Math.sin(a) * d, -HALF + 2, HALF - 2), 0, clamp(player.pos[2] + Math.cos(a) * d, -HALF + 2, HALF - 2)];
+  if (world.map === 'island') { b.pos = [player.pos[0] + Math.sin(a) * d, 0, player.pos[2] + Math.cos(a) * d]; confine(b); b.pos[1] = groundAt(b.pos[0], b.pos[2]); }
   b.hp = 100; b.dead = -1; b.hurt = 0; b.air = 0; b.jump = -1; b.looted = b.beingLooted = false; b.script = null; b.scriptW = 0; b.cycle = -1; b.inv = []; b.ammo = {}; b.weapon = null; b.crouch = false; b.ai.wait = rand(1.0, 2.2); b.ai.seen = false;
   give(b, i === 1 ? 'ak' : 'glock', 999); equip(b, b.inv[0]);
   b.yaw = Math.atan2(player.pos[0] - b.pos[0], player.pos[2] - b.pos[2]);
@@ -353,7 +355,7 @@ function rayCapsule(o, d, a, b, r) {
 }
 function trace(origin, dir, shooter, minT) {
   let best = { t: 90, kind: 'none' };
-  if (dir[1] < -1e-4) { const t = -origin[1] / dir[1]; if (t > (minT || 0) && t < best.t) { const p = V.mad(origin, dir, t); if (Math.abs(p[0]) < HALF && Math.abs(p[2]) < HALF) best = { t, kind: 'ground' }; } }
+  const s = surfaceHit(origin, dir); if (s && s.t > (minT || 0) && s.t < best.t) best = s;
   for (const c of chests) { const t = rayCapsule(origin, dir, V.add(c.pos, [-0.25, 0.25, 0]), V.add(c.pos, [0.25, 0.25, 0]), 0.3); if (t > (minT || 0) && t < best.t) best = { t, kind: 'chest' }; }
   for (const f of fighters) {
     if (f === shooter || f.dead >= 0) continue;
@@ -379,14 +381,16 @@ function damage(victim, amount, from, head) {
     game.hurtFade = 0.9;
   } else victim.ai.seen = true;
   if (victim.hp <= 0) {
-    victim.hp = 0; victim.dead = 0; victim.reload = -1;
     if (from.isPlayer) {
       Sound.play('kill', 0.8); game.kills++; hudDirty = true;
       notify((head ? 'Headshot! ' : '') + 'Go to him and hold E to loot');
     }
-    victim.crouch = false; victim.tilt = 0;
-    if (victim.isPlayer) { game.deaths++; hudDirty = true; abortLoot(); notify('You got knocked out'); startSend(victim, 1.2); aimDeathCam(); }
+    knockOut(victim, 'You got knocked out');
   }
+}
+function knockOut(victim, why) {
+  victim.hp = 0; victim.dead = 0; victim.reload = -1; victim.crouch = false; victim.tilt = 0;
+  if (victim.isPlayer) { game.deaths++; hudDirty = true; abortLoot(); notify(why); startSend(victim, 1.2); aimDeathCam(); }
 }
 function fire(f, origin, dir, spread, minT) {
   const g = GUNS[f.weapon], am = f.ammo[f.weapon];
@@ -401,6 +405,7 @@ function fire(f, origin, dir, spread, minT) {
     damage(hit.f, (f.isPlayer ? g.damage : 5) * hit.mult, f, head);
     if (f.isPlayer) { Sound.play('hit', 0.8); game.marker = 0.18; ui.marker.classList.toggle('head', head || hit.f.dead >= 0); }
   } else if (hit.kind === 'ground') { puff(hit.p, 6, [0.45, 0.43, 0.40, 0.7], 0.9, 0.045, 0.5, 3); marks.push(hit.p); if (marks.length > 90) marks.shift(); }
+  else if (hit.kind === 'water') puff(hit.p, 8, [0.85, 0.93, 0.97, 0.8], 1.2, 0.04, 0.45, 5);
   else if (hit.kind === 'chest') puff(hit.p, 6, [0.55, 0.36, 0.17, 0.9], 1.2, 0.025, 0.45, 6);
   // recoil on the gun itself
   f.kickV += g.kickBack * 22; f.riseV += g.climb * 16 * (1 - 0.35 * f.ads); f.roll += rand(-0.05, 0.05); f.bolt = 1;
@@ -489,6 +494,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'Digit3') equip(player, 'awp');
   else if (e.code === 'Digit4' || e.code === 'KeyH') equip(player, null);
   else if (e.code === 'KeyV') { if (player.weapon && player.reload < 0 && player.cycle < 0 && player.equip >= 1 && player.inspect < 0) player.inspect = 0; }
+  else if (e.code === 'KeyT') setMap(world.map === 'island' ? 'plate' : 'island');   // temporary, while the map is being made
   else if (e.code === 'KeyQ') game.aimToggle = !game.aimToggle;
   else if (e.code === 'KeyF') fullscreen();
   else if (e.code === 'KeyP') { game.enemiesShoot = !game.enemiesShoot; ui.shootback.checked = game.enemiesShoot; notify(game.enemiesShoot ? 'Enemies shoot back' : 'Enemies hold fire'); }
@@ -529,8 +535,11 @@ function locomotion(f, mx, my, sprint, dt) {
   jumpStep(f, dt);
   if (f.dead >= 0) f.legYaw = 0;
   const dir = f.yaw + f.moveRel;
-  f.pos[0] = clamp(f.pos[0] + Math.sin(dir) * f.speed * dt, -HALF + 0.6, HALF - 0.6);
-  f.pos[2] = clamp(f.pos[2] + Math.cos(dir) * f.speed * dt, -HALF + 0.6, HALF - 0.6);
+  const pace = f.speed * (inSea(f.pos) ? 0.65 : 1);           // wading is slow
+  f.pos[0] += Math.sin(dir) * pace * dt;
+  f.pos[2] += Math.cos(dir) * pace * dt;
+  confine(f);
+  if (f.dead < 0) f.pos[1] = groundAt(f.pos[0], f.pos[2]);
   if (f.isPlayer && looting) return;
   for (const c of chests) push(f, c.pos, 0.72);
   for (const o of fighters) if (o !== f && o.dead < 0) push(f, o.pos, 0.55);
@@ -581,15 +590,16 @@ function camVectors() {
 }
 function cameraEye() {
   const { fwd, right } = camVectors();
-  const at = [player.pos[0] + right[0] * cam.side, cam.height + (player.dead < 0 ? player.air * 0.45 : 0), player.pos[2] + right[2] * cam.side];
+  const at = [player.pos[0] + right[0] * cam.side, player.pos[1] + cam.height + (player.dead < 0 ? player.air * 0.45 : 0), player.pos[2] + right[2] * cam.side];
   let dist = cam.dist;
   if (fwd[1] > 0) dist = Math.min(dist, (at[1] - 0.18) / fwd[1]);
+  if (world.map === 'island') dist = cameraRoom(at, fwd, cam.dist);
   return { eye: V.mad(at, fwd, -dist), at, fwd, dist };
 }
 function respawnPlayer() {
   abortLoot();
   const f = player;
-  f.dead = -1; f.hp = 100; f.pos = [0, 0, 0]; f.air = 0; f.jump = -1; f.equip = 0;
+  f.dead = -1; f.hp = 100; f.pos = [0, groundAt(0, 0), 0]; f.air = 0; f.jump = -1; f.equip = 0;
   deathCam = 0; deathShot = null; hudDirty = true;
   bots.forEach(spawnBot); notify('Back on your feet');
 }
@@ -617,6 +627,8 @@ function playerStep(dt) {
   f.yaw += wrap(cam.yaw + Math.PI - f.yaw) * Math.min(1, dt * 18);
   locomotion(f, mx, my, sprint, dt);
   weaponStep(f, dt);
+  seaStep(f, dt);
+  if (f.dead >= 0) return;
 
   const c = camVectors(), view = cameraEye();
   const near = Math.max(0.2, V.dot(V.sub(V.add(f.pos, [0, 1.3, 0]), view.eye), c.fwd) + 0.3);
@@ -691,7 +703,7 @@ function effectsStep(dt) {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i]; p.life -= dt;
     if (p.life <= 0) { particles.splice(i, 1); continue; }
-    p.v[1] -= p.grav * dt; p.p = V.mad(p.p, p.v, dt); if (p.p[1] < 0.01) { p.p[1] = 0.01; p.v = [0, 0, 0]; }
+    p.v[1] -= p.grav * dt; p.p = V.mad(p.p, p.v, dt); const low = floorAt(p.p[0], p.p[2]) + 0.01; if (p.p[1] < low) { p.p[1] = low; p.v = [0, 0, 0]; }
     if (p.grow) { p.size += p.grow * dt; p.v = V.mul(p.v, Math.exp(-dt * 3)); }
   }
   for (let i = tracers.length - 1; i >= 0; i--) if ((tracers[i].life -= dt) <= 0) tracers.splice(i, 1);
@@ -701,7 +713,8 @@ function effectsStep(dt) {
     if (s.life <= 0) { shells.splice(i, 1); continue; }
     if (s.rest) continue;
     s.v[1] -= 9.8 * dt; s.p = V.mad(s.p, s.v, dt); s.a += dt * 14;
-    if (s.p[1] < 0.008) { s.p[1] = 0.008; if (Math.abs(s.v[1]) < 0.7) { s.rest = true; } s.v = [s.v[0] * 0.5, -s.v[1] * 0.35, s.v[2] * 0.5]; }
+    const low = floorAt(s.p[0], s.p[2]) + 0.008;
+    if (s.p[1] < low) { s.p[1] = low; if (Math.abs(s.v[1]) < 0.7) { s.rest = true; } s.v = [s.v[0] * 0.5, -s.v[1] * 0.35, s.v[2] * 0.5]; }
   }
 }
 function update(dt) {
@@ -841,7 +854,7 @@ function drawEffects(vp, eye, fwd) {
   gl.useProgram(fxProg.p); gl.uniformMatrix4fv(fxProg.u.uViewProj, false, vp);
   gl.enable(gl.BLEND); gl.depthMask(false);
   const right = V.norm(V.cross(fwd, [0, 1, 0])), up = V.cross(right, fwd);
-  for (const m of marks) quad([m[0], 0.004, m[2]], [0.045, 0, 0], [0, 0, 0.045], [0.08, 0.07, 0.06, 0.75]);
+  for (const m of marks) quad([m[0], m[1] + 0.012, m[2]], [0.045, 0, 0], [0, 0, 0.045], [0.08, 0.07, 0.06, 0.75]);
   for (const p of particles) { const a = Math.min(1, p.life / p.max * 1.6); quad(p.p, V.mul(right, p.size), V.mul(up, p.size), [p.color[0], p.color[1], p.color[2], p.color[3] * a]); }
   flushFx(false);
   for (const t of tracers) {
@@ -877,8 +890,9 @@ function render() {
   const hideSelf = sc > 0.55;
   const sh = cam.shake * cam.shake * 0.012;
   const eye = V.add(view.eye, [rand(-sh, sh), rand(-sh, sh), rand(-sh, sh)]);
+  if (world.map === 'island') eye[1] = Math.max(eye[1], floorAt(eye[0], eye[2]) + 0.18);   // never inside a hill
   const fov = cam.fov + (0.17 - cam.fov) * smooth(0.45, 1, sc);
-  const proj = perspective(fov, w / Math.max(1, h), 0.08, 160);
+  const proj = perspective(fov, w / Math.max(1, h), 0.08, world.map === 'island' ? 600 : 160);
   const vp = mul4(proj, lookAt(eye, V.add(eye, view.fwd)));
   lastView = { vp, w: canvas.clientWidth, h: canvas.clientHeight };
 
@@ -897,11 +911,13 @@ function render() {
   globals(staticDepth, light, light, eye); drawStatics(staticDepth, false);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-  gl.viewport(0, 0, w, h); gl.clearColor(219 / 255, 219 / 255, 219 / 255, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.viewport(0, 0, w, h); gl.clearColor(...SKY[world.map], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, shadowTex);
-  globals(plateProg, vp, light, eye); gl.bindVertexArray(plate); gl.drawArrays(gl.TRIANGLES, 0, 6);
+  if (world.map === 'island') drawLand(vp, light, eye);
+  else { globals(plateProg, vp, light, eye); gl.bindVertexArray(plate); gl.drawArrays(gl.TRIANGLES, 0, 6); }
   globals(skinProg, vp, light, eye); gl.uniform1i(skinProg.u.uTex, 0); gl.uniform1i(skinProg.u.uNormalMap, 1); drawFighters(skinProg, true, hideSelf);
   globals(pbrProg, vp, light, eye); gl.uniform1i(pbrProg.u.uTex, 0); gl.uniform1i(pbrProg.u.uNormalMap, 1); gl.uniform1i(pbrProg.u.uOrm, 2); drawStatics(pbrProg, true, hideSelf);
+  if (world.map === 'island') drawSea(vp, light, eye);
   drawEffects(vp, eye, view.fwd);
 }
 
@@ -942,8 +958,8 @@ function hud(dt) {
   bots.forEach((b, i) => {
     // health bar over the living, an arrow over bodies that still have loot
     const body = b.dead >= 1.2 && !b.looted && !looting && !b.send, alive = b.dead < 0;
-    const at = alive ? V.add(b.pos, [0, b.crouch ? 1.6 : 1.92, 0]) : [b.pos[0] - Math.sin(b.yaw) * 0.8, 0.75 + Math.sin(game.time * 5) * 0.08, b.pos[2] - Math.cos(b.yaw) * 0.8];
-    const el = barEls[i], p = (alive || body) && lastView && scopeAmount() < 0.5 ? project(at) : null;
+    const at = alive ? V.add(b.pos, [0, b.crouch ? 1.6 : 1.92, 0]) : [b.pos[0] - Math.sin(b.yaw) * 0.8, b.pos[1] + 0.75 + Math.sin(game.time * 5) * 0.08, b.pos[2] - Math.cos(b.yaw) * 0.8];
+    const el = barEls[i], p = (alive || body) && lastView && scopeAmount() < 0.5 && !behindHill(cameraEye().eye, at) ? project(at) : null;
     el.style.display = p ? 'block' : 'none';
     el.classList.toggle('loot', body);
     el.classList.toggle('soon', body && b.dead > LOOT_WINDOW - 3);
@@ -978,7 +994,7 @@ requestAnimationFrame(frame);
 
 // hooks used by the automated checks
 window.__game = {
-  ready: true, player, bots, chests, cam, game, mouse, keys, GUNS,
+  ready: true, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap,
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
   resume() { manual = false; }, give, equip, startReload,

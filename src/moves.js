@@ -18,9 +18,9 @@ function jumpStep(f, dt) {
   const tau = f.jump - T.pre;
   f.air = tau > 0 && tau < JUMP.air ? JUMP.speed * tau - JUMP.gravity * tau * tau / 2 : 0;
   const crossed = at => t0 < at && f.jump >= at, mine = f.isPlayer;
-  if (crossed(T.pre)) { Sound.play('hup', mine ? 0.8 : 0.2); puff([f.pos[0], 0.04, f.pos[2]], 6, [0.52, 0.50, 0.46, 0.55], 0.7, 0.05, 0.35, 1); }
+  if (crossed(T.pre)) { Sound.play('hup', mine ? 0.8 : 0.2); puff([f.pos[0], f.pos[1] + 0.04, f.pos[2]], 6, [0.52, 0.50, 0.46, 0.55], 0.7, 0.05, 0.35, 1); }
   if (crossed(T.down)) {
-    Sound.play('land', mine ? 0.8 : 0.2); puff([f.pos[0], 0.04, f.pos[2]], 12, [0.52, 0.50, 0.46, 0.65], 1.0, 0.065, 0.45, 1);
+    Sound.play('land', mine ? 0.8 : 0.2); puff([f.pos[0], f.pos[1] + 0.04, f.pos[2]], 12, [0.52, 0.50, 0.46, 0.65], 1.0, 0.065, 0.45, 1);
     f.riseV -= 2.2;                                            // the gun dips with the landing
     if (mine) cam.shake = Math.max(cam.shake, 0.4);
   }
@@ -129,7 +129,7 @@ function startSend(f, delay) {
   const out = V.mul(perp, side);
   let away = V.norm([hips[0] - player.pos[0], 0, hips[2] - player.pos[2]]);
   if (f.isPlayer) away = out;
-  const spot = V.add([hips[0], 0, hips[2]], V.mul(out, 0.92));
+  const spot = V.add([hips[0], f.pos[1], hips[2]], V.mul(out, 0.92));
   const from = V.add(spot, V.add(V.mul(out, 11), V.mul(back, 9)));
   const helper = makeFighter(false, [1.2, 1.1, 0.35]);
   helper.pos = from.slice(); helper.gone = true;
@@ -158,7 +158,7 @@ function sendStep(s, dt) {
   h.gone = false; h.script = null; h.scriptW = 0; h.tilt = 0;
   let gait = 'Idle';
   const runTo = (a, b, u) => { h.pos = V.lerp(a, b, u); h.yaw = Math.atan2(b[0] - a[0], b[2] - a[2]); gait = 'Run'; h.phase = (h.phase + dt * 5.5) % 1; h.tilt = 0.38; };
-  const dust = () => puff([h.pos[0], 0.07, h.pos[2]], 3, [0.55, 0.53, 0.49, 0.6], 0.5, 0.1, 0.5, -0.2);
+  const dust = () => puff([h.pos[0], floorAt(h.pos[0], h.pos[2]) + 0.07, h.pos[2]], 3, [0.55, 0.53, 0.49, 0.6], 0.5, 0.1, 0.5, -0.2);
   const arm = (x, wrist, dir, palm, curl) => ({ wrist, dir: dir || [0, -0.3, 1], palm: palm || [-x, 0, 0], pole: [x, -0.4, -0.5], curl: [curl === undefined ? 0.7 : curl, curl === undefined ? 0.7 : curl] });
   const hips0 = Rig.rest[IDX.hips];
   const script = (S, w) => { h.script = S; h.scriptW = w === undefined ? 1 : w; };
@@ -197,6 +197,7 @@ function sendStep(s, dt) {
     const u = (t - 5.7) / 0.75;
     runTo(s.spot, s.from, Math.pow(u, 1.6)); dust();
   } else h.gone = true;
+  if (world.map === 'island') h.pos = [h.pos[0], floorAt(h.pos[0], h.pos[2]), h.pos[2]];   // he runs over the hills
   for (const n of CLIP_NAMES) h.weights[n] = n === gait ? 1 : 0;
 
   if (crossed(0.001)) { Sound.play('zoom', near); popWord(V.add(V.lerp(s.from, s.spot, 0.75), [0, 2.0, 0]), 'NYOOOM!', 0.8); }
@@ -222,7 +223,7 @@ function sendStep(s, dt) {
   if (t >= 2.4 && !f.gone) {
     const lift = smooth(2.45, 3.9, t), air = smooth(0, 1.4, tau);
     const lie = M3.mul(M3.ry(f.yaw), M3.rx(-1.5));
-    const hipsLie = V.add([f.pos[0], 0.2, f.pos[2]], M3.vec(lie, hips0));
+    const hipsLie = V.add([f.pos[0], f.pos[1] + 0.2, f.pos[2]], M3.vec(lie, hips0));
     const centre = V.add(V.add(hipsLie, [0, 0.12 * lift, 0]), s.rise);
     const swing = M3.mul(M3.ry(Math.sin(tau * 0.9) * 0.5 * air + tau * 0.18), M3.rz(Math.sin(tau * 2.6) * 0.14 * air));
     const R = M3.mul(swing, M3.mul(M3.ry(f.yaw), M3.rx(-1.5 + Math.sin(tau * 2.2) * 0.18 * air)));
@@ -285,7 +286,7 @@ function drawSends(prog) {
       if (t < 3.9 && chest) {                                 // hose, sagging to the body
         const a = at([0, 0.07, 0.46]), b = chest, mid = V.add(V.lerp(a, b, 0.5), [0, -0.12, 0]);
         let last = a;
-        for (let k = 1; k <= 8; k++) { const u = k / 8, p = V.lerp(V.lerp(a, mid, u), V.lerp(mid, b, u), u); p[1] = Math.max(p[1], 0.02); rod(prog, last, p, 0.022); last = p; }
+        for (let k = 1; k <= 8; k++) { const u = k / 8, p = V.lerp(V.lerp(a, mid, u), V.lerp(mid, b, u), u); p[1] = Math.max(p[1], floorAt(p[0], p[2]) + 0.02); rod(prog, last, p, 0.022); last = p; }
       }
     }
     if (!f.gone) for (let k = 0; k < s.tied; k++) {           // balloons

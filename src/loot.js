@@ -67,8 +67,9 @@ function propsStep(dt) {
     if ((o.life -= dt) <= 0) { props.splice(i, 1); continue; }
     if (o.rest) continue;
     o.v[1] -= 9.8 * dt; o.p = V.mad(o.p, o.v, dt); o.R = M3.mul(M3.axis(o.axis, o.spin * dt), o.R);
-    if (o.p[1] < o.floor && o.v[1] < 0) {
-      o.p[1] = o.floor;
+    const low = floorAt(o.p[0], o.p[2]) + o.floor;
+    if (o.p[1] < low && o.v[1] < 0) {
+      o.p[1] = low;
       if (-o.v[1] > 1.1) { o.v = [o.v[0] * 0.45, -o.v[1] * 0.3, o.v[2] * 0.45]; o.spin *= 0.5; Sound.play('click', 0.25); }
       else { o.rest = true; o.R = o.kind === 'gun' ? M3.mul(M3.ry(rand(0, 6.3)), M3.rz(Math.PI / 2)) : o.kind === 'fish' ? M3.mul(M3.ry(rand(0, 6.3)), M3.rz(Math.PI / 2)) : M3.ry(rand(0, 6.3)); }
     }
@@ -185,7 +186,7 @@ const BODY = { hold: 3.7, end: 6.5, label: 'loot this caveman' };
 function bodyStep(L) {
   const t = L.t, v = L.victim, pr = M3.ry(L.face);
   const ankle = [0, restAt('foot_L')[1], restAt('foot_L')[2]];
-  const lying = M3.mul(M3.ry(v.yaw), M3.rx(-1.5)), lyingP = [v.pos[0], 0.2, v.pos[2]];
+  const lying = M3.mul(M3.ry(v.yaw), M3.rx(-1.5)), lyingP = [v.pos[0], v.pos[1] + 0.2, v.pos[2]];
   const ground = V.add(lyingP, M3.vec(lying, ankle));
   const g0 = M3.vec(M3.tr(pr), V.sub(ground, L.spot));            // the ankles, seen by the looter
   const high = [0, 1.78, 0.48];
@@ -360,7 +361,7 @@ function startLoot(target) {
   const L = Object.assign({ f, t: 0, prev: -1, cancel: -1, given: false, vw: 0, start: f.pos.slice(), yaw0: f.yaw }, target);
   if (L.kind === 'body') {
     const v = L.victim, fwd = [Math.sin(v.yaw), 0, Math.cos(v.yaw)];
-    L.spot = [v.pos[0] + fwd[0] * 0.55, 0, v.pos[2] + fwd[2] * 0.55]; L.face = v.yaw + Math.PI;
+    L.spot = [v.pos[0] + fwd[0] * 0.55, v.pos[1], v.pos[2] + fwd[2] * 0.55]; L.face = v.yaw + Math.PI;
     L.gun = v.weapon || 'glock'; L.def = BODY; v.beingLooted = true;
   } else {
     L.spot = V.add(L.chest.pos, [0, 0, 0.80]); L.face = Math.PI; L.gun = L.chest.gun; L.def = CHEST;

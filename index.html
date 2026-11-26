@@ -104,6 +104,7 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
       <tr><td>R / V</td><td>reload / show off your gun</td></tr>
       <tr><td>1, 2, 3, 4 or wheel</td><td>AK-74, Glock 17, AWP, fists</td></tr>
       <tr><td>F</td><td>fullscreen</td></tr>
+      <tr><td>T</td><td>island map (temporary)</td></tr>
       <tr><td>P / M / Esc</td><td>enemy fire / sound / pause</td></tr>
     </table>
     <div class="small">Tip: press F for fullscreen. In a normal tab, Ctrl and W pressed together close the page. A mouse works much better than a trackpad.<br>AWP model by Rifeor (sketchfab.com/Rifeor), licence CC BY 4.0, adapted for this game.</div>
@@ -554,6 +555,199 @@ gl.bindVertexArray(fxVao); gl.bindBuffer(gl.ARRAY_BUFFER, fxBuf);
 attrib(0, null, 3, gl.FLOAT, false, 36, 0); attrib(1, null, 2, gl.FLOAT, false, 36, 12); attrib(2, null, 4, gl.FLOAT, false, 36, 20);
 gl.bindVertexArray(null);
 
+// ======================================================================= the island (map in progress)
+// the island, its hills, the ocean around it and water that hurts. no caves yet. T swaps maps for now
+const world = { map: 'plate' };
+// the land climbs from the beach to a meadow, hills and one mountain; past the coast it drops to the sea floor
+const SEA = { level: -0.2, floor: -1.0, wade: 5, swim: 22, grace: 0.6, every: 0.5, bite: 8 };
+const SKY = { plate: [219 / 255, 219 / 255, 219 / 255], island: [0.66, 0.80, 0.91] };
+// how far the coast is from the middle, in each direction (the same formula is in the water shader)
+const coast = a => 105 + 13 * Math.sin(3 * a + 1.1) + 9 * Math.sin(5 * a + 2.6) + 4 * Math.sin(11 * a);
+const pastCoast = (x, z) => Math.hypot(x, z) - coast(Math.atan2(x, z));
+const MEADOW = 2.0;                                          // the flat clearing you start in
+// x, z, height, radius. keep height / radius under 0.5 so every slope can be walked up
+const HILLS = [[12, -62, 24, 50], [-65, 20, 14, 38], [58, 42, 11, 32], [-18, 72, 8, 28], [55, -22, 7, 25], [-45, -55, 9, 27]];
+const bump = (i, j) => { const n = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return n - Math.floor(n); };
+function roll(x, z, size) {
+  const u = x / size, v = z / size, i = Math.floor(u), j = Math.floor(v), a = smooth(0, 1, u - i), b = smooth(0, 1, v - j);
+  return (bump(i, j) * (1 - a) + bump(i + 1, j) * a) * (1 - b) + (bump(i, j + 1) * (1 - a) + bump(i + 1, j + 1) * a) * b - 0.5;
+}
+function shape(x, z) {
+  const e = pastCoast(x, z);
+  if (e >= 0) return SEA.floor * clamp(e / SEA.wade, 0, 1);
+  let h = MEADOW + roll(x, z, 17) * 2.2 + roll(x, z, 6) * 0.5;
+  for (const [hx, hz, top, r] of HILLS) {
+    const d = ((x - hx) ** 2 + (z - hz) ** 2) / (r * r);
+    if (d < 1) h += top * (1 - d) * (1 - d) * (1 + roll(x, z, 11) * 0.25);
+  }
+  h = MEADOW + (h - MEADOW) * smooth(11, 24, Math.hypot(x, z));
+  return h * smooth(0, 24, -e);
+}
+// heights on a grid: the drawn land and your feet read the same numbers
+const GRID = { half: 175, n: 220 };
+GRID.cell = GRID.half * 2 / GRID.n;
+const heights = new Float32Array((GRID.n + 1) * (GRID.n + 1));
+for (let j = 0; j <= GRID.n; j++) for (let i = 0; i <= GRID.n; i++) heights[j * (GRID.n + 1) + i] = shape(i * GRID.cell - GRID.half, j * GRID.cell - GRID.half);
+
+function groundAt(x, z) {
+  if (world.map !== 'island') return 0;
+  const u = (x + GRID.half) / GRID.cell, v = (z + GRID.half) / GRID.cell;
+  if (u < 0 || v < 0 || u >= GRID.n || v >= GRID.n) return SEA.floor;
+  const i = Math.floor(u), j = Math.floor(v), a = u - i, b = v - j, k = j * (GRID.n + 1) + i;
+  const h00 = heights[k], h10 = heights[k + 1], h01 = heights[k + GRID.n + 1], h11 = heights[k + GRID.n + 2];
+  // the same two triangles per square as the mesh
+  return a > b ? h00 + (h10 - h00) * a + (h11 - h10) * b : h00 + (h11 - h01) * a + (h01 - h00) * b;
+}
+const inSea = p => groundAt(p[0], p[2]) < SEA.level;
+// what loose things come to rest on
+const floorAt = (x, z) => world.map === 'island' ? Math.max(groundAt(x, z), SEA.level) : 0;
+
+// keeps a fighter on the map: bots stay on land, you can wade out a bit further
+function confine(f) {
+  const p = f.pos;
+  if (world.map !== 'island') {
+    p[0] = clamp(p[0], -HALF + 0.6, HALF - 0.6); p[2] = clamp(p[2], -HALF + 0.6, HALF - 0.6);
+    return;
+  }
+  const d = Math.hypot(p[0], p[2]), max = coast(Math.atan2(p[0], p[2])) + (f.isPlayer ? SEA.swim : -1.5);
+  if (d > max) { p[0] *= max / d; p[2] *= max / d; }
+}
+
+// where a ray meets the ground or the sea, or null
+function surfaceHit(origin, dir) {
+  if (world.map !== 'island') {
+    if (dir[1] >= -1e-4) return null;
+    const t = -origin[1] / dir[1], p = V.mad(origin, dir, t);
+    return Math.abs(p[0]) < HALF && Math.abs(p[2]) < HALF ? { t, kind: 'ground' } : null;
+  }
+  const under = t => origin[1] + dir[1] * t < floorAt(origin[0] + dir[0] * t, origin[2] + dir[2] * t);
+  for (let last = 0, t = 0.4; t < 90; last = t, t += 0.4 + t * 0.012) {
+    if (!under(t)) continue;
+    let lo = last, hi = t;
+    for (let k = 0; k < 8; k++) { const mid = (lo + hi) / 2; if (under(mid)) hi = mid; else lo = mid; }
+    return { t: hi, kind: inSea(V.mad(origin, dir, hi)) ? 'water' : 'ground' };
+  }
+  return null;
+}
+// is the ground in the way between two points? (so health bars do not show through hills)
+function behindHill(from, to) {
+  if (world.map !== 'island') return false;
+  const d = V.sub(to, from), len = V.len(d), s = surfaceHit(from, V.mul(d, 1 / (len || 1)));
+  return !!s && s.t < len - 0.5;
+}
+// pull the camera in when a hill gets between it and you
+function cameraRoom(at, fwd, dist) {
+  if (world.map !== 'island') return dist;
+  for (let d = 0.2; d <= dist; d += 0.2) {
+    const p = V.mad(at, fwd, -d);
+    if (p[1] < floorAt(p[0], p[2]) + 0.2) return Math.max(0.4, d - 0.2);
+  }
+  return dist;
+}
+
+// ---------------------------------------------------------------- the sea bites
+function seaStep(f, dt) {
+  if (f.dead >= 0 || !inSea(f.pos)) { f.wet = 0; return; }
+  const before = f.wet || 0;
+  f.wet = before + dt;
+  const bites = t => t < SEA.grace ? 0 : 1 + Math.floor((t - SEA.grace) / SEA.every);
+  if (bites(f.wet) === bites(before) || game.godMode) return;
+  f.hp = Math.max(0, f.hp - SEA.bite); f.hurt = 0.22; hudDirty = true;
+  Sound.play('hurt', 0.6); game.hurtFade = 0.9; ui.vignette.style.opacity = 1;
+  ui.hurtDir.style.transform = 'scale(0)';                   // no attacker to point at
+  puff([f.pos[0], SEA.level + 0.05, f.pos[2]], 10, [0.85, 0.93, 0.97, 0.8], 1.1, 0.05, 0.5, 4);
+  if (f.hp > 0) notify('The water hurts! Get back to land');
+  else { f.pos[1] = SEA.level - 0.15; knockOut(f, 'The sea got you'); }
+}
+
+// ---------------------------------------------------------------- swapping maps
+function setMap(name) {
+  abortLoot(); endSend(player);
+  world.map = name;
+  for (const q of pops) q.el.remove();
+  for (const list of [pops, props, stars, particles, tracers, shells, flashes, marks]) list.length = 0;
+  for (const c of chests) { c.t = -1; c.open = c.openV = c.wobble = 0; c.forced = false; c.pos[1] = groundAt(c.pos[0], c.pos[2]); }
+  player.yaw = Math.PI; cam.yaw = 0; cam.pitch = 0.12;
+  player.hurt = 0; player.wet = 0; player.reload = -1; player.cycle = -1; game.hurtFade = 0;
+  respawnPlayer();
+  notify(name === 'island' ? 'The island (work in progress). T to go back' : 'Back on the baseplate');
+}
+
+// ---------------------------------------------------------------- drawing the island
+const FOG = `
+uniform vec3 uSky;
+vec3 fogged(vec3 col, vec3 w) { return mix(col, uSky, smoothstep(90.0, 420.0, length(w - uEye))); }`;
+const landProg = program(`layout(location=0) in vec3 aPos; layout(location=1) in vec3 aCol; layout(location=2) in vec3 aNrm; uniform mat4 uViewProj; out vec3 vW; out vec3 vC; out vec3 vN;
+void main() { vW = aPos; vC = aCol; vN = aNrm; gl_Position = uViewProj * vec4(aPos, 1.0); }`, `
+in vec3 vW; in vec3 vC; in vec3 vN; out vec4 o;
+${COMMON}
+${FOG}
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+void main() {
+  vec3 col = vC * (0.86 + 0.18 * noise(vW.xz * 1.7) + 0.12 * noise(vW.xz * 0.23));
+  vec3 N = normalize(vN);
+  col *= (0.50 + 0.65 * max(dot(N, uSun), 0.0)) * mix(0.56, 1.0, shadowAt(vW));
+  col += flashLight(vW, vec3(0.0, 1.0, 0.0)) * 0.35;
+  o = vec4(fogged(col, vW), 1.0);
+}`);
+const seaProg = program(`layout(location=0) in vec3 aPos; uniform mat4 uViewProj; out vec3 vW;
+void main() { vW = aPos; gl_Position = uViewProj * vec4(aPos, 1.0); }`, `
+in vec3 vW; out vec4 o;
+uniform float uTime;
+${COMMON}
+${FOG}
+void main() {
+  float a = atan(vW.x, vW.z);
+  float past = length(vW.xz) - (105.0 + 13.0 * sin(3.0 * a + 1.1) + 9.0 * sin(5.0 * a + 2.6) + 4.0 * sin(11.0 * a));
+  float wave = sin(vW.x * 0.9 + uTime * 1.4) * sin(vW.z * 0.7 - uTime * 1.1) + 0.5 * sin((vW.x + vW.z) * 2.1 + uTime * 2.3);
+  vec3 col = mix(vec3(0.22, 0.62, 0.66), vec3(0.04, 0.24, 0.42), smoothstep(1.0, 16.0, past)) + 0.035 * wave;
+  float foam = 1.0 - smoothstep(0.2, 0.9, abs(past - 1.5 - 0.35 * sin(uTime * 1.6 + a * 40.0)));
+  col = mix(col, vec3(0.93, 0.97, 0.98), foam * 0.75);
+  o = vec4(fogged(col, vW), mix(0.62, 1.0, smoothstep(1.0, 12.0, past)));
+}`);
+
+// the grid as a mesh, coloured by height and steepness: sand, grass, bare rock, pale summit
+const land = (() => {
+  const n = GRID.n, row = n + 1, v = [], idx = [];
+  const SAND = [0.80, 0.70, 0.47], GRASS = [0.31, 0.45, 0.20], ROCK = [0.40, 0.36, 0.31], PEAK = [0.66, 0.63, 0.58], DEEP = [0.30, 0.34, 0.27];
+  const at = (i, j) => heights[clamp(j, 0, n) * row + clamp(i, 0, n)];
+  for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
+    const h = at(i, j), nrm = V.norm([at(i - 1, j) - at(i + 1, j), 2 * GRID.cell, at(i, j - 1) - at(i, j + 1)]);
+    let col = V.lerp(SAND, GRASS, smooth(0.7, 1.4, h));
+    col = V.lerp(col, ROCK, Math.max(smooth(0.14, 0.24, 1 - nrm[1]), smooth(14, 18, h)));
+    col = V.lerp(col, PEAK, smooth(21, 24, h));
+    col = V.lerp(col, DEEP, smooth(0, 0.8, -h));
+    v.push(i * GRID.cell - GRID.half, h, j * GRID.cell - GRID.half, ...col, ...nrm);
+  }
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const k = j * row + i; idx.push(k, k + row + 1, k + 1, k, k + row, k + row + 1); }
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  attrib(0, new Float32Array(v), 3, gl.FLOAT, false, 36, 0); attrib(1, null, 3, gl.FLOAT, false, 36, 12); attrib(2, null, 3, gl.FLOAT, false, 36, 24);
+  buffer(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(idx));
+  gl.bindVertexArray(null);
+  return { vao, count: idx.length };
+})();
+const seaVao = (() => {
+  const vao = gl.createVertexArray(), S = 900, y = SEA.level; gl.bindVertexArray(vao);
+  attrib(0, new Float32Array([-S, y, S, S, y, S, S, y, -S, -S, y, S, S, y, -S, -S, y, -S]), 3, gl.FLOAT);
+  gl.bindVertexArray(null); return vao;
+})();
+function drawLand(vp, light, eye) {
+  globals(landProg, vp, light, eye); gl.uniform3fv(landProg.u.uSky, SKY.island);
+  gl.bindVertexArray(land.vao); gl.drawElements(gl.TRIANGLES, land.count, gl.UNSIGNED_INT, 0);
+}
+// after everything solid, so legs show through the water
+function drawSea(vp, light, eye) {
+  globals(seaProg, vp, light, eye); gl.uniform3fv(seaProg.u.uSky, SKY.island); gl.uniform1f(seaProg.u.uTime, game.time);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.bindVertexArray(seaVao); gl.drawArrays(gl.TRIANGLES, 0, 6);
+  gl.disable(gl.BLEND);
+}
+
+
 // ======================================================================= fighters
 function makeFighter(isPlayer, tint) {
   return {
@@ -582,6 +776,7 @@ function spawnBot(b, i) {
   endSend(b);
   const a = Math.PI + (i - 1) * 0.75 + rand(-0.25, 0.25), d = rand(13, 19);
   b.pos = [clamp(player.pos[0] + Math.sin(a) * d, -HALF + 2, HALF - 2), 0, clamp(player.pos[2] + Math.cos(a) * d, -HALF + 2, HALF - 2)];
+  if (world.map === 'island') { b.pos = [player.pos[0] + Math.sin(a) * d, 0, player.pos[2] + Math.cos(a) * d]; confine(b); b.pos[1] = groundAt(b.pos[0], b.pos[2]); }
   b.hp = 100; b.dead = -1; b.hurt = 0; b.air = 0; b.jump = -1; b.looted = b.beingLooted = false; b.script = null; b.scriptW = 0; b.cycle = -1; b.inv = []; b.ammo = {}; b.weapon = null; b.crouch = false; b.ai.wait = rand(1.0, 2.2); b.ai.seen = false;
   give(b, i === 1 ? 'ak' : 'glock', 999); equip(b, b.inv[0]);
   b.yaw = Math.atan2(player.pos[0] - b.pos[0], player.pos[2] - b.pos[2]);
@@ -846,7 +1041,7 @@ function rayCapsule(o, d, a, b, r) {
 }
 function trace(origin, dir, shooter, minT) {
   let best = { t: 90, kind: 'none' };
-  if (dir[1] < -1e-4) { const t = -origin[1] / dir[1]; if (t > (minT || 0) && t < best.t) { const p = V.mad(origin, dir, t); if (Math.abs(p[0]) < HALF && Math.abs(p[2]) < HALF) best = { t, kind: 'ground' }; } }
+  const s = surfaceHit(origin, dir); if (s && s.t > (minT || 0) && s.t < best.t) best = s;
   for (const c of chests) { const t = rayCapsule(origin, dir, V.add(c.pos, [-0.25, 0.25, 0]), V.add(c.pos, [0.25, 0.25, 0]), 0.3); if (t > (minT || 0) && t < best.t) best = { t, kind: 'chest' }; }
   for (const f of fighters) {
     if (f === shooter || f.dead >= 0) continue;
@@ -872,14 +1067,16 @@ function damage(victim, amount, from, head) {
     game.hurtFade = 0.9;
   } else victim.ai.seen = true;
   if (victim.hp <= 0) {
-    victim.hp = 0; victim.dead = 0; victim.reload = -1;
     if (from.isPlayer) {
       Sound.play('kill', 0.8); game.kills++; hudDirty = true;
       notify((head ? 'Headshot! ' : '') + 'Go to him and hold E to loot');
     }
-    victim.crouch = false; victim.tilt = 0;
-    if (victim.isPlayer) { game.deaths++; hudDirty = true; abortLoot(); notify('You got knocked out'); startSend(victim, 1.2); aimDeathCam(); }
+    knockOut(victim, 'You got knocked out');
   }
+}
+function knockOut(victim, why) {
+  victim.hp = 0; victim.dead = 0; victim.reload = -1; victim.crouch = false; victim.tilt = 0;
+  if (victim.isPlayer) { game.deaths++; hudDirty = true; abortLoot(); notify(why); startSend(victim, 1.2); aimDeathCam(); }
 }
 function fire(f, origin, dir, spread, minT) {
   const g = GUNS[f.weapon], am = f.ammo[f.weapon];
@@ -894,6 +1091,7 @@ function fire(f, origin, dir, spread, minT) {
     damage(hit.f, (f.isPlayer ? g.damage : 5) * hit.mult, f, head);
     if (f.isPlayer) { Sound.play('hit', 0.8); game.marker = 0.18; ui.marker.classList.toggle('head', head || hit.f.dead >= 0); }
   } else if (hit.kind === 'ground') { puff(hit.p, 6, [0.45, 0.43, 0.40, 0.7], 0.9, 0.045, 0.5, 3); marks.push(hit.p); if (marks.length > 90) marks.shift(); }
+  else if (hit.kind === 'water') puff(hit.p, 8, [0.85, 0.93, 0.97, 0.8], 1.2, 0.04, 0.45, 5);
   else if (hit.kind === 'chest') puff(hit.p, 6, [0.55, 0.36, 0.17, 0.9], 1.2, 0.025, 0.45, 6);
   // recoil on the gun itself
   f.kickV += g.kickBack * 22; f.riseV += g.climb * 16 * (1 - 0.35 * f.ads); f.roll += rand(-0.05, 0.05); f.bolt = 1;
@@ -982,6 +1180,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'Digit3') equip(player, 'awp');
   else if (e.code === 'Digit4' || e.code === 'KeyH') equip(player, null);
   else if (e.code === 'KeyV') { if (player.weapon && player.reload < 0 && player.cycle < 0 && player.equip >= 1 && player.inspect < 0) player.inspect = 0; }
+  else if (e.code === 'KeyT') setMap(world.map === 'island' ? 'plate' : 'island');   // temporary, while the map is being made
   else if (e.code === 'KeyQ') game.aimToggle = !game.aimToggle;
   else if (e.code === 'KeyF') fullscreen();
   else if (e.code === 'KeyP') { game.enemiesShoot = !game.enemiesShoot; ui.shootback.checked = game.enemiesShoot; notify(game.enemiesShoot ? 'Enemies shoot back' : 'Enemies hold fire'); }
@@ -1059,8 +1258,9 @@ function propsStep(dt) {
     if ((o.life -= dt) <= 0) { props.splice(i, 1); continue; }
     if (o.rest) continue;
     o.v[1] -= 9.8 * dt; o.p = V.mad(o.p, o.v, dt); o.R = M3.mul(M3.axis(o.axis, o.spin * dt), o.R);
-    if (o.p[1] < o.floor && o.v[1] < 0) {
-      o.p[1] = o.floor;
+    const low = floorAt(o.p[0], o.p[2]) + o.floor;
+    if (o.p[1] < low && o.v[1] < 0) {
+      o.p[1] = low;
       if (-o.v[1] > 1.1) { o.v = [o.v[0] * 0.45, -o.v[1] * 0.3, o.v[2] * 0.45]; o.spin *= 0.5; Sound.play('click', 0.25); }
       else { o.rest = true; o.R = o.kind === 'gun' ? M3.mul(M3.ry(rand(0, 6.3)), M3.rz(Math.PI / 2)) : o.kind === 'fish' ? M3.mul(M3.ry(rand(0, 6.3)), M3.rz(Math.PI / 2)) : M3.ry(rand(0, 6.3)); }
     }
@@ -1177,7 +1377,7 @@ const BODY = { hold: 3.7, end: 6.5, label: 'loot this caveman' };
 function bodyStep(L) {
   const t = L.t, v = L.victim, pr = M3.ry(L.face);
   const ankle = [0, restAt('foot_L')[1], restAt('foot_L')[2]];
-  const lying = M3.mul(M3.ry(v.yaw), M3.rx(-1.5)), lyingP = [v.pos[0], 0.2, v.pos[2]];
+  const lying = M3.mul(M3.ry(v.yaw), M3.rx(-1.5)), lyingP = [v.pos[0], v.pos[1] + 0.2, v.pos[2]];
   const ground = V.add(lyingP, M3.vec(lying, ankle));
   const g0 = M3.vec(M3.tr(pr), V.sub(ground, L.spot));            // the ankles, seen by the looter
   const high = [0, 1.78, 0.48];
@@ -1352,7 +1552,7 @@ function startLoot(target) {
   const L = Object.assign({ f, t: 0, prev: -1, cancel: -1, given: false, vw: 0, start: f.pos.slice(), yaw0: f.yaw }, target);
   if (L.kind === 'body') {
     const v = L.victim, fwd = [Math.sin(v.yaw), 0, Math.cos(v.yaw)];
-    L.spot = [v.pos[0] + fwd[0] * 0.55, 0, v.pos[2] + fwd[2] * 0.55]; L.face = v.yaw + Math.PI;
+    L.spot = [v.pos[0] + fwd[0] * 0.55, v.pos[1], v.pos[2] + fwd[2] * 0.55]; L.face = v.yaw + Math.PI;
     L.gun = v.weapon || 'glock'; L.def = BODY; v.beingLooted = true;
   } else {
     L.spot = V.add(L.chest.pos, [0, 0, 0.80]); L.face = Math.PI; L.gun = L.chest.gun; L.def = CHEST;
@@ -1488,9 +1688,9 @@ function jumpStep(f, dt) {
   const tau = f.jump - T.pre;
   f.air = tau > 0 && tau < JUMP.air ? JUMP.speed * tau - JUMP.gravity * tau * tau / 2 : 0;
   const crossed = at => t0 < at && f.jump >= at, mine = f.isPlayer;
-  if (crossed(T.pre)) { Sound.play('hup', mine ? 0.8 : 0.2); puff([f.pos[0], 0.04, f.pos[2]], 6, [0.52, 0.50, 0.46, 0.55], 0.7, 0.05, 0.35, 1); }
+  if (crossed(T.pre)) { Sound.play('hup', mine ? 0.8 : 0.2); puff([f.pos[0], f.pos[1] + 0.04, f.pos[2]], 6, [0.52, 0.50, 0.46, 0.55], 0.7, 0.05, 0.35, 1); }
   if (crossed(T.down)) {
-    Sound.play('land', mine ? 0.8 : 0.2); puff([f.pos[0], 0.04, f.pos[2]], 12, [0.52, 0.50, 0.46, 0.65], 1.0, 0.065, 0.45, 1);
+    Sound.play('land', mine ? 0.8 : 0.2); puff([f.pos[0], f.pos[1] + 0.04, f.pos[2]], 12, [0.52, 0.50, 0.46, 0.65], 1.0, 0.065, 0.45, 1);
     f.riseV -= 2.2;                                            // the gun dips with the landing
     if (mine) cam.shake = Math.max(cam.shake, 0.4);
   }
@@ -1599,7 +1799,7 @@ function startSend(f, delay) {
   const out = V.mul(perp, side);
   let away = V.norm([hips[0] - player.pos[0], 0, hips[2] - player.pos[2]]);
   if (f.isPlayer) away = out;
-  const spot = V.add([hips[0], 0, hips[2]], V.mul(out, 0.92));
+  const spot = V.add([hips[0], f.pos[1], hips[2]], V.mul(out, 0.92));
   const from = V.add(spot, V.add(V.mul(out, 11), V.mul(back, 9)));
   const helper = makeFighter(false, [1.2, 1.1, 0.35]);
   helper.pos = from.slice(); helper.gone = true;
@@ -1628,7 +1828,7 @@ function sendStep(s, dt) {
   h.gone = false; h.script = null; h.scriptW = 0; h.tilt = 0;
   let gait = 'Idle';
   const runTo = (a, b, u) => { h.pos = V.lerp(a, b, u); h.yaw = Math.atan2(b[0] - a[0], b[2] - a[2]); gait = 'Run'; h.phase = (h.phase + dt * 5.5) % 1; h.tilt = 0.38; };
-  const dust = () => puff([h.pos[0], 0.07, h.pos[2]], 3, [0.55, 0.53, 0.49, 0.6], 0.5, 0.1, 0.5, -0.2);
+  const dust = () => puff([h.pos[0], floorAt(h.pos[0], h.pos[2]) + 0.07, h.pos[2]], 3, [0.55, 0.53, 0.49, 0.6], 0.5, 0.1, 0.5, -0.2);
   const arm = (x, wrist, dir, palm, curl) => ({ wrist, dir: dir || [0, -0.3, 1], palm: palm || [-x, 0, 0], pole: [x, -0.4, -0.5], curl: [curl === undefined ? 0.7 : curl, curl === undefined ? 0.7 : curl] });
   const hips0 = Rig.rest[IDX.hips];
   const script = (S, w) => { h.script = S; h.scriptW = w === undefined ? 1 : w; };
@@ -1667,6 +1867,7 @@ function sendStep(s, dt) {
     const u = (t - 5.7) / 0.75;
     runTo(s.spot, s.from, Math.pow(u, 1.6)); dust();
   } else h.gone = true;
+  if (world.map === 'island') h.pos = [h.pos[0], floorAt(h.pos[0], h.pos[2]), h.pos[2]];   // he runs over the hills
   for (const n of CLIP_NAMES) h.weights[n] = n === gait ? 1 : 0;
 
   if (crossed(0.001)) { Sound.play('zoom', near); popWord(V.add(V.lerp(s.from, s.spot, 0.75), [0, 2.0, 0]), 'NYOOOM!', 0.8); }
@@ -1692,7 +1893,7 @@ function sendStep(s, dt) {
   if (t >= 2.4 && !f.gone) {
     const lift = smooth(2.45, 3.9, t), air = smooth(0, 1.4, tau);
     const lie = M3.mul(M3.ry(f.yaw), M3.rx(-1.5));
-    const hipsLie = V.add([f.pos[0], 0.2, f.pos[2]], M3.vec(lie, hips0));
+    const hipsLie = V.add([f.pos[0], f.pos[1] + 0.2, f.pos[2]], M3.vec(lie, hips0));
     const centre = V.add(V.add(hipsLie, [0, 0.12 * lift, 0]), s.rise);
     const swing = M3.mul(M3.ry(Math.sin(tau * 0.9) * 0.5 * air + tau * 0.18), M3.rz(Math.sin(tau * 2.6) * 0.14 * air));
     const R = M3.mul(swing, M3.mul(M3.ry(f.yaw), M3.rx(-1.5 + Math.sin(tau * 2.2) * 0.18 * air)));
@@ -1755,7 +1956,7 @@ function drawSends(prog) {
       if (t < 3.9 && chest) {                                 // hose, sagging to the body
         const a = at([0, 0.07, 0.46]), b = chest, mid = V.add(V.lerp(a, b, 0.5), [0, -0.12, 0]);
         let last = a;
-        for (let k = 1; k <= 8; k++) { const u = k / 8, p = V.lerp(V.lerp(a, mid, u), V.lerp(mid, b, u), u); p[1] = Math.max(p[1], 0.02); rod(prog, last, p, 0.022); last = p; }
+        for (let k = 1; k <= 8; k++) { const u = k / 8, p = V.lerp(V.lerp(a, mid, u), V.lerp(mid, b, u), u); p[1] = Math.max(p[1], floorAt(p[0], p[2]) + 0.02); rod(prog, last, p, 0.022); last = p; }
       }
     }
     if (!f.gone) for (let k = 0; k < s.tied; k++) {           // balloons
@@ -1834,8 +2035,11 @@ function locomotion(f, mx, my, sprint, dt) {
   jumpStep(f, dt);
   if (f.dead >= 0) f.legYaw = 0;
   const dir = f.yaw + f.moveRel;
-  f.pos[0] = clamp(f.pos[0] + Math.sin(dir) * f.speed * dt, -HALF + 0.6, HALF - 0.6);
-  f.pos[2] = clamp(f.pos[2] + Math.cos(dir) * f.speed * dt, -HALF + 0.6, HALF - 0.6);
+  const pace = f.speed * (inSea(f.pos) ? 0.65 : 1);           // wading is slow
+  f.pos[0] += Math.sin(dir) * pace * dt;
+  f.pos[2] += Math.cos(dir) * pace * dt;
+  confine(f);
+  if (f.dead < 0) f.pos[1] = groundAt(f.pos[0], f.pos[2]);
   if (f.isPlayer && looting) return;
   for (const c of chests) push(f, c.pos, 0.72);
   for (const o of fighters) if (o !== f && o.dead < 0) push(f, o.pos, 0.55);
@@ -1886,15 +2090,16 @@ function camVectors() {
 }
 function cameraEye() {
   const { fwd, right } = camVectors();
-  const at = [player.pos[0] + right[0] * cam.side, cam.height + (player.dead < 0 ? player.air * 0.45 : 0), player.pos[2] + right[2] * cam.side];
+  const at = [player.pos[0] + right[0] * cam.side, player.pos[1] + cam.height + (player.dead < 0 ? player.air * 0.45 : 0), player.pos[2] + right[2] * cam.side];
   let dist = cam.dist;
   if (fwd[1] > 0) dist = Math.min(dist, (at[1] - 0.18) / fwd[1]);
+  if (world.map === 'island') dist = cameraRoom(at, fwd, cam.dist);
   return { eye: V.mad(at, fwd, -dist), at, fwd, dist };
 }
 function respawnPlayer() {
   abortLoot();
   const f = player;
-  f.dead = -1; f.hp = 100; f.pos = [0, 0, 0]; f.air = 0; f.jump = -1; f.equip = 0;
+  f.dead = -1; f.hp = 100; f.pos = [0, groundAt(0, 0), 0]; f.air = 0; f.jump = -1; f.equip = 0;
   deathCam = 0; deathShot = null; hudDirty = true;
   bots.forEach(spawnBot); notify('Back on your feet');
 }
@@ -1922,6 +2127,8 @@ function playerStep(dt) {
   f.yaw += wrap(cam.yaw + Math.PI - f.yaw) * Math.min(1, dt * 18);
   locomotion(f, mx, my, sprint, dt);
   weaponStep(f, dt);
+  seaStep(f, dt);
+  if (f.dead >= 0) return;
 
   const c = camVectors(), view = cameraEye();
   const near = Math.max(0.2, V.dot(V.sub(V.add(f.pos, [0, 1.3, 0]), view.eye), c.fwd) + 0.3);
@@ -1996,7 +2203,7 @@ function effectsStep(dt) {
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i]; p.life -= dt;
     if (p.life <= 0) { particles.splice(i, 1); continue; }
-    p.v[1] -= p.grav * dt; p.p = V.mad(p.p, p.v, dt); if (p.p[1] < 0.01) { p.p[1] = 0.01; p.v = [0, 0, 0]; }
+    p.v[1] -= p.grav * dt; p.p = V.mad(p.p, p.v, dt); const low = floorAt(p.p[0], p.p[2]) + 0.01; if (p.p[1] < low) { p.p[1] = low; p.v = [0, 0, 0]; }
     if (p.grow) { p.size += p.grow * dt; p.v = V.mul(p.v, Math.exp(-dt * 3)); }
   }
   for (let i = tracers.length - 1; i >= 0; i--) if ((tracers[i].life -= dt) <= 0) tracers.splice(i, 1);
@@ -2006,7 +2213,8 @@ function effectsStep(dt) {
     if (s.life <= 0) { shells.splice(i, 1); continue; }
     if (s.rest) continue;
     s.v[1] -= 9.8 * dt; s.p = V.mad(s.p, s.v, dt); s.a += dt * 14;
-    if (s.p[1] < 0.008) { s.p[1] = 0.008; if (Math.abs(s.v[1]) < 0.7) { s.rest = true; } s.v = [s.v[0] * 0.5, -s.v[1] * 0.35, s.v[2] * 0.5]; }
+    const low = floorAt(s.p[0], s.p[2]) + 0.008;
+    if (s.p[1] < low) { s.p[1] = low; if (Math.abs(s.v[1]) < 0.7) { s.rest = true; } s.v = [s.v[0] * 0.5, -s.v[1] * 0.35, s.v[2] * 0.5]; }
   }
 }
 function update(dt) {
@@ -2146,7 +2354,7 @@ function drawEffects(vp, eye, fwd) {
   gl.useProgram(fxProg.p); gl.uniformMatrix4fv(fxProg.u.uViewProj, false, vp);
   gl.enable(gl.BLEND); gl.depthMask(false);
   const right = V.norm(V.cross(fwd, [0, 1, 0])), up = V.cross(right, fwd);
-  for (const m of marks) quad([m[0], 0.004, m[2]], [0.045, 0, 0], [0, 0, 0.045], [0.08, 0.07, 0.06, 0.75]);
+  for (const m of marks) quad([m[0], m[1] + 0.012, m[2]], [0.045, 0, 0], [0, 0, 0.045], [0.08, 0.07, 0.06, 0.75]);
   for (const p of particles) { const a = Math.min(1, p.life / p.max * 1.6); quad(p.p, V.mul(right, p.size), V.mul(up, p.size), [p.color[0], p.color[1], p.color[2], p.color[3] * a]); }
   flushFx(false);
   for (const t of tracers) {
@@ -2182,8 +2390,9 @@ function render() {
   const hideSelf = sc > 0.55;
   const sh = cam.shake * cam.shake * 0.012;
   const eye = V.add(view.eye, [rand(-sh, sh), rand(-sh, sh), rand(-sh, sh)]);
+  if (world.map === 'island') eye[1] = Math.max(eye[1], floorAt(eye[0], eye[2]) + 0.18);   // never inside a hill
   const fov = cam.fov + (0.17 - cam.fov) * smooth(0.45, 1, sc);
-  const proj = perspective(fov, w / Math.max(1, h), 0.08, 160);
+  const proj = perspective(fov, w / Math.max(1, h), 0.08, world.map === 'island' ? 600 : 160);
   const vp = mul4(proj, lookAt(eye, V.add(eye, view.fwd)));
   lastView = { vp, w: canvas.clientWidth, h: canvas.clientHeight };
 
@@ -2202,11 +2411,13 @@ function render() {
   globals(staticDepth, light, light, eye); drawStatics(staticDepth, false);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-  gl.viewport(0, 0, w, h); gl.clearColor(219 / 255, 219 / 255, 219 / 255, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.viewport(0, 0, w, h); gl.clearColor(...SKY[world.map], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, shadowTex);
-  globals(plateProg, vp, light, eye); gl.bindVertexArray(plate); gl.drawArrays(gl.TRIANGLES, 0, 6);
+  if (world.map === 'island') drawLand(vp, light, eye);
+  else { globals(plateProg, vp, light, eye); gl.bindVertexArray(plate); gl.drawArrays(gl.TRIANGLES, 0, 6); }
   globals(skinProg, vp, light, eye); gl.uniform1i(skinProg.u.uTex, 0); gl.uniform1i(skinProg.u.uNormalMap, 1); drawFighters(skinProg, true, hideSelf);
   globals(pbrProg, vp, light, eye); gl.uniform1i(pbrProg.u.uTex, 0); gl.uniform1i(pbrProg.u.uNormalMap, 1); gl.uniform1i(pbrProg.u.uOrm, 2); drawStatics(pbrProg, true, hideSelf);
+  if (world.map === 'island') drawSea(vp, light, eye);
   drawEffects(vp, eye, view.fwd);
 }
 
@@ -2247,8 +2458,8 @@ function hud(dt) {
   bots.forEach((b, i) => {
     // health bar over the living, an arrow over bodies that still have loot
     const body = b.dead >= 1.2 && !b.looted && !looting && !b.send, alive = b.dead < 0;
-    const at = alive ? V.add(b.pos, [0, b.crouch ? 1.6 : 1.92, 0]) : [b.pos[0] - Math.sin(b.yaw) * 0.8, 0.75 + Math.sin(game.time * 5) * 0.08, b.pos[2] - Math.cos(b.yaw) * 0.8];
-    const el = barEls[i], p = (alive || body) && lastView && scopeAmount() < 0.5 ? project(at) : null;
+    const at = alive ? V.add(b.pos, [0, b.crouch ? 1.6 : 1.92, 0]) : [b.pos[0] - Math.sin(b.yaw) * 0.8, b.pos[1] + 0.75 + Math.sin(game.time * 5) * 0.08, b.pos[2] - Math.cos(b.yaw) * 0.8];
+    const el = barEls[i], p = (alive || body) && lastView && scopeAmount() < 0.5 && !behindHill(cameraEye().eye, at) ? project(at) : null;
     el.style.display = p ? 'block' : 'none';
     el.classList.toggle('loot', body);
     el.classList.toggle('soon', body && b.dead > LOOT_WINDOW - 3);
@@ -2283,7 +2494,7 @@ requestAnimationFrame(frame);
 
 // hooks used by the automated checks
 window.__game = {
-  ready: true, player, bots, chests, cam, game, mouse, keys, GUNS,
+  ready: true, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap,
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
   resume() { manual = false; }, give, equip, startReload,

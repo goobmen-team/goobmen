@@ -17,6 +17,7 @@ A third-person caveman fighting game with real guns. Loot chests, fight other ca
 | R / V | reload / show off your gun |
 | 1, 2, 3, 4 or wheel | AK-74, Glock 17, AWP, fists |
 | F | fullscreen |
+| T | swap between the baseplate and the island (temporary) |
 | P / M / Esc | enemy fire / sound / pause |
 
 ## Files
@@ -26,7 +27,7 @@ A third-person caveman fighting game with real guns. Loot chests, fight other ca
 - `assets/`: the caveman model and gun data
 - `build.py`: rebuilds `index.html` after you change something (`python3 build.py`)
 
-The map isn't made yet.
+The map is being made in phases. So far: a hilly island with a mountain, in an ocean that hurts if you wade into it. Press T to go there. No caves yet.
 
 ## Contributors
 
