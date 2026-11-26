@@ -240,6 +240,7 @@ function drawProps(prog, textured) {
   }
 }
 function popWord(p, text, life) {
+  return;                                                      // the pop-up words are switched off
   const el = document.createElement('div'); el.className = 'pop'; el.textContent = text; ui.pops.appendChild(el);
   pops.push({ el, p: p.slice(), t: 0, life: life || 0.75, tilt: rand(-14, 14) });
 }
@@ -573,7 +574,7 @@ function lootStep(dt) {
   const pressed = holding && !lootHeld;
   lootHeld = holding;
   stars.length = 0;
-  lootCam = clamp(lootCam + (looting && looting.cancel < 0 && looting.t < looting.def.end - 0.45 ? dt / 0.65 : -dt / 0.55), 0, 1);
+  lootCam = 0;                                                 // the camera stays yours while he does it
   if (!looting) {
     const target = pressed ? lootTarget() : null;
     if (!target) {
@@ -613,8 +614,6 @@ function lootStep(dt) {
   } else f.speed = 0;
   const gait = f.speed > 0.2 ? 'Walk' : 'Idle';
   for (const n of CLIP_NAMES) f.weights[n] = n === gait ? 1 : 0;
-  cam.yaw += wrap(L.face - Math.PI - cam.yaw) * Math.min(1, dt * 5);
-  cam.pitch += (0.18 - cam.pitch) * Math.min(1, dt * 5);
 
   (L.kind === 'body' ? bodyStep : chestStep)(L);
   const out = 1 - smooth(L.def.end - 0.28, L.def.end, t);
