@@ -668,7 +668,7 @@ function botStep(b, i, dt) {
     const before = b.dead; b.dead += dt; deathCues(b, before);
     locomotion(b, 0, 0, false, dt); weaponStep(b, dt);
     // a body waits a while to be looted; once it has been, he turns up at once
-    if (!b.send && !b.beingLooted && b.dead >= (b.looted ? 1.6 : LOOT_WINDOW)) startSend(b);
+    if (!b.send && !b.beingLooted && b.dead >= (b.looted ? 1.6 : LOOT_WINDOW)) startSend(b, 0, !b.looted);
     return;
   }
   const to = V.sub(player.pos, b.pos), dist = Math.hypot(to[0], to[2]);
