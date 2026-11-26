@@ -101,7 +101,10 @@ function findCaves() {
     if (CAVES.length >= CAVE.want) break;
     search: for (const off of [0, -0.2, 0.2, -0.38, 0.38, -0.55, 0.55]) {
       const x = hx + off * r;
-      for (let z = hz + r * 1.05; z > hz + 3; z -= 1.2) {      // walk up the south side until it is steep enough
+      // the mouth sits on a row of the ground mesh, so the cliff above it starts exactly there
+      const onRow = v => Math.round((v + GRID.half) / GRID.cell) * GRID.cell - GRID.half;
+      for (let w = hz + r * 1.05; w > hz + 3; w -= GRID.cell) {  // walk up the south side until it is steep enough
+        const z = onRow(w);
         const base = natural(x, z) - CAVE.cut;
         if (base < 3.0 || natural(x, z) - natural(x, z + 6) < 1.1 || !caveSite(x, z, base)) continue;
         const k = CAVES.length;
@@ -118,7 +121,7 @@ function cutCaves(x, z, h) {
   for (const c of CAVES) {
     const s = c.z - z, t = Math.abs(x - c.x);
     if (s < -15 || s > CAVE.end + 5 || t > CAVE.room + 7) continue;
-    if (s < 2.0) {                                             // level a little way in, so no ramp crosses the door
+    if (s < 0.3) {
       // ragged banks, never closer than the doorway is wide
       const ragged = roll(x, z, 6) * 2.4 * smooth(CAVE.half + 0.4, CAVE.half + 2.0, t);
       const open = smooth(CAVE.half + 3.8, CAVE.half + 1.0, t + ragged) * smooth(-14, -8, s);
@@ -352,10 +355,10 @@ bool doorway(vec3 w) {
   for (int k = 0; k < 12; k++) {
     vec4 c = uCaves[k];
     float s = c.y - w.z;
-    if (s < -0.2 || s > 8.0 || abs(w.x - c.x) > 5.0) continue;
+    if (s < -0.3 || s > 8.0 || abs(w.x - c.x) > 5.0) continue;
     float rel = w.y - (c.z - c.w * smoothstep(1.5, 11.5, s));
-    if (rel < (s < 0.4 ? 0.06 : -0.4) || rel > 3.9) continue;
-    float across = pow(abs(w.x - c.x) / (2.05 + 0.5 * smoothstep(0.3, 1.5, s)), 1.667), up = pow(max(rel, 0.0) / (3.1 + 0.6 * smoothstep(0.3, 1.5, s)), 1.333);   // wider once behind the rock face
+    if (rel < (s < 0.4 ? 0.06 : -0.4) || rel > 3.1) continue;
+    float across = pow(abs(w.x - c.x) / 1.93, 1.667), up = pow(max(rel, 0.0) / 3.03, 1.333);    // the same arch as the walls
     if (across * across + up * up < 1.0) return true;
   }
   return false;
@@ -910,10 +913,10 @@ function drawLand(vp, light, eye) {
   gl.uniform1i(landProg.u.uKind, 0); gl.bindVertexArray(land.vao);
   for (const p of land.pieces) if (seen(p, land.reach)) gl.drawElements(gl.TRIANGLES, p.count, gl.UNSIGNED_INT, p.from * 4);
   gl.uniform1i(landProg.u.uCut, 0);
-  drawCaveFaces();
   gl.uniform1i(landProg.u.uKind, 1);
+  drawCaveCliffs();
+  drawCaveTrim();
   for (const [d, p] of shown) { const m = meshOf(p, d); if (m) drawPart(m); }
-  drawCaveRocks();
   drawGrass(eye);
   drawSign(vp, light, eye);
   drawBridges(vp, light, eye);

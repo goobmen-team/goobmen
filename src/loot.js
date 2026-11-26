@@ -205,6 +205,7 @@ function gunNear(p) {
   let best = null, bestD = 1.4;
   for (const o of props) {
     if (!(o.kind === 'gun' && o.ammo) && !(o.kind === 'c4' && player.c4 < C4_MAX)) continue;
+    if (Math.abs(o.p[1] - p[1]) > 1.8) continue;               // not through a cave roof
     const d = Math.hypot(o.p[0] - p[0], o.p[2] - p[2]);
     if (d < bestD && Math.abs(o.p[1] - p[1]) < 1.6) { bestD = d; best = o; }
   }
@@ -501,7 +502,7 @@ function lootTarget() {
   const p = player.pos;
   let best = null, bestD = 1e9;
   for (const b of bots) {
-    if (b.dead < 1.2 || b.looted || b.send) continue;
+    if (b.dead < 1.2 || b.looted || b.send || Math.abs(b.pos[1] - p[1]) > 1.6) continue;
     // anywhere along the body counts
     const back = [-Math.sin(b.yaw), 0, -Math.cos(b.yaw)], u = clamp((p[0] - b.pos[0]) * back[0] + (p[2] - b.pos[2]) * back[2], 0, 1.4);
     const d = Math.hypot(p[0] - b.pos[0] - back[0] * u, p[2] - b.pos[2] - back[2] * u);
@@ -509,7 +510,7 @@ function lootTarget() {
   }
   for (const c of chests) {
     const d = Math.hypot(c.pos[0] - p[0], c.pos[2] - p[2]) - 0.4;
-    if (c.t < 0 && d < 1.25 && d < bestD) { bestD = d; best = { kind: 'chest', chest: c }; }
+    if (c.t < 0 && Math.abs(c.pos[1] - p[1]) < 1.4 && d < 1.25 && d < bestD) { bestD = d; best = { kind: 'chest', chest: c }; }
   }
   return best;
 }

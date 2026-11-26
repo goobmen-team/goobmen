@@ -35,7 +35,7 @@ A third-person caveman fighting game with real guns. Loot chests, fight other ca
 
 Chests can also hold a bulletproof vest, which soaks up body hits until it breaks (not headshots). For now there is also a chest of every item by the "something cool here" sign, for testing.
 
-The map is being made in phases. So far: a big island with two mountains, a mesa, a gorge, a crater, a stone circle, an old camp, a giant skeleton, an enormous tree, a boulder field, a pine wood and a palm bay, in an ocean that hurts if you wade into it. Two rivers cross it, with arched wooden bridges. Further out are a volcano, table rocks, stone arches, a mammoth graveyard, a fishing camp, a grove of giant trees, great stone heads, a log fort, a second canyon and a lookout tower. Small torch-lit stone caves, dug into the sides of the hills and mountains, slope down to a chamber with chests. 130 chests are scattered at random on each visit and enemies turn up anywhere. Press T to go there.
+The map is being made in phases. So far: a big island with two mountains, a mesa, a gorge, a crater, a stone circle, an old camp, a giant skeleton, an enormous tree, a boulder field, a pine wood and a palm bay, in an ocean that hurts if you wade into it. Two rivers cross it, with arched wooden bridges. Further out are a volcano, table rocks, stone arches, a mammoth graveyard, a fishing camp, a grove of giant trees, great stone heads, a log fort, a second canyon and a lookout tower. Small torch-lit stone caves, dug into the sides of the hills and mountains, slope down to a chamber with chests, a campfire and paintings on the walls. 130 chests are scattered at random on each visit and enemies turn up anywhere. Press T to go there.
 
 ## Contributors
 

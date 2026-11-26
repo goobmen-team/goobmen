@@ -61,6 +61,7 @@ function edgeOf(o, x, z) {
 function pushSolids(f, pad) {
   const p = f.pos;
   for (const o of solidsNear(p[0], p[2])) {
+    if (o.upTo !== undefined && p[1] > o.upTo) continue;      // on the hill above a cave, not in it
     if (p[1] > o.y + o.h - 0.2 || p[1] < o.y - 2.5 || (o.thin && p[1] < o.y - 0.6)) continue;   // above it, or under a bridge rail
     const e = edgeOf(o, p[0], p[2]);
     if (e.d >= pad) continue;

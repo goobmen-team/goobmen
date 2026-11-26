@@ -638,8 +638,8 @@ function locomotion(f, mx, my, sprint, dt) {
     } else { f.pos[1] = floor; f.drop = 0; }
   }
   if (f.isPlayer && looting) return;
-  for (const c of chests) push(f, c.pos, 0.72);
-  for (const o of fighters) if (o !== f && o.dead < 0) push(f, o.pos, 0.55);
+  for (const c of chests) if (Math.abs(c.pos[1] - f.pos[1]) < 1.4) push(f, c.pos, 0.72);
+  for (const o of fighters) if (o !== f && o.dead < 0 && Math.abs(o.pos[1] - f.pos[1]) < 2) push(f, o.pos, 0.55);
 }
 function push(f, p, r) {
   const dx = f.pos[0] - p[0], dz = f.pos[2] - p[2], d = Math.hypot(dx, dz);
@@ -690,6 +690,7 @@ function cameraEye() {
   const { fwd, right } = camVectors();
   const at = [player.pos[0] + right[0] * cam.side, player.pos[1] + cam.height + (player.dead < 0 ? player.air * 0.45 : 0), player.pos[2] + right[2] * cam.side];
   if (world.map === 'island') at[1] = Math.max(at[1], floorAt(at[0], at[2], at[1]) + 0.4);     // beside a steep bank
+  if (world.map === 'island' && !FLY.on) caveShoulder(at);
   let dist = cam.dist;
   if (fwd[1] > 0) dist = Math.min(dist, (at[1] - 0.18) / fwd[1]);
   if (world.map === 'island' && !FLY.on) dist = cameraRoom(at, fwd, cam.dist);
@@ -871,11 +872,12 @@ function drawFighters(prog, textured, hideSelf) {
     gl.uniformMatrix4fv(prog.u.uBones, false, f.bones);
     gl.uniformMatrix4fv(prog.u.uModel, false, f.model);
     if (textured) gl.uniform1f(prog.u.uHurt, f.hurt * 1.4);
+    const dim = textured ? caveLight(f.pos) : 1;
     for (const p of Rig.prims) {
       if (textured) {
         gl.uniform1i(prog.u.uHasTex, p.tex ? 1 : 0); gl.uniform1i(prog.u.uHasNormal, p.normal ? 1 : 0);
         gl.uniform3fv(prog.u.uColor, p.color); gl.uniform1f(prog.u.uRough, p.rough);
-        gl.uniform3fv(prog.u.uTint, p.name === 'cloth' || p.name === 'skin' ? (p.name === 'skin' ? f.tint.map(t => 1 + (t - 1) * 0.35) : f.tint) : [1, 1, 1]);
+        gl.uniform3fv(prog.u.uTint, (p.name === 'cloth' || p.name === 'skin' ? (p.name === 'skin' ? f.tint.map(t => 1 + (t - 1) * 0.35) : f.tint) : [1, 1, 1]).map(t => t * dim));
         if (p.tex) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, p.tex); }
         if (p.normal) { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, p.normal); }
       }
@@ -1016,7 +1018,7 @@ function render() {
   const sc = scopeAmount();
   let view = deathCamera(lootCamera(scopedView(cameraEye(), sc)));
   if (testView) view = { eye: testView.eye, fwd: V.norm(V.sub(testView.at, testView.eye)), at: testView.at, dist: 1 };   // automated checks only
-  const hideSelf = sc > 0.55;
+  const hideSelf = sc > 0.55 || (inCave(player.pos) && V.len(V.sub(view.eye, V.add(player.pos, [0, 1.5, 0]))) < 0.75);
   const sh = cam.shake * cam.shake * 0.012;
   const eye = V.add(view.eye, [rand(-sh, sh), rand(-sh, sh), rand(-sh, sh)]);
   if (world.map === 'island') eye[1] = Math.max(eye[1], floorAt(eye[0], eye[2], eye[1]) + 0.18);   // never inside a hill

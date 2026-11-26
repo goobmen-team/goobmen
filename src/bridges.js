@@ -27,7 +27,7 @@ function deckAt(x, z) {
   return -Infinity;
 }
 // y: how high the thing asking is. left out, the inside of a cave counts
-const walkHeight = (x, z, y) => { const floor = caveFloor(x, z); return floor !== null && (y === undefined || y < floor + 3.3) ? floor : Math.max(groundHeight(x, z), deckAt(x, z)); };
+const walkHeight = (x, z, y) => { const floor = caveFloor(x, z); return floor !== null && (y === undefined || y < floor + 2.4) ? floor : Math.max(groundHeight(x, z), deckAt(x, z)); };
 const nearBridge = (x, z, pad) => bridges.some(b => {
   const rx = x - b.from[0], rz = z - b.from[1], along = rx * b.dir[0] + rz * b.dir[1], side = rz * b.dir[0] - rx * b.dir[1];
   return along > -pad && along < b.span + pad && Math.abs(side) < DECK.half + pad;
