@@ -247,7 +247,7 @@ function sendStep(s, dt) {
 
 // ---------------------------------------------------------------- the bomb visit
 // a caveman who has never seen a bomb, planting one
-const bombSpot = s => V.add(bonePos(s.f, 'spine'), [0, 0.3, 0]);          // on top of his belly
+const bombSpot = s => V.add(bonePos(s.f, 'spine'), [0, 0.25, 0]);          // on top of his belly
 const KNEEL_IN = 0.3;                                                       // how far he shuffles in to reach the belly
 // both hands on the ends of the bomb; c is the bottom middle of the bomb, in his own space
 function holdGoals(c) {
@@ -263,7 +263,7 @@ const ball = r => [rand(-1, 1) * r, rand(-0.3, 1) * r, rand(-1, 1) * r];
 const BLAST_LIFE = 9;
 // a proper explosion: blinding flash, a fireball that rolls up into a mushroom of black smoke, a shockwave
 // ring racing over the ground, burning chunks trailing smoke, a scorched crater and fire that keeps going
-function explode(c) {
+function explode(c, owner) {
   const d = V.len(V.sub(c, cameraEye().eye)), floor = floorAt(c[0], c[2]);
   Sound.play('explode', clamp(1.8 - d / 45, 0.3, 1), d);
   cam.shake = Math.max(cam.shake, clamp(2.2 - d / 18, 0, 1));
@@ -294,7 +294,8 @@ function explode(c) {
   for (let i = 0; i < 14; i++) { const a = rand(0, 6.3), sp = rand(4, 11); b.chunks.push({ p: V.add(c, [0, 0.3, 0]), v: [Math.cos(a) * sp, rand(7, 16), Math.sin(a) * sp], life: rand(1.6, 3.2) }); }
   for (const v of [player, ...bots]) {
     const dd = Math.hypot(v.pos[0] - c[0], v.pos[2] - c[2]);
-    if (v.dead < 0 && dd < 8) damage(v, Math.round(25 + 75 * (1 - dd / 8)), { pos: c });
+    // your own bomb counts as your knockout (but blowing yourself up doesn't)
+    if (v.dead < 0 && dd < 8) damage(v, dd < 3 ? 150 : Math.round(25 + 75 * (1 - dd / 8)), { pos: c, isPlayer: !!(owner && owner.isPlayer && v !== owner) });
   }
 }
 // what an explosion keeps doing after the bang
@@ -456,7 +457,7 @@ function bombStep(s, dt) {
   for (let k = 0; k < 4; k++) if (crossed(1.765 + k * 0.09)) Sound.play('key', near, k);
   for (let k = 0; k < 4; k++) if (crossed(2.2 + k * 0.7 + 0.31) && 2.2 + k * 0.7 < 2.85) { Sound.play('bonk', near * 0.6); puff(V.add(s.spot, M3.vec(M3.ry(s.face), [0, 1.2, 0.42])), 4, [1, 0.8, 0.3, 1], 1.4, 0.03, 0.3, 4); }
   if (crossed(2.9)) { Sound.play('bonk', near); popWord(V.add(s.spot, [0, 2.1, 0]), 'OUCH!!', 0.9); }
-  if (crossed(FUSE_AT)) { Sound.play('armed', near); popWord(V.add(s.spot, [0, 1.6, 0]), 'BEEP BEEP', 0.8); s.lit = true; s.beepAt = t; }
+  if (crossed(FUSE_AT)) { Sound.play('armed', near, 0, panAt(s.spot)); popWord(V.add(s.spot, [0, 1.6, 0]), 'BEEP BEEP', 0.8); s.lit = true; s.beepAt = game.time; }
   if (crossed(4.0)) popWord(V.add(s.spot, [0, 2.2, 0]), 'OOGA BOOGA!', 1.0);
   if (crossed(5.4)) { Sound.play('huh', near); popWord(V.add(wrong, [0, 2.1, 0]), 'HUH?', 1.0); }
   if (crossed(6.1)) { Sound.play('ooga', near * 0.8); popWord(V.add(wrong, [0, 2.1, 0]), 'OH NO!', 0.8); }
@@ -465,11 +466,7 @@ function bombStep(s, dt) {
   // ---------- the countdown
   if (s.lit && !s.boom) {
     const left = FUSE - (t - FUSE_AT), c = bombSpot(s);
-    // beeps that come smoothly faster as it runs out, then one long tone right before it goes
-    if (s.nextBeep === undefined) s.nextBeep = FUSE - 1;
-    if (left <= s.nextBeep && left > 0.45) { Sound.play('beep', near, 1 - left / FUSE); s.beepAt = t; s.nextBeep = left - clamp(0.08 + left * 0.095, 0.11, 1); }
-    if (left <= 0.45 && !s.final) { s.final = true; Sound.play('final', near); }
-    for (let n = FUSE; n >= 1; n--) if (s.prev - FUSE_AT < FUSE - n && t - FUSE_AT >= FUSE - n) popWord(V.add(c, [0, 0.9, 0]), String(n), 0.9);
+    tickBomb(s, left, FUSE, c);
     if (left <= 0) {                                             // KABOOM
       s.boom = true; s.boomAt = t; f.gone = true;
       explode(c);
@@ -484,8 +481,97 @@ function bombStep(s, dt) {
 }
 const u01 = x => clamp(x, 0, 1);
 const c0 = s => V.add(s.hips, [0, 0.3, 0]);
+// where a sound is, left to right from the camera, and how loud it is from you
+const panAt = p => { const v = cameraEye(), d = V.norm(V.sub(p, v.eye)), r = V.norm(V.cross(v.fwd, [0, 1, 0])); return clamp(V.dot(d, r) * 0.8, -0.8, 0.8); };
+const nearAt = p => clamp(1.5 - V.len(V.sub(p, player.pos)) / 30, 0.25, 1);
+// a lit bomb's countdown: bips that come smoothly faster, the seconds over it, one long tone at the end
+function tickBomb(b, left, fuse, c) {
+  const near = nearAt(c), pan = panAt(c);
+  if (b.nextBeep === undefined) b.nextBeep = fuse - 1;
+  if (left <= b.nextBeep && left > 0.45) { Sound.play('beep', near, 1 - left / fuse, pan); b.beepAt = game.time; b.nextBeep = left - clamp(0.08 + left * 0.095, 0.11, 1); }
+  if (left <= 0.45 && !b.final) { b.final = true; Sound.play('final', near, 0, pan); }
+  const n = Math.ceil(left);
+  if (n >= 1 && n !== b.shown) { b.shown = n; popWord(V.add(c, [0, 0.9, 0]), String(n), 0.9); }
+}
+
+// ---------------------------------------------------------------- your own C4
+// 5 to hold it, click to kneel and plant it (on a knocked-out caveman's belly if one is right there),
+// G to drop it, E to pick one up. You start with one and shake another out of every body you loot.
+const C4_FUSE = 5, C4_MAX = 3, PLANT = 0.75;
+const C4_HOLD = [0, 0.95, 0.38];
+const planted = [];
+player.c4 = 1; player.holdC4 = false; player.plantT = -1;
+function holdC4(f) {
+  if (!f.c4 || f.dead >= 0 || looting) return;
+  if (f.holdC4) return;
+  equip(f, null); f.holdC4 = true; f.equip = 1; Sound.play('magin', 0.5); hudDirty = true;
+}
+function giveC4(f, n) { f.c4 = Math.min(C4_MAX, (f.c4 || 0) + (n || 1)); hudDirty = true; }
+// where it goes: a body's belly if there is one close in front, otherwise the ground in front of you
+function plantSpot(f) {
+  const fwd = [Math.sin(f.yaw), 0, Math.cos(f.yaw)], at = V.mad(f.pos, fwd, 0.62);
+  for (const b of bots) {
+    if (b.dead < 1 || b.send) continue;
+    const belly = V.add(bonePos(b, 'spine'), [0, 0.25, 0]);
+    if (Math.hypot(belly[0] - at[0], belly[2] - at[2]) < 0.8) return { p: belly, body: b };
+  }
+  return { p: [at[0], floorAt(at[0], at[2]), at[2]] };
+}
+function startPlant(f) {
+  if (f.plantT >= 0 || !f.c4) return;
+  f.plantT = 0; f.plantAt = plantSpot(f); f.plantYaw = f.yaw;
+}
+// runs inside playerStep: the carrying pose, and the plant itself
+function c4Step(f, dt) {
+  f.carry = null;
+  if (!f.holdC4 || f.dead >= 0 || looting) { if (f.plantT >= 0) { f.plantT = -1; f.script = null; f.scriptW = 0; } return; }
+  if (f.plantT < 0) { f.carry = holdGoals(C4_HOLD); f.c4Hold = C4_HOLD; return; }
+  const t = f.plantT += dt, hips0 = Rig.rest[IDX.hips];
+  const local = M3.vec(M3.ry(-f.yaw), V.sub(f.plantAt.p, f.pos));
+  const down = smooth(0, 0.3, t) * (1 - smooth(PLANT - 0.2, PLANT, t)), lower = smooth(0.08, 0.42, t);
+  const c = V.lerp(C4_HOLD, local, lower);
+  f.c4Hold = t < 0.45 ? c : null;
+  const G = holdGoals(t < 0.45 ? c : V.add(local, [0, 0.08 * smooth(0.45, 0.6, t), 0]));
+  f.script = { hips: V.add(hips0, [0, -0.45 * down, -0.1 * down]), bend: 0.8 * down, head: M3.rx(-0.4 * down), arms: G };
+  f.scriptW = smooth(0, 0.12, t) * (1 - smooth(PLANT - 0.15, PLANT, t));
+  if (t >= 0.45 && !f.plantDone) {                              // it's down: arm it
+    f.plantDone = true; f.c4--;
+    planted.push({ p: f.plantAt.p.slice(), R: M3.ry(f.plantYaw), t: 0, owner: f });
+    Sound.play('set', 0.8); Sound.play('armed', 0.9, 0, 0);
+    popWord(V.add(f.plantAt.p, [0, 0.7, 0]), 'BEEP BEEP', 0.8);
+    hudDirty = true;
+  }
+  if (t >= PLANT) {
+    f.plantT = -1; f.plantDone = false; f.script = null; f.scriptW = 0;
+    if (!f.c4) f.holdC4 = false;
+    hudDirty = true;
+  }
+}
+function plantedStep(dt) {
+  for (let i = planted.length - 1; i >= 0; i--) {
+    const b = planted[i]; b.t += dt;
+    const left = C4_FUSE - b.t;
+    tickBomb(b, left, C4_FUSE, b.p);
+    if (left <= 0) {
+      planted.splice(i, 1);
+      const c = V.add(b.p, [0, 0.08, 0]);
+      explode(c, b.owner);
+      popWord(V.add(c, [0, 1.6, 0]), 'KABOOM!!', 1.6);
+    }
+  }
+}
+function drawPlanted(prog) {
+  for (const b of planted) drawC4(prog, b.p, b.R, true, Math.max(0, 1 - (game.time - (b.beepAt || -9)) / 0.12));
+  const f = player;
+  if (f.holdC4 && f.c4Hold && f.dead < 0 && !looting && !f.gone) {
+    const R = M3.mul(M3.ry(f.yaw), M3.rx(f.tilt || 0));
+    drawC4(prog, V.add(V.add(f.pos, [0, f.air || 0, 0]), M3.vec(R, f.c4Hold)), R, false, 0);
+  }
+}
+
 function sendsStep(dt) {
   blastsStep(dt);
+  plantedStep(dt);
   for (const s of sends.slice()) {
     if (!sends.includes(s)) continue;        // your own respawn just cleared everyone's
     sendStep(s, dt);
@@ -524,7 +610,7 @@ function drawSends(prog) {
       if (s.hold) {                                           // in his hands
         const R = M3.mul(M3.ry(h.yaw), M3.rx(h.tilt));
         drawC4(prog, V.add(h.pos, M3.vec(R, s.hold)), R, false, 0);
-      } else drawC4(prog, bombSpot(s), M3.ry(s.face), !!s.lit, s.lit ? Math.max(0, 1 - (t - s.beepAt) / 0.12) : 0);
+      } else drawC4(prog, bombSpot(s), M3.ry(s.face), !!s.lit, s.lit ? Math.max(0, 1 - (game.time - s.beepAt) / 0.12) : 0);
       if (s.bonk > 0 && !h.gone) {                            // seeing stars
         const head = V.add(bonePos(h, 'head'), [0, 0.38, 0]);
         flat(prog, [0.95, 0.65, 0.02], 0.3, 0.7);

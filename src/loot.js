@@ -65,7 +65,8 @@ const SHAPES = {
   rock: ell(0.085, 0.065, 0.075),
   bone: [...ell(0.03, 0.03, 0.12), ...[-1, 1].flatMap(z => [[0.063, 0, z * 0.12], [-0.063, 0, z * 0.12], [0, 0.036, z * 0.12], [0, -0.036, z * 0.12], [0, 0, z * 0.156]])],
   fish: ell(0.035, 0.065, 0.15),
-  meat: [...ell(0.075, 0.075, 0.11, [0, 0, 0.03]), [0, 0.028, -0.21], [0, -0.028, -0.21], [0.045, 0, -0.21], [-0.045, 0, -0.21]]
+  meat: [...ell(0.075, 0.075, 0.11, [0, 0, 0.03]), [0, 0.028, -0.21], [0, -0.028, -0.21], [0.045, 0, -0.21], [-0.045, 0, -0.21]],
+  c4: [-1, 1].flatMap(x => [-1, 1].flatMap(z => [[x * 0.15, 0, z * 0.105], [x * 0.15, 0.093, z * 0.105]]))   // the brick, bottom at 0
 };
 const gunShapes = {};
 function gunShape(id) {                       // the corners of the gun's box, placed the way drawProps draws it
@@ -178,7 +179,16 @@ function shoveProps(c, radius, power) {
 
 // ---------------------------------------------------------------- dropping your gun (G), picking it back up (E)
 function dropGun(f) {
-  if (!f.weapon || f.dead >= 0 || looting) return;
+  if (f.dead >= 0 || looting) return;
+  if (f.holdC4) {                                          // drop one C4 (not armed)
+    if (f.plantT >= 0 || !f.c4) return;
+    const fwd = [Math.sin(f.yaw), 0, Math.cos(f.yaw)], R = M3.ry(f.yaw);
+    spawnProp('c4', V.add(f.pos, M3.vec(R, C4_HOLD)), [fwd[0] * 2.2, 2.2, fwd[2] * 2.2], { R, scale: 1, life: 120, keep: true, w: [rand(-4, 4), rand(-2, 2), rand(-4, 4)] });
+    f.c4--; if (!f.c4) f.holdC4 = false;
+    Sound.play('whoosh', 0.5); notify('Dropped a C4'); hudDirty = true;
+    return;
+  }
+  if (!f.weapon) return;
   const id = f.weapon, am = f.ammo[id], fwd = [Math.sin(f.yaw), 0, Math.cos(f.yaw)];
   const from = f.gun ? f.gun.p.slice() : V.add(f.pos, [fwd[0] * 0.4, 1.2, fwd[2] * 0.4]);
   const R = f.gun ? f.gun.R.slice() : M3.ry(f.yaw);
@@ -193,13 +203,14 @@ function dropGun(f) {
 function gunNear(p) {
   let best = null, bestD = 1.4;
   for (const o of props) {
-    if (o.kind !== 'gun' || !o.ammo) continue;
+    if (!(o.kind === 'gun' && o.ammo) && !(o.kind === 'c4' && player.c4 < C4_MAX)) continue;
     const d = Math.hypot(o.p[0] - p[0], o.p[2] - p[2]);
     if (d < bestD && Math.abs(o.p[1] - p[1]) < 1.6) { bestD = d; best = o; }
   }
   return best;
 }
 function pickUp(o) {
+  if (o.kind === 'c4') { props.splice(props.indexOf(o), 1); giveC4(player); Sound.play('magin', 0.6); notify('Picked up a C4 (press 5)'); return; }
   const f = player, id = o.gun, g = GUNS[id];
   if (!f.inv.includes(id)) { f.inv.push(id); f.inv.sort((a, b) => SLOTS.indexOf(a) - SLOTS.indexOf(b)); f.ammo[id] = { clip: o.ammo.clip, spare: o.ammo.spare }; }
   else f.ammo[id].spare = Math.min(g.reserve * 3, f.ammo[id].spare + o.ammo.clip + o.ammo.spare);
@@ -210,6 +221,7 @@ function pickUp(o) {
 function drawProps(prog, textured) {
   for (const o of props) {
     const k = o.scale * Math.min(1, o.life / 0.4), S = o.R.map(x => x * k);
+    if (o.kind === 'c4') { drawC4(prog, o.p, o.R.map(x => x * Math.min(1, o.life / 0.4)), false, 0); continue; }
     if (o.kind === 'gun') { const g = GUNS[o.gun]; drawGun(prog, textured, g, S.map(x => x * g.scale / 1.25), V.add(o.p, M3.vec(S, [0, -0.04, -0.1])), {}); continue; }
     for (const part of JUNK[o.kind]) { flat(prog, part.color, part.rough, 0.05); drawMesh(prog, part.mesh, S, o.p); }
   }
@@ -522,7 +534,8 @@ function grant(L) {
   L.given = true;
   const id = L.gun, had = player.inv.includes(id);
   give(player, id, L.kind === 'body' ? GUNS[id].mag * 2 : undefined);
-  const what = had ? GUNS[id].name + ' ammo' : GUNS[id].article + ' ' + GUNS[id].name;
+  let what = had ? GUNS[id].name + ' ammo' : GUNS[id].article + ' ' + GUNS[id].name;
+  if (L.kind === 'body' && player.c4 < C4_MAX) { giveC4(player); what += ' and a C4'; }   // bodies always have a bomb on them
   notify((L.kind === 'body' ? 'Shook out ' : 'Found ') + what);
   if (L.chest) { L.chest.t = 0; L.chest.forced = false; }
   hudDirty = true;
@@ -593,7 +606,7 @@ function hudLoot(dt) {
   const show = (target || L || lying) && player.dead < 0;
   ui.prompt.style.display = show ? 'flex' : 'none';
   ui.prompt.classList.toggle('holding', !!L);
-  if (lying) { ui.prompttext.textContent = 'Press E to pick up the ' + GUNS[lying.gun].name; ui.ring.style.setProperty('--p', '100%'); }
+  if (lying) { ui.prompttext.textContent = 'Press E to pick up ' + (lying.kind === 'c4' ? 'the C4' : 'the ' + GUNS[lying.gun].name); ui.ring.style.setProperty('--p', '100%'); }
   else if (show) {
     const kind = L ? L.kind : target.kind, def = kind === 'body' ? BODY : CHEST;
     const gun = kind === 'chest' ? ' (' + GUNS[(L || target).chest.gun].name + ')' : '';
