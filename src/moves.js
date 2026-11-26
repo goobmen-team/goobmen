@@ -369,47 +369,32 @@ function drawBlasts(quad, right, up, additive) {
   }
 }
 // the C4: the textured brick, its screen lighting up when armed and flashing with each beep
-// grey duct tape: two strips over the brick and down onto whatever it's stuck to; k is how far along the taping is
+// duct tape: two thin strips, each one piece laid over the brick: a short tail stuck to his skin, up the far side,
+// across the top, down the near side, onto his skin again. k is how far along the taping is (far side first).
+const TAPE_PATH = (() => {
+  const Z = 0.099, TOP = 0.075, pts = [];                          // (z, y) in the bomb's own space: around the end bricks, not the keypad
+  for (const z of [0.13, 0.112]) pts.push([z, -0.004 - (z - Z) * (z - Z) * 6]);
+  pts.push([Z, 0.0], [Z, TOP], [-Z, TOP], [-Z, 0.0]);
+  for (const z of [-0.112, -0.13]) pts.push([z, -0.004 - (z + Z) * (z + Z) * 6]);
+  let len = 0; const at = [0];
+  for (let i = 1; i < pts.length; i++) { len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); at.push(len); }
+  return { pts, at, len };
+})();
 function drawTape(prog, at, R0, k) {
   if (k <= 0) return;
-  const q = o => V.add(at, M3.vec(R0, o));
-  flat(prog, [0.2, 0.21, 0.23], 0.5, 0.15);
+  const X = M3.vec(R0, [1, 0, 0]), W = 0.032, T = 0.0018;
+  flat(prog, [0.035, 0.035, 0.04], 0.55, 0.0);                  // black tape
   for (let j = 0; j < 2; j++) {
-    const g = clamp(k * 2 - j, 0, 1), x = j ? 0.09 : -0.09;
+    const g = clamp(k * 2 - j, 0, 1), x = j ? 0.118 : -0.118, upto = TAPE_PATH.len * g;
     if (g <= 0) continue;
-    const len = 0.22 * g;
-    drawMesh(prog, meshes.shell, scaled(R0, 0.05, 0.005, len), q([x, 0.096, 0.11 - len / 2]));            // over the top
-    drawMesh(prog, meshes.shell, scaled(R0, 0.05, 0.11, 0.005), q([x, 0.04, 0.109]));                     // down the far side
-    if (g > 0.92) drawMesh(prog, meshes.shell, scaled(R0, 0.05, 0.11, 0.005), q([x, 0.04, -0.109]));   // down the near side (the ends on his skin: drawBodyTape)
-  }
-}
-// where the two strips come off the bomb they stick down onto his skin for a little way, following his body however he lies
-function drawBodyTape(prog, f, at, R0, k) {
-  if (k <= 0 || f.gone) return;
-  const hips = bonePos(f, 'hips'), neck = bonePos(f, 'neck');
-  const u = V.norm(V.sub(neck, hips));                                    // along his body
-  const sd = V.norm(V.orth(V.sub(bonePos(f, 'upperArm_L'), bonePos(f, 'upperArm_R')), u));
-  const n = V.cross(sd, u);                                               // out of his belly
-  const up = V.dot(V.sub(at, bonePos(f, 'spine')), n) >= 0 ? n : V.mul(n, -1);   // the side the bomb is on
-  const RX = 0.3, FRONT = 0.27, BACK = 0.13;                    // his belly sticks out much further than his back
-  flat(prog, [0.2, 0.21, 0.23], 0.5, 0.15);
-  for (let j = 0; j < 2; j++) {
-    const g = clamp(k * 2 - j, 0, 1);
-    if (g <= 0) continue;
-    // where this strip crosses his body: the bomb's strip position, pulled onto his body axis
-    const strip = V.add(at, M3.vec(R0, [j ? 0.09 : -0.09, 0, 0]));
-    const c = V.mad(bonePos(f, 'spine'), u, V.dot(V.sub(strip, bonePos(f, 'spine')), u));
-    // just the ends: a short tail of tape stuck onto his skin either side of the bomb, far side first
-    const ring = a => V.add(c, V.add(V.mul(sd, Math.cos(a) * RX), V.mul(up, Math.sin(a) * (Math.sin(a) > 0 ? FRONT : BACK))));
-    for (const [side, shown] of [[1, g > 0.15], [-1, g > 0.92]]) {
-      if (!shown) continue;
-      let last = ring(Math.PI / 2 + side * 0.32);
-      for (let s = 1; s <= 4; s++) {
-        const p = ring(Math.PI / 2 + side * (0.32 + 0.11 * s)), d = V.sub(p, last), len = V.len(d);
-        const x = V.mul(d, 1 / len), out = V.norm(V.sub(V.lerp(last, p, 0.5), c));
-        drawMesh(prog, meshes.shell, M3.cols(V.mul(x, len + 0.004), V.mul(out, 0.006), V.mul(u, 0.05)), V.lerp(last, p, 0.5));
-        last = p;
-      }
+    const skew = j ? 0.1 : -0.13;                                 // stuck on by hand: a little crooked
+    const P = TAPE_PATH.pts, A = TAPE_PATH.at, w = o => V.add(at, M3.vec(R0, [x + o[0] * skew, o[1], o[0]]));
+    for (let i = 1; i < P.length && A[i - 1] < upto; i++) {
+      const u = Math.min(1, (upto - A[i - 1]) / (A[i] - A[i - 1]));
+      const a = w(P[i - 1]), b = V.lerp(a, w(P[i]), u), d = V.sub(b, a), len = V.len(d);
+      if (len < 1e-4) continue;
+      const along = V.mul(d, 1 / len), out = V.norm(V.cross(X, along));     // the tape's face points away from the bomb
+      drawMesh(prog, meshes.shell, M3.cols(V.mul(X, W), V.mul(out, T), V.mul(along, len + 0.002)), V.mad(V.lerp(a, b, 0.5), out, T * 0.6));
     }
   }
 }
@@ -476,7 +461,7 @@ function bombStep(s, dt) {
       S.arms.R = hand(V.add(key, [0.02 * Math.sin(t * 40), 0.03 + 0.06 * (1 - tap) * lift + 0.05 * (1 - lift), 0]), [0.25, -0.55, 0.8], [0.3, -0.2, -1], [-1, -1, -0.1], 1.1);
     }
     if (taping) {                                               // one hand holds it still, the other runs tape over it, far side to near
-      const k = tp < 0.5 ? 0 : 1, u = smooth(0.08, 0.85, (tp - k * 0.5) / 0.5), sx = k ? 0.09 : -0.09;
+      const k = tp < 0.5 ? 0 : 1, u = smooth(0.08, 0.85, (tp - k * 0.5) / 0.5), sx = k ? 0.118 : -0.118;
       S.arms.R = hand(V.add(onBelly, [sx, 0.12 + 0.04 * Math.sin(u * Math.PI), 0.22 - 0.44 * u]), [0, -0.5, 1], [0, -1, -0.5], [-1, -1, -0.1], 0.5);
       S.arms.L = hand(V.add(onBelly, [k ? 0.0 : 0.1, 0.1, 0.0]), [0, -0.6, 1], [0, -1, -0.6], [1, -0.6, -0.3], 0.3);
       S.head = M3.mul(M3.rx(-0.55), M3.ry(-sx * 2));
@@ -678,7 +663,6 @@ function drawSends(prog) {
       } else {
         drawC4(prog, bombSpot(s), M3.ry(s.face), !!s.lit, s.lit ? Math.max(0, 1 - (game.time - s.beepAt) / 0.12) : 0);
         drawTape(prog, bombSpot(s), M3.ry(s.face), s.tape || 0);
-        drawBodyTape(prog, f, bombSpot(s), M3.ry(s.face), s.tape || 0);
       }
       if (s.taping && !h.gone) {                              // the roll of tape in his hand
         flat(prog, [0.2, 0.21, 0.23], 0.5, 0.15);
