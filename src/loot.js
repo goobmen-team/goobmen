@@ -83,12 +83,12 @@ function spawnProp(kind, p, v, o) {
   const prop = Object.assign({ kind, p: p.slice(), v: v.slice(), R: M3.ry(rand(0, 6.3)), life: 7, rest: false, still: 0, scale: 1.25 }, o || {});
   // a random tumble to start with (old callers gave an axis and a spin rate)
   if (!prop.w) { const a = V.norm([rand(-1, 1), rand(-1, 1), rand(-1, 1)]); prop.w = V.mul(a, prop.spin || rand(5, 11)); }
-  const local = kind === 'gun' ? gunShape(prop.gun) : SHAPES[kind];
+  const local = kind === 'gun' ? gunShape(prop.gun) : kind === 'mag' ? magShape(prop.gun) : SHAPES[kind];
   prop.pts = local.map(q => V.mul(q, prop.scale));
   const r = Math.max(...prop.pts.map(V.len));
   prop.rad = r; prop.invI = 1 / (0.33 * r * r);           // a fair guess at how hard it is to spin
   props.push(prop);
-  while (props.length > 40) { const k = props.findIndex(q => !q.keep); props.splice(k < 0 ? 0 : k, 1); }
+  while (props.length > 60) { const k = props.findIndex(q => !q.keep); props.splice(k < 0 ? 0 : k, 1); }
   return prop;
 }
 // a lob from one point that lands on another after t seconds
@@ -225,6 +225,7 @@ function drawProps(prog, textured) {
     if (o.kind === 'roll') { drawRoll(prog, o.p, o.R.map(x => x * Math.min(1, o.life / 0.4))); continue; }
     if (o.kind === 'c4') { drawC4(prog, o.p, o.R.map(x => x * Math.min(1, o.life / 0.4)), false, 0); continue; }
     if (o.kind === 'gun') { const g = GUNS[o.gun]; drawGun(prog, textured, g, S.map(x => x * g.scale / 1.25), V.add(o.p, M3.vec(S, [0, -0.04, -0.1])), {}); continue; }
+    if (o.kind === 'mag') { const g = GUNS[o.gun], M = S.map(x => x * g.scale); drawMag(prog, textured, g, M, V.sub(o.p, M3.vec(M, g.magMid))); continue; }
     for (const part of JUNK[o.kind]) { flat(prog, part.color, part.rough, 0.05); drawMesh(prog, part.mesh, S, o.p); }
   }
   // seeing stars
@@ -444,7 +445,18 @@ function chestStep(L) {
   }
 
   // and hold the prize up for everyone to see
-  if (t >= 4.75) {
+  if (t >= 4.75 && L.gun === 'vest') {
+    const take = smooth(4.75, 5.0, t), w = smooth(4.85, 5.2, t), hop = t > 5.15 && t < 6.15 ? Math.abs(Math.sin((t - 5.15) * Math.PI * 2)) : 0;
+    const gp = V.lerp([0, 0.8, 0.4], [0, 1.9 + hop * 0.04, 0.14], w);
+    S.vest = { p: gp, R: M3.mul(M3.rz(Math.sin(t * 9) * 0.06), M3.rx(-0.12)) };
+    for (const [s, x] of [['R', -1], ['L', 1]]) {
+      const goal = hand([x * 0.205, gp[1] - 0.04, gp[2]], [-x * 0.1, 1, 0.1], [-x, 0, 0], [x, -0.3, -0.3], 1.1);
+      S.arms[s] = Object.assign(goal, { wrist: V.lerp(S.arms[s].wrist, goal.wrist, take) });
+    }
+    S.bend = S.bend * (1 - w) - 0.2 * w; S.head = M3.rx(-0.3 * w); S.hips = V.lerp(S.hips, hips0, take);
+    S.root = { R: M3.ry(L.face), p: V.add(L.spot, [0, hop * 0.14, 0]) };
+    for (const s of ['R', 'L']) S.legs[s] = { ankle: V.add(restAt('foot_' + s), [0, hop * 0.07, 0]) };
+  } else if (t >= 4.75) {
     const id = L.gun, take = smooth(4.75, 5.0, t), w = smooth(4.85, 5.2, t), hop = t > 5.15 && t < 6.15 ? Math.abs(Math.sin((t - 5.15) * Math.PI * 2)) : 0;
     const R = M3.mul(M3.ry(Math.PI / 2), M3.rx(-0.08 + Math.sin(t * 9) * 0.1));
     const gp = V.lerp([-0.2, 0.8, 0.35], [id === 'glock' ? -0.12 : -0.25 * GUNS[id].scale, 1.86 + hop * 0.04, 0.12], w);
@@ -535,6 +547,11 @@ function abortLoot() { endLoot(); }
 function grant(L) {
   L.given = true;
   const id = L.gun, had = player.inv.includes(id);
+  if (id === 'vest') {
+    player.vest = VEST; notify('Found a bulletproof vest'); Sound.play('vest', 0.9);
+    if (L.chest) { L.chest.t = 0; L.chest.forced = false; }
+    hudDirty = true; return;
+  }
   give(player, id, L.kind === 'body' ? GUNS[id].mag * 2 : undefined);
   let what = had ? GUNS[id].name + ' ammo' : GUNS[id].article + ' ' + GUNS[id].name;
   if (L.kind === 'body' && player.c4 < C4_MAX) { giveC4(player); what += ' and a C4'; }   // bodies always have a bomb on them
@@ -597,7 +614,7 @@ function lootStep(dt) {
   if (t >= L.def.end) {
     const id = L.gun;
     endLoot();
-    if (f.weapon === id) f.equip = 0; else equip(f, id);
+    if (id === 'vest' || f.weapon === id) f.equip = 0; else equip(f, id);
   }
   return true;
 }
@@ -611,7 +628,7 @@ function hudLoot(dt) {
   if (lying) { ui.prompttext.textContent = 'Press E to pick up ' + (lying.kind === 'c4' ? 'the C4' : 'the ' + GUNS[lying.gun].name); ui.ring.style.setProperty('--p', '100%'); }
   else if (show) {
     const kind = L ? L.kind : target.kind, def = kind === 'body' ? BODY : CHEST;
-    const gun = kind === 'chest' ? ' (' + GUNS[(L || target).chest.gun].name + ')' : '';
+    const gun = kind === 'chest' ? ' (' + itemName((L || target).chest.gun) + ')' : '';
     ui.prompttext.textContent = (L ? 'Keep holding… ' : 'Hold E to ' + def.label) + (L ? '' : gun);
     ui.ring.style.setProperty('--p', (L ? clamp(L.t / L.def.hold, 0, 1) * 100 : 0) + '%');
   }

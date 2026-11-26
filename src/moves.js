@@ -1,5 +1,5 @@
 // ======================================================================= jumping
-// squash, spring off, tuck, reach for the ground, land with a squish
+// dip, spring off, knees up a little, reach for the ground, soft landing
 const JUMP = { speed: 3.9, gravity: 12.5, pre: 0.09, preMoving: 0.04, land: 0.28, landMoving: 0.16 };
 JUMP.air = 2 * JUMP.speed / JUMP.gravity;
 function startJump(f) {
@@ -30,26 +30,31 @@ function jumpStep(f, dt) {
 function jumpShape(f) {
   if (f.jump < 0 || f.dead >= 0) return null;
   const T = jumpTimes(f), t = f.jump, u = clamp((t - T.pre) / JUMP.air, 0, 1);
-  const squash = t < T.pre ? smooth(0, T.pre, t) : t < T.down ? 1 - smooth(T.pre, T.pre + 0.08, t) : track([[T.down, 0], [T.down + 0.06, 1.15], [T.down + T.land * 0.62, 0.15], [T.end, 0]], t);
+  const squash = t < T.pre ? smooth(0, T.pre, t) : t < T.down ? 1 - smooth(T.pre, T.pre + 0.1, t) : track([[T.down, 0], [T.down + 0.07, 1], [T.down + T.land * 0.65, 0.2], [T.end, 0]], t);
   const air = t >= T.pre && t < T.down;
-  const tuck = air ? smooth(0.04, 0.42, u) * (1 - smooth(0.62, 0.97, u)) : 0;
-  const stretch = air ? 1 - smooth(0.05, 0.35, u) : 0;
-  const w = smooth(0, 0.04, t) * (1 - smooth(T.end - 0.08, T.end, t));
+  const tuck = air ? smooth(0.06, 0.4, u) * (1 - smooth(0.6, 0.95, u)) : 0;
+  const push = air ? 1 - smooth(0.04, 0.3, u) : 0;                 // toes still pointing at where they left from
+  const w = smooth(0, 0.05, t) * (1 - smooth(T.end - 0.1, T.end, t));
   const moving = f.jumpMoving ? 1 : 0, way = f.jumpBack ? -1 : 1;
   const shape = {
-    w, drop: -0.19 * squash + 0.035 * stretch,
-    bend: 0.42 * squash + (moving ? 0.2 : 0.1) * tuck - 0.16 * stretch,
-    head: -0.18 * squash + 0.12 * tuck,
+    w, drop: -0.11 * squash + 0.015 * push,
+    bend: 0.24 * squash + (moving ? 0.14 : 0.06) * tuck - 0.05 * push,
+    head: -0.12 * squash - 0.04 * tuck,
     legs: {}, arms: {}
   };
+  // free arms: a small swing back, up in front to about chest height, out a little for balance, then down
+  const A = JUMP.air, P = T.pre, D = T.down;
   for (const [s, x] of [['R', -1], ['L', 1]]) {
     const rest = Rig.rest[IDX['foot_' + s]], lead = s === 'L';
-    // standing: both knees up. moving: a big caveman stride through the air
-    const lift = moving ? (lead ? 0.24 : 0.36) : 0.36, reach = moving ? (lead ? 0.40 : -0.36) * way : 0.09;
-    shape.legs[s] = { ankle: V.add(rest, [x * 0.06 * tuck, lift * tuck - 0.025 * stretch, reach * tuck - 0.07 * stretch]), foot: M3.rx(0.55 * stretch + (moving && !lead ? 0.7 : -0.2) * tuck) };
-    // free arms fling up: back for the wind-up, high at the top, out for balance on landing
-    const wrist = track([[0, [x * 0.42, 0.66, 0.02]], [T.pre, [x * 0.50, 0.80, -0.38]], [T.pre + JUMP.air * 0.3, [x * 0.66, 1.78, 0.12]], [T.pre + JUMP.air * 0.65, [x * 0.82, 1.66, 0.05]], [T.down, [x * 0.80, 1.12, 0.18]], [T.down + 0.08, [x * 0.68, 0.82, 0.30]], [T.end, [x * 0.42, 0.66, 0.05]]], t);
-    shape.arms[s] = { wrist, dir: V.norm([x * 0.5, wrist[1] > 1.2 ? 0.8 : -0.8, 0.25]), palm: [-x * 0.3, 0, 1], pole: [x * 0.4, -0.3, -1], curl: [0.3, 0.3] };
+    // the legs stay under him: one knee a bit higher than the other, a short stride when running
+    const lift = moving ? (lead ? 0.13 : 0.15) : (lead ? 0.15 : 0.09);
+    const reach = moving ? (lead ? 0.31 : -0.17) * way : (lead ? 0.09 : -0.07);
+    shape.legs[s] = { ankle: V.add(rest, [x * 0.025 * tuck, lift * tuck - 0.012 * push, reach * tuck - 0.04 * push]), foot: M3.rx(0.4 * push + (lead ? 0.0 : 0.35) * tuck) };
+    const wrist = track([
+      [0, [x * 0.44, 0.68, 0.03]], [P, [x * 0.47, 0.72, -0.14]], [P + A * 0.3, [x * 0.60, 0.98, 0.20]],
+      [P + A * 0.62, [x * 0.68, 0.98, 0.12]], [D, [x * 0.60, 0.80, 0.10]], [D + 0.08, [x * 0.50, 0.68, 0.15]], [T.end, [x * 0.44, 0.68, 0.03]]
+    ], t);
+    shape.arms[s] = { wrist, dir: V.norm([x * 0.45, -0.85, 0.25]), palm: [-x, 0, 0.2], pole: [x * 0.15, -0.25, -1], curl: [0.4, 0.4] };
   }
   return shape;
 }

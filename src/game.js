@@ -4,39 +4,84 @@
 // all points are in the gun's own space: origin in the pistol grip, +Z muzzle, +Y up, +X shooter's left
 const GUNS = {
   ak: {
-    name: 'AK-74', article: 'an', auto: true, rate: 650, mag: 30, reserve: 90, damage: 27, reload: 2.35, spread: 0.006, bloom: 0.006, maxBloom: 0.05,
+    name: 'AK-74', article: 'an', auto: true, rate: 650, mag: 30, reserve: 90, damage: 27, reload: 3.4, spread: 0.006, bloom: 0.006, maxBloom: 0.05,
     kickUp: 0.025, kickSide: 0.010, kickBack: 0.075, climb: 0.18,
     scale: 1.16, hip: [-0.33, 1.13, 0.20], ads: [-0.30, 1.27, 0.19], blade: -0.80,
     muzzle: [0, 0.0905, 0.665], port: [-0.022, 0.108, 0.15], magPoint: [0, -0.04, 0.17], boltPoint: [-0.035, 0.105, 0.185], boltTravel: 0.075,
     right: { at: [0, -0.004, 0.0], dir: [0.18, 0.05, 1], palm: [1, 0, 0], curl: [1.15, 1.25] },
     left: { at: [0.006, 0.043, 0.27], dir: [-0.75, -0.05, 0.7], palm: [0, 1, 0], curl: [1.2, 1.35] },
-    shell: [0.008, 0.008, 0.034], sound: 'ak', flash: 1.25
+    shell: [0.008, 0.008, 0.034], sound: 'ak', flash: 1.25,
+    item: { kind: 'mag', grab: [0, -0.11, 0.2], mouth: [0, 1, 0], pull: [0, -0.13, 0.03] }
   },
   glock: {
-    name: 'Glock 17', article: 'a', auto: false, rate: 420, mag: 17, reserve: 68, damage: 24, reload: 1.55, spread: 0.008, bloom: 0.012, maxBloom: 0.05,
+    name: 'Glock 17', article: 'a', auto: false, rate: 420, mag: 17, reserve: 68, damage: 24, reload: 3.0, spread: 0.008, bloom: 0.012, maxBloom: 0.05,
     kickUp: 0.032, kickSide: 0.008, kickBack: 0.055, climb: 0.34,
     scale: 1.32, hip: [-0.30, 1.17, 0.40], ads: [-0.27, 1.31, 0.42], blade: -0.55,
     muzzle: [0, 0.077, 0.19], port: [-0.015, 0.085, 0.06], magPoint: [0, -0.07, -0.015], boltPoint: [0, 0.075, -0.015], boltTravel: 0.042,
     right: { at: [0, -0.002, -0.006], dir: [0.15, 0.1, 1], palm: [1, 0, 0], curl: [1.2, 1.3] },
     left: { at: [0.012, -0.022, 0.012], dir: [-0.45, 0.1, 1], palm: [-1, 0, 0], curl: [1.0, 1.1] },
-    shell: [0.008, 0.008, 0.017], sound: 'glock', flash: 0.8
+    shell: [0.008, 0.008, 0.017], sound: 'glock', flash: 0.8,
+    item: { kind: 'mag', grab: [0, -0.09, -0.02], mouth: [0, 1, 0], pull: [0, -0.11, -0.03] }
   },
   awp: {
-    name: 'AWP', article: 'an', auto: false, rate: 44, mag: 5, reserve: 20, damage: 160, reload: 3.1, spread: 0.045, bloom: 0.02, maxBloom: 0.05,
+    name: 'AWP', article: 'an', auto: false, rate: 44, mag: 5, reserve: 20, damage: 160, reload: 3.9, spread: 0.045, bloom: 0.02, maxBloom: 0.05,
     kickUp: 0.085, kickSide: 0.014, kickBack: 0.12, climb: 0.36,
     scale: 1.04, hip: [-0.31, 1.12, 0.17], ads: [-0.28, 1.28, 0.16], blade: -0.80,
     muzzle: [0, 0.068, 0.90], port: [-0.022, 0.082, 0.10], magPoint: [0, -0.025, 0.127], boltPoint: [-0.056, 0.048, 0.057], boltTravel: 0.065,
     boltAction: true, boltAxis: [0, 0.0703, 0], cycle: 1.3, scoped: true, draw: 0.75,
     right: { at: [0, -0.004, 0.0], dir: [0.18, 0.05, 1], palm: [1, 0, 0], curl: [1.15, 1.25] },
     left: { at: [0.008, 0.012, 0.285], dir: [-0.75, -0.05, 0.7], palm: [0, 1, 0], curl: [1.15, 1.3] },
-    shell: [0.012, 0.012, 0.07], sound: 'awp', flash: 1.8
+    shell: [0.012, 0.012, 0.07], sound: 'awp', flash: 1.8,
+    item: { kind: 'mag', grab: [0, -0.045, 0.127], mouth: [0, 1, 0], pull: [0, -0.12, 0] }
+  },
+  mp5: {
+    name: 'MP5', article: 'an', auto: true, rate: 800, mag: 30, reserve: 120, damage: 19, reload: 3.3, spread: 0.009, bloom: 0.005, maxBloom: 0.045,
+    kickUp: 0.017, kickSide: 0.008, kickBack: 0.05, climb: 0.13,
+    scale: 1.2, hip: [-0.31, 1.14, 0.22], ads: [-0.28, 1.28, 0.21], blade: -0.75,
+    muzzle: [0, 0.074, 0.428], port: [-0.022, 0.085, 0.08], magPoint: [0, -0.06, 0.19], boltPoint: [0.026, 0.102, 0.31], boltTravel: 0.07,
+    right: { at: [0, -0.004, 0.0], dir: [0.18, 0.05, 1], palm: [1, 0, 0], curl: [1.15, 1.25] },
+    left: { at: [0.004, 0.043, 0.27], dir: [-0.75, -0.05, 0.7], palm: [0, 1, 0], curl: [1.2, 1.35] },
+    shell: [0.008, 0.008, 0.019], sound: 'mp5', flash: 0.9,
+    item: { kind: 'mag', grab: [0, -0.11, 0.215], mouth: [0, 1, 0], pull: [0, -0.13, 0.04] }
+  },
+  p90: {
+    name: 'P90', article: 'a', auto: true, rate: 900, mag: 50, reserve: 150, damage: 16, reload: 3.5, spread: 0.011, bloom: 0.004, maxBloom: 0.05,
+    kickUp: 0.014, kickSide: 0.009, kickBack: 0.04, climb: 0.11,
+    scale: 1.35, hip: [-0.29, 1.15, 0.28], ads: [-0.27, 1.29, 0.28], blade: -0.6,
+    muzzle: [0, 0.04, 0.207], port: [0, -0.06, -0.1], magPoint: [0, 0.07, 0.02], boltPoint: [0.024, 0.035, 0.095], boltTravel: 0.05,
+    right: { at: [0, -0.002, 0.0], dir: [0.18, 0.05, 1], palm: [1, 0, 0], curl: [1.15, 1.25] },
+    left: { at: [0.006, -0.03, 0.115], dir: [-0.75, -0.05, 0.7], palm: [0, 1, 0], curl: [1.2, 1.35] },
+    shell: [0.007, 0.007, 0.024], sound: 'p90', flash: 0.85,
+    item: { kind: 'mag', grab: [0, 0.07, 0.07], mouth: [0, 0, -1], pull: [0, 0.11, -0.05] }
+  },
+  shotgun: {
+    name: 'Shotgun', article: 'a', auto: false, rate: 75, mag: 6, reserve: 30, damage: 12, pellets: 9, pelletSpread: 0.045, reload: 3.8, spread: 0.004, bloom: 0.004, maxBloom: 0.02,
+    kickUp: 0.07, kickSide: 0.014, kickBack: 0.11, climb: 0.34,
+    scale: 1.05, hip: [-0.32, 1.13, 0.19], ads: [-0.29, 1.28, 0.18], blade: -0.80,
+    muzzle: [0, 0.052, 0.70], port: [-0.022, 0.055, 0.19], magPoint: [0, -0.01, 0.13], boltPoint: [0, 0.02, 0.37], boltTravel: 0,
+    pumpAction: true, pumpTravel: 0.09, cycle: 0.75,
+    right: { at: [0, -0.004, 0.0], dir: [0.18, 0.05, 1], palm: [1, 0, 0], curl: [1.15, 1.25] },
+    left: { at: [0.004, 0.008, 0.37], dir: [-0.75, -0.05, 0.7], palm: [0, 1, 0], curl: [1.1, 1.25] },
+    shell: [0.015, 0.015, 0.045], shellColor: [0.45, 0.02, 0.01], sound: 'shotgun', flash: 1.7,
+    item: { kind: 'shell', grab: [0.0, -0.012, 0.13], mouth: [0, 0, 1], pull: [0.02, -0.09, 0] }
+  },
+  mgl: {
+    name: 'Grenade Launcher', article: 'a', auto: false, rate: 120, mag: 6, reserve: 18, damage: 0, grenade: true, reload: 4.4, spread: 0.006, bloom: 0.004, maxBloom: 0.02,
+    kickUp: 0.06, kickSide: 0.012, kickBack: 0.10, climb: 0.30,
+    scale: 1.0, hip: [-0.28, 1.09, 0.15], ads: [-0.27, 1.22, 0.15], blade: -0.75,
+    muzzle: [0, 0.04, 0.58], port: [0, 0, 0.2], magPoint: [0.09, 0, 0.2], boltPoint: [0, 0.1, 0.2], boltTravel: 0,
+    drumAxis: [0, 0.0015, 0], drumLoad: true, noEject: true,
+    right: { at: [0, -0.012, 0.0], dir: [0.18, 0.05, 1], palm: [1, 0, 0], curl: [1.15, 1.25] },
+    left: { at: [0.004, -0.07, 0.455], dir: [-0.25, 0.05, 1], palm: [-1, 0, 0], curl: [1.2, 1.35] },
+    shell: [0.02, 0.02, 0.05], sound: 'thoomp', flash: 1.1,
+    item: { kind: 'round', grab: [0.1, 0.0, 0.2], mouth: [0, 0, 1], pull: [0.1, -0.03, -0.02] }
   }
 };
-const SLOTS = ['ak', 'glock', 'awp'];
+const SLOTS = ['ak', 'glock', 'awp', 'mp5', 'p90', 'shotgun', 'mgl'];   // number keys: 1 2 3, then 4 fists and 5 C4, then 6 7 8 9
 await loadCaveman(window.MODEL_B64);
 await loadGun(GUNS.ak, window.GUN_DATA.ak);
 await loadGun(GUNS.glock, window.GUN_DATA.glock);
-await loadGun(GUNS.awp, window.GUN_DATA.awp);
+for (const id of ['awp', 'mp5', 'p90', 'shotgun', 'mgl']) await loadGun(GUNS[id], window.GUN_DATA[id]);
 const C4 = { panelAt: window.C4_DATA.panelAt };        // the bomb (model from tools/make_c4.py)
 await loadGun(C4, window.C4_DATA);
 const ROLL = {};                                         // the roll of duct tape (model from tools/make_tape.py)
@@ -76,7 +121,7 @@ function makeFighter(isPlayer, tint) {
     pose: newPose(), weights: { Idle: 1, Walk: 0, Run: 0, Crouch: 0, CrouchWalk: 0 }, phase: 0, time: rand(0, 9), legYaw: 0, back: false,
     moveRel: 0, speed: 0, vel: [0, 0], jump: -1, jumpMoving: false, jumpBack: false, air: 0, tilt: 0, send: null, gone: false, crouch: false,
     aimW: 0, ads: 0, sprintW: 0, equip: 1, cycle: -1, inspect: -1, script: null, scriptW: 0, looted: false, beingLooted: false, reload: -1, cool: 0, kick: 0, kickV: 0, rise: 0, riseV: 0, roll: 0, bolt: 0, bloom: 0, punch: -1,
-    target: [0, 1.2, 10], hurt: 0, bones: new Float32Array(NB * 16), wr: new Array(NB), wp: new Array(NB), gun: null, model: new Float32Array(16),
+    target: [0, 1.2, 10], hurt: 0, vest: 0, item: null, drumA: 0, drumT: 0, bones: new Float32Array(NB * 16), wr: new Array(NB), wp: new Array(NB), gun: null, model: new Float32Array(16),
     ai: { wait: rand(0.8, 1.8), burst: 0, strafe: 1, strafeT: 0, seen: false }
   };
 }
@@ -99,7 +144,7 @@ function spawnBot(b, i) {
   const a = Math.PI + (i - 1) * 0.75 + rand(-0.25, 0.25), d = rand(13, 19);
   b.pos = [clamp(player.pos[0] + Math.sin(a) * d, -HALF + 2, HALF - 2), 0, clamp(player.pos[2] + Math.cos(a) * d, -HALF + 2, HALF - 2)];
   if (world.map === 'island') b.pos = enemySpot(player.pos);
-  b.hp = 100; b.dead = -1; b.hurt = 0; b.air = 0; b.jump = -1; b.looted = b.beingLooted = false; b.script = null; b.scriptW = 0; b.cycle = -1; b.inv = []; b.ammo = {}; b.weapon = null; b.crouch = false; b.ai.wait = rand(1.0, 2.2); b.ai.seen = false;
+  b.hp = 100; b.dead = -1; b.hurt = 0; b.vest = 0; b.air = 0; b.jump = -1; b.looted = b.beingLooted = false; b.script = null; b.scriptW = 0; b.cycle = -1; b.inv = []; b.ammo = {}; b.weapon = null; b.crouch = false; b.ai.wait = rand(1.0, 2.2); b.ai.seen = false;
   give(b, i === 1 ? 'ak' : 'glock', 999); equip(b, b.inv[0]);
   b.yaw = Math.atan2(player.pos[0] - b.pos[0], player.pos[2] - b.pos[2]);
 }
@@ -160,6 +205,9 @@ function gunTransform(f, g, chestPos) {
   R = M3.mul(R, M3.rz(0.55 * rl + f.roll));
   R = M3.mul(R, M3.mul(M3.rz(0.30 * work - 0.9 * down * (g.draw ? 1 : 0)), M3.rx(0.05 * bp.back)));
   R = M3.mul(R, M3.mul(M3.ry(0.75 * look1 - 0.35 * look2), M3.mul(M3.rx(-0.25 * look1 - 0.45 * look2), M3.rz(-1.0 * look1 + 1.15 * look2))));
+  const peer = peerAmount(f);                                 // the gun sags while he stares into the magazine
+  R = M3.mul(R, M3.rx(0.34 * peer));
+  p = V.add(p, [-0.03 * peer, -0.09 * peer, -0.03 * peer]);
   p = V.add(p, [0.03 * sp + 0.03 * rl, -0.07 * sp - 0.25 * down + 0.015 * rl, -0.05 * rl]);
   p = V.mad(p, aim, -f.kick);
   p = V.add(p, [0.03 * (look1 + look2), 0.05 * (look1 + look2) + 0.012 * work, -0.04 * work]);
@@ -172,24 +220,12 @@ function handGoal(G, grip, pole, reach) {
   const wrist = V.add(V.add(onGun(G, grip.at), V.mul(dir, -(reach || 0.085))), V.mul(palm, -0.038));
   return { wrist, dir, palm, pole, curl: grip.curl };
 }
-// the support hand leaves the gun to swap the magazine and rack it
-function reloadHand(f, g, G, goal) {
-  const t = f.reload / g.reload;
-  const mag = g.magPoint, below = [mag[0] + 0.07, mag[1] - 0.30, mag[2] - 0.08], bolt = g.boltPoint;
-  const keys = [[0, g.left.at], [0.17, mag], [0.34, below], [0.50, below], [0.66, mag], [0.72, mag], [0.80, bolt], [0.87, [bolt[0], bolt[1], bolt[2] - g.boltTravel]], [1, g.left.at]];
-  let i = 0; while (i < keys.length - 2 && t > keys[i + 1][0]) i++;
-  const at = V.lerp(keys[i][1], keys[i + 1][1], smooth(keys[i][0], keys[i + 1][0], t));
-  const away = smooth(0, 0.15, t) * (1 - smooth(0.9, 1, t));
-  const grip = { at, dir: V.lerp(g.left.dir, [-0.5, 0.35, 0.8], away), palm: V.lerp(g.left.palm, [-0.4, 0.8, 0], away), curl: [0.9, 0.9] };
-  return handGoal(G, grip, goal.pole, 0.095);
-}
-
 // 0..1 amounts for the bolt: hand reaching it, handle lifted, bolt drawn back
 function boltState(f, g) {
   let u = -1;
   if (g.boltAction) {
     if (f.cycle >= 0) u = f.cycle / g.cycle;
-    else if (f.reload >= 0) u = (f.reload / g.reload - 0.68) / 0.32;
+    else if (f.reload >= 0) u = (f.reload / g.reload - 0.84) / 0.16;
   }
   if (u < 0 || u > 1) return { hand: 0, lift: 0, back: 0 };
   return {
@@ -223,7 +259,7 @@ function poseFighter(f) {
   const g = f.weapon && f.dead < 0 && f.scriptW < 0.3 ? GUNS[f.weapon] : null;
   const wr = f.wr, wp = f.wp;
   const aw = f.aimW;
-  let G = null, goals = null, arms = null;
+  let G = null, goals = null, arms = null, item = null;
   const jumpIK = {};
   const lean = g ? clamp(Math.atan2(f.target[1] - (f.pos[1] + 1.3), Math.hypot(f.target[0] - f.pos[0], f.target[2] - f.pos[2])), -0.9, 0.9) : 0;
   const blade = g ? g.blade * aw * (1 - 0.7 * f.sprintW) : 0;
@@ -243,6 +279,10 @@ function poseFighter(f) {
       wr[i] = M3.mul(M3.mul(M3.ry(blade / 2 + (punching ? 0.2 * Math.sin(Math.PI * f.punch / 0.4) : 0)), M3.rx(-lean * 0.22)), wr[i]);
     }
     if (i === IDX.head && g) wr[i] = M3.mul(M3.mul(M3.ry(-blade * 0.9), M3.rx(-lean * 0.25)), wr[i]);
+    if (i === IDX.head && g && f.reload >= 0) {           // peering: head cocked to one side
+      const peer = peerAmount(f);
+      wr[i] = M3.mul(M3.mul(M3.mul(M3.ry(-0.5 * peer), M3.rz(0.3 * peer)), M3.rx(0.14 * peer)), wr[i]);
+    }
     if (J) {
       // jumping: lean, head, legs and (with nothing in them) arms
       if (UP_CHEST.includes(i)) wr[i] = M3.mul(M3.rx(J.bend * J.w / 2), wr[i]);
@@ -262,8 +302,8 @@ function poseFighter(f) {
     }
     if (i === IDX.chest && g) {
       G = gunTransform(f, g, wp[i]);
-      goals = { R: handGoal(G, g.right, [-0.8, -1, -0.15]), L: handGoal(G, g.left, [0.75, -1, 0.1]) };
-      if (f.reload >= 0 && !(g.boltAction && f.reload / g.reload > 0.68)) goals.L = reloadHand(f, g, G, goals.L);
+      goals = { R: handGoal(G, g.right, [-0.8, -1, -0.15]), L: handGoal(G, leftGrip(f, g), [0.75, -1, 0.1]) };
+      if (f.reload >= 0) { const r = reloadPose(f, g, G, goals.L, wp[i]); goals.L = r.hand; item = r.item; }
       if (g.boltAction) goals.R = boltHand(f, g, G, goals.R);
       arms = {};
     }
@@ -308,6 +348,10 @@ function poseFighter(f) {
   // the whole body
   m4(R, root, f.model);
   f.R = R;
+  f.item = null;
+  const vest = f.script && f.scriptW > 0.3 && f.script.vest;          // a vest being held up out of a chest
+  f.holdVest = vest ? { R: M3.mul(R, vest.R), p: toWorld(f, vest.p) } : null;
+  if (item && !held) { const world = M3.mul(R, item.R); f.item = { gun: f.weapon, R: world, S: world.map(x => x * g.scale), p: toWorld(f, item.p), out: M3.vec(R, item.out) }; }
   if (held) {
     const hg = GUNS[held.id];
     G = { R: held.R, p: held.p };
@@ -330,13 +374,13 @@ function muzzleFx(f) {
   const g = f.gun.g, m = V.add(f.gun.p, M3.vec(f.gun.S, g.muzzle)), fwd = M3.vec(f.gun.R, [0, 0, 1]);
   flashes.push({ f, life: 0.05, spin: rand(0, Math.PI), size: g.flash * rand(0.85, 1.15), p: m, fwd });
   for (let i = 0; i < 2; i++) particles.push({ p: V.mad(m, fwd, 0.04), v: [fwd[0] * rand(0.3, 1) + rand(-0.2, 0.2), rand(0.15, 0.5), fwd[2] * rand(0.3, 1) + rand(-0.2, 0.2)], life: 0.5, max: 0.5, size: 0.03, color: [0.42, 0.42, 0.45, 0.22], grav: -0.3, grow: 0.22 });
-  if (!g.boltAction) eject(f);
+  if (!g.boltAction && !g.pumpAction && !g.noEject) eject(f);
   return m;
 }
 function eject(f) {
   if (!f.gun) return;
   const g = f.gun.g, fwd = M3.vec(f.gun.R, [0, 0, 1]), side = M3.vec(f.gun.R, [-1, 0, 0]);
-  shells.push({ p: V.add(f.gun.p, M3.vec(f.gun.S, g.port)), v: V.add(V.mul(side, rand(1.3, 2.2)), V.add(V.mul(fwd, rand(-0.3, 0.3)), [0, rand(1.2, 2.2), 0])), size: g.shell, spin: [rand(-1, 1), rand(-1, 1), rand(-1, 1)], a: 0, life: 2.5, R: f.gun.R, rest: false });
+  shells.push({ p: V.add(f.gun.p, M3.vec(f.gun.S, g.port)), v: V.add(V.mul(side, rand(1.3, 2.2)), V.add(V.mul(fwd, rand(-0.3, 0.3)), [0, rand(1.2, 2.2), 0])), size: g.shell, color: g.shellColor, spin: [rand(-1, 1), rand(-1, 1), rand(-1, 1)], a: 0, life: 2.5, R: f.gun.R, rest: false });
   if (shells.length > 80) shells.shift();
 }
 
@@ -384,6 +428,12 @@ function jitter(dir, spread) {
 }
 function damage(victim, amount, from, head) {
   if (victim.dead >= 0 || (victim.isPlayer && (game.godMode || FLY.on))) return;
+  if (victim.vest > 0 && !head) {                           // the vest takes most of it, until it breaks
+    const soak = Math.min(victim.vest, amount * 0.65);
+    victim.vest -= soak; amount -= soak;
+    if (victim.vest <= 0) { popWord(V.add(victim.pos, [0, 1.9, 0]), 'CRACK!', 0.8); Sound.play('bonk', victim.isPlayer ? 0.9 : 0.5); }
+    else Sound.play('thwack', victim.isPlayer ? 0.7 : 0.4);
+  }
   victim.hp -= amount; victim.hurt = 0.22;
   if (victim.isPlayer) {
     Sound.play('hurt', 0.8); hudDirty = true;
@@ -407,26 +457,41 @@ function knockOut(victim, why) {
 function fire(f, origin, dir, spread, minT) {
   const g = GUNS[f.weapon], am = f.ammo[f.weapon];
   am.clip--; f.cool = 60 / g.rate;
-  const d = jitter(dir, spread);
-  let hit = trace(origin, d, f, minT);
-  const body = rayBody(origin, d, hit.t);                      // a knocked-out body in the way: it gets shoved
-  if (body && body.t > (minT || 0)) { hit = { t: body.t, kind: 'body', f: body.f, p: V.mad(origin, d, body.t) }; ragPush(body.f, hit.p, V.mul(d, 2.5 + g.damage * 0.05), 0.45); }
   const muzzle = muzzleFx(f);
-  tracers.push({ a: muzzle, b: hit.p, life: 0.09, max: 0.09 });
-  if (hit.kind === 'body') puff(hit.p, 6, [0.55, 0.04, 0.03, 0.9], 1.0, 0.03, 0.45, 6);
-  else if (hit.kind === 'fighter') {
-    const head = hit.mult > 2;
-    puff(hit.p, 7, [0.55, 0.04, 0.03, 0.9], 1.1, 0.032, 0.45, 6);
-    damage(hit.f, (f.isPlayer ? g.damage : 5) * hit.mult, f, head);
-    if (f.isPlayer) { Sound.play('hit', 0.8); game.marker = 0.18; ui.marker.classList.toggle('head', head || hit.f.dead >= 0); }
-  } else if (hit.kind === 'ground') { puff(hit.p, 6, [0.45, 0.43, 0.40, 0.7], 0.9, 0.045, 0.5, 3); marks.push(hit.p); if (marks.length > 90) marks.shift(); }
-  else if (hit.kind === 'water') puff(hit.p, 8, [0.85, 0.93, 0.97, 0.8], 1.2, 0.04, 0.45, 5);
-  else if (hit.kind === 'solid') puff(hit.p, 6, [0.50, 0.38, 0.24, 0.9], 1.2, 0.03, 0.45, 6);
-  else if (hit.kind === 'chest') puff(hit.p, 6, [0.55, 0.36, 0.17, 0.9], 1.2, 0.025, 0.45, 6);
+  // a knocked-out body in the way gets shoved
+  const shot = d => {
+    const hit = trace(origin, d, f, minT), body = rayBody(origin, d, hit.t);
+    return body && body.t > (minT || 0) ? { t: body.t, kind: 'body', f: body.f, p: V.mad(origin, d, body.t) } : hit;
+  };
+  if (g.grenade) { launchGrenade(f, muzzle, shot(jitter(dir, spread)).p); f.drumT += Math.PI / 3; }
+  else {
+    const struck = new Map(), count = g.pellets || 1;
+    for (let i = 0; i < count; i++) {
+      const d = jitter(dir, g.pellets ? spread + g.pelletSpread : spread), hit = shot(d);
+      tracers.push({ a: muzzle, b: hit.p, life: 0.09, max: 0.09 });
+      if (hit.kind === 'body') {
+        ragPush(hit.f, hit.p, V.mul(d, g.pellets ? 0.9 : 2.5 + g.damage * 0.05), 0.45);
+        puff(hit.p, g.pellets ? 2 : 6, [0.55, 0.04, 0.03, 0.9], 1.0, 0.03, 0.45, 6);
+      } else if (hit.kind === 'fighter') {
+        const head = hit.mult > 2, falloff = g.pellets ? clamp(1.3 - hit.t / 18, 0.25, 1) : 1;
+        puff(hit.p, g.pellets ? 3 : 7, hit.f.vest > 0 && !head ? [0.10, 0.13, 0.07, 0.9] : [0.55, 0.04, 0.03, 0.9], 1.1, 0.032, 0.45, 6);
+        const so = struck.get(hit.f) || { amount: 0, head: false };
+        so.amount += (f.isPlayer ? g.damage : 5) * hit.mult * falloff; so.head = so.head || head;
+        struck.set(hit.f, so);
+      } else if (hit.kind === 'ground') { puff(hit.p, 6, [0.45, 0.43, 0.40, 0.7], 0.9, 0.045, 0.5, 3); marks.push(hit.p); if (marks.length > 90) marks.shift(); }
+      else if (hit.kind === 'water') puff(hit.p, 8, [0.85, 0.93, 0.97, 0.8], 1.2, 0.04, 0.45, 5);
+      else if (hit.kind === 'solid') puff(hit.p, 6, [0.50, 0.38, 0.24, 0.9], 1.2, 0.03, 0.45, 6);
+      else if (hit.kind === 'chest') puff(hit.p, 6, [0.55, 0.36, 0.17, 0.9], 1.2, 0.025, 0.45, 6);
+    }
+    for (const [victim, so] of struck) {
+      damage(victim, so.amount, f, so.head);
+      if (f.isPlayer) { Sound.play('hit', 0.8); game.marker = 0.18; ui.marker.classList.toggle('head', so.head || victim.dead >= 0); }
+    }
+  }
   // recoil on the gun itself
   f.kickV += g.kickBack * 22; f.riseV += g.climb * 16 * (1 - 0.35 * f.ads); f.roll += rand(-0.05, 0.05); f.bolt = 1;
   f.bloom = Math.min(g.maxBloom, f.bloom + g.bloom);
-  if (g.boltAction) f.cycle = 0;
+  if (g.boltAction || g.pumpAction) f.cycle = 0;
   f.inspect = -1;
   const dist = f.isPlayer ? 0 : V.len(V.sub(f.pos, player.pos));
   Sound.play(g.sound, f.isPlayer ? 0.9 : 0.8 / (1 + dist * 0.12));
@@ -446,7 +511,7 @@ const keys = new Set();
 const mouse = { fire: false, pressed: false, aim: false, drag: null };
 const game = { running: false, locked: false, lockWorked: false, aimToggle: false, enemiesShoot: true, godMode: false, kills: 0, deaths: 0, marker: 0, hurtFade: 0, note: 0, time: 0 };
 const ui = {};
-for (const id of ['scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'shootback', 'msg', 'reloadbar', 'boomflash']) ui[id] = document.getElementById(id);
+for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'shootback', 'msg', 'reloadbar', 'boomflash']) ui[id] = document.getElementById(id);
 let hudDirty = true;
 function notify(text) { ui.note.textContent = text; ui.note.style.opacity = 1; game.note = 2.4; }
 
@@ -513,6 +578,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'Digit3') equip(player, 'awp');
   else if (e.code === 'Digit4' || e.code === 'KeyH') { player.holdC4 = false; equip(player, null); hudDirty = true; }
   else if (e.code === 'Digit5') holdC4(player);
+  else if (['Digit6', 'Digit7', 'Digit8', 'Digit9'].includes(e.code)) equip(player, SLOTS[+e.code.slice(5) - 3]);
   else if (e.code === 'KeyG') dropGun(player);
   else if (e.code === 'KeyV') { if (player.weapon && player.reload < 0 && player.cycle < 0 && player.equip >= 1 && player.inspect < 0) player.inspect = 0; }
   else if (e.code === 'KeyT') { if (world.map === 'island') setMap('plate'); else askMap(!world.asking); }   // temporary, while the map is being made
@@ -587,8 +653,9 @@ function weaponStep(f, dt) {
     const g = GUNS[f.weapon], u0 = f.cycle / g.cycle;
     f.cycle += dt;
     const u = f.cycle / g.cycle, cue = (at, s) => { if (u0 < at && u >= at) Sound.play(s, f.isPlayer ? 0.9 : 0.2); };
-    cue(0.27, 'boltup'); cue(0.41, 'boltback'); cue(0.58, 'boltfwd');
-    if (u0 < 0.5 && u >= 0.5) { eject(f); Sound.play('shell', 0.8); }
+    if (g.pumpAction) { cue(0.22, 'pumpback'); cue(0.55, 'pumpfwd'); } else { cue(0.27, 'boltup'); cue(0.41, 'boltback'); cue(0.58, 'boltfwd'); }
+    const out = g.pumpAction ? 0.36 : 0.5;
+    if (u0 < out && u >= out) { eject(f); Sound.play('shell', 0.8); }
     if (u >= 1) f.cycle = -1;
   }
   f.aimW += ((f.weapon ? 1 : 0) - f.aimW) * Math.min(1, dt * 9);
@@ -598,14 +665,14 @@ function weaponStep(f, dt) {
   f.roll *= Math.exp(-dt * 14);
   f.bolt = Math.max(0, f.bolt - dt * 14);
   f.bloom *= Math.exp(-dt * 7);
+  f.drumA += (f.drumT - f.drumA) * Math.min(1, dt * 14);
   f.hurt = Math.max(0, f.hurt - dt);
   if (f.punch >= 0) { f.punch += dt; if (f.punch > 0.4) f.punch = -1; }
   if (f.reload >= 0) {
     const g = GUNS[f.weapon], t0 = f.reload / g.reload;
     f.reload += dt;
-    const t = f.reload / g.reload, cue = (at, s) => { if (t0 < at && t >= at) Sound.play(s, f.isPlayer ? 0.9 : 0.2); };
-    cue(0.2, 'magout'); cue(0.66, 'magin');
-    if (g.boltAction) { cue(0.76, 'boltup'); cue(0.82, 'boltback'); cue(0.87, 'boltfwd'); } else cue(0.8, 'rack');
+    const t = f.reload / g.reload;
+    reloadCues(f, g, t0, t);
     if (t >= 1) {
       const am = f.ammo[f.weapon], n = Math.min(g.mag - am.clip, am.spare);
       am.clip += n; am.spare -= n; f.reload = -1;
@@ -632,7 +699,7 @@ function respawnPlayer() {
   abortLoot();
   const f = player;
   f.c4 = Math.max(f.c4 || 0, 1); f.holdC4 = false; f.plantT = -1;
-  f.dead = -1; f.hp = 100; f.pos = world.map === 'island' ? [START[0], groundAt(START[0], START[2]), START[2]] : [0, 0, 0]; f.air = 0; f.jump = -1; f.equip = 0;
+  f.dead = -1; f.hp = 100; f.vest = 0; grenades.length = 0; f.pos = world.map === 'island' ? [START[0], groundAt(START[0], START[2]), START[2]] : [0, 0, 0]; f.air = 0; f.jump = -1; f.equip = 0;
   deathCam = 0; deathShot = null; hudDirty = true;
   bots.forEach(spawnBot); notify('Back on your feet');
 }
@@ -774,6 +841,7 @@ function update(dt) {
     c.wobble *= Math.exp(-dt * 6);
   }
   effectsStep(dt);
+  grenadesStep(dt);
   const k = 1 - Math.exp(-dt * 11), a = player.ads;
   propsStep(dt);
   cam.dist += ((2.25 - 0.45 * a) - cam.dist) * k;
@@ -814,10 +882,12 @@ function drawFighters(prog, textured, hideSelf) {
       gl.bindVertexArray(p.vao);
       gl.drawElements(gl.TRIANGLES, p.count, gl.UNSIGNED_SHORT, 0);
     }
+    if (textured) drawWornVest(prog, f);
   }
 }
 const modelM = new Float32Array(16);
 function drawMesh(prog, mesh, R, p) {
+  if (!mesh) return;                                        // not every gun has every moving part
   gl.uniformMatrix4fv(prog.u.uModel, false, m4(R, p, modelM));
   gl.bindVertexArray(mesh.vao); gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_INT, 0);
 }
@@ -835,6 +905,11 @@ function drawGun(prog, textured, g, R, p, o) {
   drawMesh(prog, g.parts.body, R, p);
   if (!o.noMag) drawMesh(prog, g.parts.mag, R, o.magOff ? V.add(p, M3.vec(R, o.magOff)) : p);
   drawMesh(prog, g.parts.trigger, R, p);
+  if (g.parts.pump) drawMesh(prog, g.parts.pump, R, V.add(p, M3.vec(R, [0, 0, -g.pumpTravel * (o.pump || 0)])));
+  if (g.parts.drum) {                                       // the cylinder turns about its own middle
+    const turn = M3.rz(o.drum || 0);
+    drawMesh(prog, g.parts.drum, M3.mul(R, turn), V.add(p, M3.vec(R, V.sub(g.drumAxis, M3.vec(turn, g.drumAxis)))));
+  }
   if (o.bolt) {                                           // lift about the bore, then draw back
     const turn = M3.rz(-1.15 * o.bolt.lift);
     drawMesh(prog, g.parts.bolt, M3.mul(R, turn), V.add(p, M3.vec(R, boltMove(g, [0, 0, 0], o.bolt))));
@@ -847,27 +922,30 @@ function drawStatics(prog, textured, hideSelf) {
     const { g, S: R, p, held } = f.gun, o = {};
     if (!held) {
       const t = f.reload >= 0 ? f.reload / g.reload : -1;
-      // magazine drops out and a fresh one comes up with the support hand
-      if (t >= 0) {
-        const out = smooth(0.18, 0.34, t) * (1 - smooth(0.5, 0.66, t));
-        o.magOff = [0.07 * out, -0.30 * out, -0.08 * out]; o.noMag = t > 0.36 && t < 0.48;
-      }
+      // while he has the magazine in his hand (or on the floor) the gun has none
+      o.noMag = t >= RL.reach && t < RL.seat; o.pump = pumpAmount(f, g); o.drum = f.drumA;
       if (g.boltAction) o.bolt = boltState(f, g);
       else {
         let slide = f.bolt > 0 ? Math.sin(Math.PI * Math.min(1, f.bolt)) : 0;
-        if (t >= 0.8) slide = Math.max(slide, smooth(0.8, 0.87, t) * (1 - smooth(0.88, 0.92, t)));
-        if (f.ammo[f.weapon] && f.ammo[f.weapon].clip === 0 && f.weapon === 'glock' && (t < 0.87)) slide = 1;
+        if (t >= 0.93) slide = Math.max(slide, smooth(0.93, 0.955, t) * (1 - smooth(0.955, 0.975, t)));
+        if (f.ammo[f.weapon] && f.ammo[f.weapon].clip === 0 && f.weapon === 'glock' && (t < 0.955)) slide = 1;
         o.slide = slide;
       }
     }
     drawGun(prog, textured, g, R, p, o);
   }
+  for (const f of fighters) {
+    if (hideSelf && f.isPlayer) continue;
+    if (f.item) drawItem(prog, textured, f.item);
+    if (f.holdVest) drawHeldVest(prog, f.holdVest.R, f.holdVest.p);
+  }
+  drawGrenades(prog);
   const chestRange = !textured ? 16 : world.low ? 60 : 110;
   for (const c of chests) {
     if (world.map === 'island' && Math.hypot(c.pos[0] - player.pos[0], c.pos[2] - player.pos[2]) > chestRange) continue;
     const tip = M3.rz(Math.sin(game.time * 38) * c.wobble * 0.09), hinge = V.add(c.pos, M3.vec(tip, [0, 0.44, -0.30])), lid = M3.mul(tip, M3.rx(-1.9 * c.open));
     flat(prog, [0.19, 0.095, 0.035], 0.75, 0.0); drawMesh(prog, meshes.chest, tip, c.pos); drawMesh(prog, meshes.lid, lid, hinge);
-    flat(prog, c.gun === 'ak' ? [0.75, 0.45, 0.08] : c.gun === 'awp' ? [0.10, 0.28, 0.08] : [0.30, 0.32, 0.35], 0.38, 0.9);
+    flat(prog, CHEST_COLOURS[c.gun], 0.38, 0.9);
     for (const x of [-0.3, 0.3]) {
       for (const z of [0.272, -0.272]) drawMesh(prog, meshes.strap, tip, V.add(c.pos, M3.vec(tip, [x, 0, z])));
       drawMesh(prog, meshes.lidband, lid, V.add(hinge, M3.vec(tip, [x, 0, 0])));
@@ -877,8 +955,8 @@ function drawStatics(prog, textured, hideSelf) {
   drawProps(prog, textured);
   drawSends(prog);
   drawPlanted(prog);
-  flat(prog, [0.72, 0.50, 0.16], 0.28, 1.0);
   for (const s of shells) {
+    flat(prog, s.color || [0.72, 0.50, 0.16], 0.28, s.color ? 0.2 : 1.0);
     const R = M3.mul(s.rest ? M3.ry(s.a) : M3.mul(M3.axis(s.spin, s.a), s.R), [s.size[0], 0, 0, 0, s.size[1], 0, 0, 0, s.size[2]]);
     drawMesh(prog, meshes.shell, R, s.p);
   }
@@ -995,8 +1073,12 @@ function hud(dt) {
     ui.weapon.textContent = g ? g.name : player.holdC4 ? 'C4' : 'Fists';
     ui.ammo.innerHTML = g ? `<b class="${am.clip <= g.mag * 0.2 ? 'low' : ''}">${am.clip}</b> / ${am.spare}` : '';
     ui.hp.textContent = Math.ceil(player.hp); ui.hpfill.style.width = player.hp + '%';
-    ui.slots.innerHTML = [['1', 'ak'], ['2', 'glock'], ['3', 'awp']].map(([k, id]) => `<span class="${player.weapon === id ? 'on' : player.inv.includes(id) ? '' : 'none'}">${k} ${player.inv.includes(id) ? GUNS[id].name : '---'}</span>`).join('') + `<span class="${player.weapon || player.holdC4 ? '' : 'on'}">4 Fists</span>` +
-      `<span class="${player.holdC4 ? 'on' : player.c4 ? '' : 'none'}">5 C4 ×${player.c4 || 0}</span>`;
+    ui.vestbox.hidden = !(player.vest > 0); ui.vest.textContent = Math.ceil(player.vest); ui.vestfill.style.width = player.vest / VEST * 100 + '%';
+    const slot = (k, id) => `<span class="${player.weapon === id ? 'on' : player.inv.includes(id) ? '' : 'none'}">${k} ${player.inv.includes(id) ? (id === 'mgl' ? 'Launcher' : GUNS[id].name) : '---'}</span>`;
+    // the first three always show; the new ones only once you have them
+    ui.slots.innerHTML = [0, 1, 2].map(i => slot(i + 1, SLOTS[i])).join('') + `<span class="${player.weapon || player.holdC4 ? '' : 'on'}">4 Fists</span>` +
+      `<span class="${player.holdC4 ? 'on' : player.c4 ? '' : 'none'}">5 C4 ×${player.c4 || 0}</span>` +
+      SLOTS.slice(3).map((id, i) => player.inv.includes(id) ? slot(i + 6, id) : '').join('');
     ui.score.textContent = `Knockouts ${game.kills} · Deaths ${game.deaths}`;
   }
   const g = player.weapon ? GUNS[player.weapon] : null;
@@ -1065,6 +1147,7 @@ window.__game = {
   get sendCount() { return sends.length + helpers.length; },
   get sends() { return sends; },
   gunInfo() { const f = player; if (!f.gun) return null; const g = f.gun.g, hr = bonePos(f, 'hand_R'), hl = bonePos(f, 'hand_L'); const at = q => V.add(f.gun.p, M3.vec(f.gun.S, q)); return { rightErr: V.len(V.sub(hr, at(g.right.at))), leftErr: V.len(V.sub(hl, at(g.left.at))), muzzle: at(g.muzzle), forward: M3.vec(f.gun.R, [0, 0, 1]), target: f.target }; },
+  get litter() { return props.filter(o => o.kind === 'mag' || o.kind === 'shell' || o.kind === 'round').map(o => ({ kind: o.kind, gun: o.gun, p: o.p, rest: o.rest, life: o.life })); },
   error() { return gl.getError(); }
 };
 })().catch(err => { console.error(err); document.getElementById('msg').textContent = 'The game could not start: ' + String(err.message).slice(0, 300); });
