@@ -409,31 +409,6 @@ const Sound = (() => {
     input.connect(low); low.connect(mid); mid.connect(meter); mid.connect(out); out.connect(scene);
     return { input, out, next: 0 };
   }
-  // the player's own song, if they chose one from their computer (it is never part of the game)
-  const song = { bytes: null, buffer: null, bpm: 0, wait: null };
-  // how fast a song is: where its jumps in loudness line up with themselves best
-  function tempo(buf) {
-    const x = buf.getChannelData(0), hop = Math.floor(buf.sampleRate / 100), n = Math.min(6000, Math.floor(x.length / hop)), rise = new Float32Array(n);
-    let last = 0;
-    for (let i = 0; i < n; i++) { let e = 0; for (let k = 0; k < hop; k += 4) e += x[i * hop + k] ** 2; e = Math.sqrt(e); rise[i] = Math.max(0, e - last); last = e; }
-    let best = 120, score = -1;
-    for (let bpm = 80; bpm <= 175; bpm++) {
-      const lag = 6000 / bpm; let s = 0;
-      for (let i = 0; i + 2 * lag + 2 < n; i++) { const j = Math.floor(i + lag), k = Math.floor(i + 2 * lag); s += rise[i] * (rise[j] + rise[j + 1] + 0.5 * (rise[k] + rise[k + 1])); }
-      if (s > score) { score = s; best = bpm; }
-    }
-    return best;
-  }
-  function decodeSong() {
-    if (!ac || !song.bytes || song.buffer) return Promise.resolve(!!song.buffer);
-    if (!song.wait) {
-      const bytes = song.bytes;
-      song.wait = new Promise((ok, no) => ac.decodeAudioData(bytes.slice(0), ok, no)).then(
-        buf => { if (song.bytes !== bytes) return false; song.buffer = buf; song.bpm = tempo(buf); song.wait = null; return true; },
-        () => { if (song.bytes === bytes) { song.bytes = null; song.wait = null; } return false; });
-    }
-    return song.wait;
-  }
   // the game's own tune, a hype one: 128 beats a minute in E minor, four bars round and round
   const BEAT = 128;
   const ROOTS = [41.2, 41.2, 65.41, 73.42], STABS = [[329.6, 392, 493.9], [329.6, 392, 493.9], [261.6, 329.6, 392], [293.7, 370, 440]];
@@ -461,20 +436,15 @@ const Sound = (() => {
     if (k >= 32) for (const [t, semi, len] of HOOK[bar]) if (t === s) { const f = 440 * 2 ** (semi / 12); tone(f * 0.94, f, 0.05, 0.05, at, 'square', out); tone(f, f, six * len * 1.1, 0.10, at + 0.02, 'square', out); tone(f * 1.007, f * 1.007, six * len * 1.1, 0.08, at, 'sawtooth', out); tone(f * 2, f * 2, six * len * 0.6, 0.03, at, 'triangle', out); }
   }
   const music = {
-    get bpm() { return song.buffer ? song.bpm : BEAT; },
+    bpm: BEAT,
     // seconds the music has been going by the sound card's own clock (null before it starts)
     time() { return deck ? ac.currentTime - deck.t0 : null; },
     // call every frame with the seconds since the music was meant to begin; it plays what is due
     tick(at) {
       if (!sceneInit() || ac.state !== 'running' || at < 0) return;
       const six = 15 / BEAT;
-      if (song.bytes && !song.buffer) { decodeSong(); return; }
       if (!deck) { deck = makeDeck(); deck.t0 = ac.currentTime - at; deck.next = Math.max(0, Math.ceil(at / six)); }
       const t = ac.currentTime - deck.t0;
-      if (song.buffer) {
-        if (!deck.source) { deck.source = ac.createBufferSource(); deck.source.buffer = song.buffer; deck.source.loop = true; deck.source.connect(deck.input); deck.source.start(0, t % song.buffer.duration); }
-        return;
-      }
       while (deck.next * six < t + 0.25) { if (deck.next * six >= t - 0.05) step(deck.next, Math.max(0, deck.next * six - t)); deck.next++; }
     },
     volume(v, muffle) { if (deck) deck.out.gain.setTargetAtTime(v, ac.currentTime, muffle || 0.08); },
@@ -488,7 +458,6 @@ const Sound = (() => {
     stop() {
       if (!deck) return;
       const d = deck; deck = null;
-      if (d.source) d.source.stop(ac.currentTime + 0.1);
       d.out.gain.setTargetAtTime(0, ac.currentTime, 0.02);
       setTimeout(() => d.out.disconnect(), 900);
     }
@@ -684,9 +653,6 @@ const Sound = (() => {
   return {
     init, music, loop, loopsOff,
     hush(on) { if (hushed !== on) { hushed = on; if (ac) level(); } },
-    // an audio file the player chose for the boombox (its bytes), or null for the game's own tune.
-    // resolves to whether it could be read
-    setSong(bytes) { song.bytes = bytes; song.buffer = null; song.wait = null; return bytes && ac ? decodeSong() : Promise.resolve(!!bytes); },
     // p: left/right, -1 to 1 (optional)
     play(name, vol, k, p) { if (ac && !muted && ac.state === 'running') { pan = p || 0; try { play[name](vol === undefined ? 1 : vol, k); } finally { pan = 0; } } },
     toggle() { muted = !muted; if (ac) level(); return muted; }

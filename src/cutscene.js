@@ -1,6 +1,6 @@
 // ======================================================================= the boat trip
 // choosing the island from the menu plays this: you and the skipper cruising in with the boombox going,
-// a cheers, a rock, and waking up on the beach beside the burning wreck. Space skips it
+// a cheers, a rock, and waking up on the beach beside the burning wreck. It cannot be skipped
 const CINE_WORDS = false;
 const CINE = {
   driver: 5.5, you: 10.0, boom: 14.5, cheers: 18.5, chug: 24.0, point: 27.0, huh: 28.2, rock: 29.0, hit: 31.0, black: 33.2, eyes: 36.0, up: 41.0, end: 53.4
@@ -467,10 +467,6 @@ function washUp() {
   bots.forEach(spawnBot);
   poseFighter(player);
   notify('You washed up on Goob Island');
-}
-function cineSkip() {
-  if (!cine.on) return;
-  cineEnd(true);
 }
 function cineClearWords() { cine.words.length = 0; cineEl('cinewords').textContent = ''; cineEl('cinecaption').textContent = ''; cineEl('cinetitle').style.opacity = 0; }
 function cineFade(a, colour) { const el = cineEl('cinefade'); el.style.opacity = a; if (colour) el.style.background = colour; }

@@ -82,12 +82,6 @@ button:disabled { opacity: .5; cursor: default; }
 .map.current b::after { content: "Resume"; float: right; font-size: 12px; background: #ffd23f; color: #17181b; border-radius: 6px; padding: 2px 8px; margin-top: 4px; }
 .box { background: rgba(24,26,31,.9); border-radius: 12px; padding: 8px 14px; margin-bottom: 8px; }
 label { display: block; margin: 3px 0; cursor: pointer; }
-#songrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-#songrow label.pick { background: #ffd23f; color: #17181b; font-weight: 700; border-radius: 7px; padding: 3px 10px; }
-#songrow input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-#songrow label.pick:focus-within { outline: 2px solid #fff; }
-#songname { opacity: .8; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 190px; }
-#songoff { background: none; text-decoration: underline; font-size: 12.5px; opacity: .8; }
 summary { cursor: pointer; font-weight: 700; }
 details[open] summary { margin-bottom: 6px; }
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 1.3; } td { padding: 1px 0; } td:first-child { font-weight: 700; padding-right: 12px; white-space: nowrap; }
@@ -105,7 +99,6 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
 #cinewords .pop { position: absolute; }
 #cinecaption { left: 0; right: 0; bottom: 12vh; text-align: center; font-size: clamp(18px, 3.4vw, 34px); font-style: italic; font-weight: 600; text-shadow: 0 2px 8px #000, 0 0 2px #000; }
 #cinetitle { left: 0; right: 0; top: 17vh; text-align: center; font-size: clamp(40px, 10vw, 112px); line-height: 1; font-weight: 900; letter-spacing: .04em; color: #ffd23f; -webkit-text-stroke: 12px #221708; paint-order: stroke fill; opacity: 0; }
-#cineskip { right: 18px; bottom: 2.2vh; font-size: 13px; opacity: .8; }
 #mapask { position: fixed; left: 50%; top: 30%; transform: translateX(-50%); padding: 14px 24px; font-size: 16px; line-height: 2; white-space: nowrap; }
 #mapask b { display: inline-block; min-width: 24px; margin-right: 8px; text-align: center; background: #ffd23f; color: #17181b; border-radius: 5px; }
 </style>
@@ -137,7 +130,6 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
   <div id="cinewords"></div>
   <div id="cinecaption"></div>
   <div id="cinetitle">GOOB ISLAND</div>
-  <div id="cineskip">Space: skip</div>
 </div>
 <div id="menu">
   <div id="card">
@@ -151,12 +143,6 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
     <div class="box">
       <label><input type="checkbox" id="shootback" checked> Enemies shoot back</label>
       <label><input type="checkbox" id="lowend"> Island: low-end device</label>
-      <label><input type="checkbox" id="skipcine"> Island: skip the boat trip</label>
-    </div>
-    <div class="box" id="songrow">Boombox song: <span id="songname">the game's own</span>
-      <label class="pick">Use my MP3<input type="file" id="songfile" accept="audio/*"></label>
-      <button id="songoff" hidden>remove</button>
-      <div class="small" style="margin-top:0;width:100%">Your file stays in this browser, on this computer.</div>
     </div>
     <details class="box">
       <summary>Controls</summary>
@@ -177,7 +163,6 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
       <tr><td>F</td><td>fullscreen</td></tr>
       <tr><td>N</td><td>fly (testing): Space up, C down, wheel speed</td></tr>
       <tr><td>T</td><td>island map, then 1 or 2 (temporary)</td></tr>
-      <tr><td>Space / Enter</td><td>skip the boat trip</td></tr>
       <tr><td>P / M / Esc</td><td>enemy fire / sound / pause</td></tr>
     </table>
     </details>

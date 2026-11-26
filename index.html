@@ -82,12 +82,6 @@ button:disabled { opacity: .5; cursor: default; }
 .map.current b::after { content: "Resume"; float: right; font-size: 12px; background: #ffd23f; color: #17181b; border-radius: 6px; padding: 2px 8px; margin-top: 4px; }
 .box { background: rgba(24,26,31,.9); border-radius: 12px; padding: 8px 14px; margin-bottom: 8px; }
 label { display: block; margin: 3px 0; cursor: pointer; }
-#songrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-#songrow label.pick { background: #ffd23f; color: #17181b; font-weight: 700; border-radius: 7px; padding: 3px 10px; }
-#songrow input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-#songrow label.pick:focus-within { outline: 2px solid #fff; }
-#songname { opacity: .8; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 190px; }
-#songoff { background: none; text-decoration: underline; font-size: 12.5px; opacity: .8; }
 summary { cursor: pointer; font-weight: 700; }
 details[open] summary { margin-bottom: 6px; }
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 1.3; } td { padding: 1px 0; } td:first-child { font-weight: 700; padding-right: 12px; white-space: nowrap; }
@@ -105,7 +99,6 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
 #cinewords .pop { position: absolute; }
 #cinecaption { left: 0; right: 0; bottom: 12vh; text-align: center; font-size: clamp(18px, 3.4vw, 34px); font-style: italic; font-weight: 600; text-shadow: 0 2px 8px #000, 0 0 2px #000; }
 #cinetitle { left: 0; right: 0; top: 17vh; text-align: center; font-size: clamp(40px, 10vw, 112px); line-height: 1; font-weight: 900; letter-spacing: .04em; color: #ffd23f; -webkit-text-stroke: 12px #221708; paint-order: stroke fill; opacity: 0; }
-#cineskip { right: 18px; bottom: 2.2vh; font-size: 13px; opacity: .8; }
 #mapask { position: fixed; left: 50%; top: 30%; transform: translateX(-50%); padding: 14px 24px; font-size: 16px; line-height: 2; white-space: nowrap; }
 #mapask b { display: inline-block; min-width: 24px; margin-right: 8px; text-align: center; background: #ffd23f; color: #17181b; border-radius: 5px; }
 </style>
@@ -137,7 +130,6 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
   <div id="cinewords"></div>
   <div id="cinecaption"></div>
   <div id="cinetitle">GOOB ISLAND</div>
-  <div id="cineskip">Space: skip</div>
 </div>
 <div id="menu">
   <div id="card">
@@ -151,12 +143,6 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
     <div class="box">
       <label><input type="checkbox" id="shootback" checked> Enemies shoot back</label>
       <label><input type="checkbox" id="lowend"> Island: low-end device</label>
-      <label><input type="checkbox" id="skipcine"> Island: skip the boat trip</label>
-    </div>
-    <div class="box" id="songrow">Boombox song: <span id="songname">the game's own</span>
-      <label class="pick">Use my MP3<input type="file" id="songfile" accept="audio/*"></label>
-      <button id="songoff" hidden>remove</button>
-      <div class="small" style="margin-top:0;width:100%">Your file stays in this browser, on this computer.</div>
     </div>
     <details class="box">
       <summary>Controls</summary>
@@ -177,7 +163,6 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
       <tr><td>F</td><td>fullscreen</td></tr>
       <tr><td>N</td><td>fly (testing): Space up, C down, wheel speed</td></tr>
       <tr><td>T</td><td>island map, then 1 or 2 (temporary)</td></tr>
-      <tr><td>Space / Enter</td><td>skip the boat trip</td></tr>
       <tr><td>P / M / Esc</td><td>enemy fire / sound / pause</td></tr>
     </table>
     </details>
@@ -606,31 +591,6 @@ const Sound = (() => {
     input.connect(low); low.connect(mid); mid.connect(meter); mid.connect(out); out.connect(scene);
     return { input, out, next: 0 };
   }
-  // the player's own song, if they chose one from their computer (it is never part of the game)
-  const song = { bytes: null, buffer: null, bpm: 0, wait: null };
-  // how fast a song is: where its jumps in loudness line up with themselves best
-  function tempo(buf) {
-    const x = buf.getChannelData(0), hop = Math.floor(buf.sampleRate / 100), n = Math.min(6000, Math.floor(x.length / hop)), rise = new Float32Array(n);
-    let last = 0;
-    for (let i = 0; i < n; i++) { let e = 0; for (let k = 0; k < hop; k += 4) e += x[i * hop + k] ** 2; e = Math.sqrt(e); rise[i] = Math.max(0, e - last); last = e; }
-    let best = 120, score = -1;
-    for (let bpm = 80; bpm <= 175; bpm++) {
-      const lag = 6000 / bpm; let s = 0;
-      for (let i = 0; i + 2 * lag + 2 < n; i++) { const j = Math.floor(i + lag), k = Math.floor(i + 2 * lag); s += rise[i] * (rise[j] + rise[j + 1] + 0.5 * (rise[k] + rise[k + 1])); }
-      if (s > score) { score = s; best = bpm; }
-    }
-    return best;
-  }
-  function decodeSong() {
-    if (!ac || !song.bytes || song.buffer) return Promise.resolve(!!song.buffer);
-    if (!song.wait) {
-      const bytes = song.bytes;
-      song.wait = new Promise((ok, no) => ac.decodeAudioData(bytes.slice(0), ok, no)).then(
-        buf => { if (song.bytes !== bytes) return false; song.buffer = buf; song.bpm = tempo(buf); song.wait = null; return true; },
-        () => { if (song.bytes === bytes) { song.bytes = null; song.wait = null; } return false; });
-    }
-    return song.wait;
-  }
   // the game's own tune, a hype one: 128 beats a minute in E minor, four bars round and round
   const BEAT = 128;
   const ROOTS = [41.2, 41.2, 65.41, 73.42], STABS = [[329.6, 392, 493.9], [329.6, 392, 493.9], [261.6, 329.6, 392], [293.7, 370, 440]];
@@ -658,20 +618,15 @@ const Sound = (() => {
     if (k >= 32) for (const [t, semi, len] of HOOK[bar]) if (t === s) { const f = 440 * 2 ** (semi / 12); tone(f * 0.94, f, 0.05, 0.05, at, 'square', out); tone(f, f, six * len * 1.1, 0.10, at + 0.02, 'square', out); tone(f * 1.007, f * 1.007, six * len * 1.1, 0.08, at, 'sawtooth', out); tone(f * 2, f * 2, six * len * 0.6, 0.03, at, 'triangle', out); }
   }
   const music = {
-    get bpm() { return song.buffer ? song.bpm : BEAT; },
+    bpm: BEAT,
     // seconds the music has been going by the sound card's own clock (null before it starts)
     time() { return deck ? ac.currentTime - deck.t0 : null; },
     // call every frame with the seconds since the music was meant to begin; it plays what is due
     tick(at) {
       if (!sceneInit() || ac.state !== 'running' || at < 0) return;
       const six = 15 / BEAT;
-      if (song.bytes && !song.buffer) { decodeSong(); return; }
       if (!deck) { deck = makeDeck(); deck.t0 = ac.currentTime - at; deck.next = Math.max(0, Math.ceil(at / six)); }
       const t = ac.currentTime - deck.t0;
-      if (song.buffer) {
-        if (!deck.source) { deck.source = ac.createBufferSource(); deck.source.buffer = song.buffer; deck.source.loop = true; deck.source.connect(deck.input); deck.source.start(0, t % song.buffer.duration); }
-        return;
-      }
       while (deck.next * six < t + 0.25) { if (deck.next * six >= t - 0.05) step(deck.next, Math.max(0, deck.next * six - t)); deck.next++; }
     },
     volume(v, muffle) { if (deck) deck.out.gain.setTargetAtTime(v, ac.currentTime, muffle || 0.08); },
@@ -685,7 +640,6 @@ const Sound = (() => {
     stop() {
       if (!deck) return;
       const d = deck; deck = null;
-      if (d.source) d.source.stop(ac.currentTime + 0.1);
       d.out.gain.setTargetAtTime(0, ac.currentTime, 0.02);
       setTimeout(() => d.out.disconnect(), 900);
     }
@@ -881,9 +835,6 @@ const Sound = (() => {
   return {
     init, music, loop, loopsOff,
     hush(on) { if (hushed !== on) { hushed = on; if (ac) level(); } },
-    // an audio file the player chose for the boombox (its bytes), or null for the game's own tune.
-    // resolves to whether it could be read
-    setSong(bytes) { song.bytes = bytes; song.buffer = null; song.wait = null; return bytes && ac ? decodeSong() : Promise.resolve(!!bytes); },
     // p: left/right, -1 to 1 (optional)
     play(name, vol, k, p) { if (ac && !muted && ac.state === 'running') { pan = p || 0; try { play[name](vol === undefined ? 1 : vol, k); } finally { pan = 0; } } },
     toggle() { muted = !muted; if (ac) level(); return muted; }
@@ -3715,7 +3666,7 @@ const keys = new Set();
 const mouse = { fire: false, pressed: false, aim: false, drag: null };
 const game = { running: false, locked: false, lockWorked: false, aimToggle: false, enemiesShoot: true, godMode: false, kills: 0, deaths: 0, marker: 0, hurtFade: 0, note: 0, time: 0 };
 const ui = {};
-for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'skipcine', 'songfile', 'songname', 'songoff', 'msg', 'reloadbar', 'boomflash', 'minimap', 'killcount']) ui[id] = document.getElementById(id);
+for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'msg', 'reloadbar', 'boomflash', 'minimap', 'killcount']) ui[id] = document.getElementById(id);
 let hudDirty = true;
 function notify(text) { }                                    // the messages in the middle of the screen are switched off
 
@@ -3731,7 +3682,7 @@ function lockMouse() {
 }
 // start (or carry on) playing
 function enterGame() { Sound.init(); game.enemiesShoot = ui.shootback.checked; setRunning(true); ui.play.blur(); ui.island.blur(); lockMouse(); canvas.focus(); }
-// the two tiles on the menu. The island starts with the boat trip, unless he asks to skip it
+// the two tiles on the menu. The island always starts with the boat trip
 function pickMap(name) {
   const resume = game.started && world.map === name && !(name === 'island' && world.low !== ui.lowend.checked);
   if (!resume) {
@@ -3741,8 +3692,7 @@ function pickMap(name) {
   }
   game.started = true;
   enterGame();
-  if (!resume && name === 'island' && !ui.skipcine.checked) cineStart();
-  else if (!resume && name === 'island') washUp();
+  if (!resume && name === 'island') cineStart();
   menuTiles();
 }
 function menuTiles() {
@@ -3752,35 +3702,6 @@ function menuTiles() {
 ui.play.addEventListener('click', () => pickMap('plate'));
 ui.island.addEventListener('click', () => pickMap('island'));
 
-// the player's own song for the boombox: kept in this browser only
-function songStore(mode, run) {
-  return new Promise(done => {
-    try {
-      const open = indexedDB.open('goobmen', 1);
-      open.onupgradeneeded = () => open.result.createObjectStore('files');
-      open.onerror = () => done(null);
-      open.onsuccess = () => {
-        const tx = open.result.transaction('files', mode), q = run(tx.objectStore('files'));
-        tx.oncomplete = () => { done(q.result); open.result.close(); };
-        tx.onerror = tx.onabort = () => { done(null); open.result.close(); };
-      };
-    } catch (e) { done(null); }
-  });
-}
-function showSong(name) { ui.songname.textContent = name || "the game's own"; ui.songoff.hidden = !name; }
-ui.songfile.addEventListener('change', async () => {
-  const file = ui.songfile.files[0];
-  ui.songfile.value = '';
-  if (!file) return;
-  if (file.size > 30e6) { ui.songname.textContent = 'that file is too big (30 MB at most)'; return; }
-  const bytes = await file.arrayBuffer();
-  Sound.init();
-  if (!(await Sound.setSong(bytes))) { showSong(null); ui.songname.textContent = "couldn't play that file, try an MP3"; return; }
-  showSong(file.name);
-  songStore('readwrite', st => st.put({ name: file.name, bytes }, 'song'));
-});
-ui.songoff.addEventListener('click', () => { Sound.setSong(null); showSong(null); songStore('readwrite', st => st.delete('song')); });
-songStore('readonly', st => st.get('song')).then(saved => { if (saved) { Sound.setSong(saved.bytes); showSong(saved.name); } });
 document.addEventListener('pointerlockchange', () => {
   game.locked = document.pointerLockElement === canvas;
   if (game.locked) game.lockWorked = true; else if (game.running) setRunning(false);
@@ -3819,11 +3740,10 @@ function fullscreen() {
 addEventListener('keydown', e => {
   if (!game.running) { if (e.code === 'Escape' && !game.lockWorked && game.started) setRunning(true); return; }
   if (e.metaKey || e.altKey) return;
-  if (cine.on) {                                              // watching: only skip, pause, sound and fullscreen
+  if (cine.on) {                                              // watching: only pause, sound and fullscreen (no skipping)
     e.preventDefault();
     if (e.repeat) return;
-    if (e.code === 'Space' || e.code === 'Enter') cineSkip();
-    else if (e.code === 'Escape') setRunning(false);
+    if (e.code === 'Escape') setRunning(false);
     else if (e.code === 'KeyF') fullscreen();
     else if (e.code === 'KeyM') Sound.toggle();
     return;
@@ -3837,7 +3757,7 @@ addEventListener('keydown', e => {
   if (e.code === 'Escape') setRunning(false);
   else if (e.code === 'Space') { if (!FLY.on) startJump(player); }
   else if (e.code === 'KeyR') startReload(player);
-  else if (world.asking && ['Digit1', 'Digit2', 'Numpad1', 'Numpad2'].includes(e.code)) { setMap('island', e.code.endsWith('2')); menuTiles(); }
+  else if (world.asking && ['Digit1', 'Digit2', 'Numpad1', 'Numpad2'].includes(e.code)) { setMap('island', e.code.endsWith('2')); menuTiles(); cineStart(); }
   else if (e.code === 'Digit1') equip(player, 'ak');
   else if (e.code === 'Digit2') equip(player, 'glock');
   else if (e.code === 'Digit3') equip(player, 'awp');
@@ -7043,7 +6963,7 @@ const PLANK = [part({ kind: 1, c: MAHOGANY, r: 0.3 }, MB.box(0.13, 0.035, 0.7, 0
 const CHARRED = [part({ kind: 9, c: MAHOGANY, r: 0.6, glow: 1 }, MB.box(0.13, 0.035, 0.7, 0.008))];
 // ======================================================================= the boat trip
 // choosing the island from the menu plays this: you and the skipper cruising in with the boombox going,
-// a cheers, a rock, and waking up on the beach beside the burning wreck. Space skips it
+// a cheers, a rock, and waking up on the beach beside the burning wreck. It cannot be skipped
 const CINE_WORDS = false;
 const CINE = {
   driver: 5.5, you: 10.0, boom: 14.5, cheers: 18.5, chug: 24.0, point: 27.0, huh: 28.2, rock: 29.0, hit: 31.0, black: 33.2, eyes: 36.0, up: 41.0, end: 53.4
@@ -7510,10 +7430,6 @@ function washUp() {
   bots.forEach(spawnBot);
   poseFighter(player);
   notify('You washed up on Goob Island');
-}
-function cineSkip() {
-  if (!cine.on) return;
-  cineEnd(true);
 }
 function cineClearWords() { cine.words.length = 0; cineEl('cinewords').textContent = ''; cineEl('cinecaption').textContent = ''; cineEl('cinetitle').style.opacity = 0; }
 function cineFade(a, colour) { const el = cineEl('cinefade'); el.style.opacity = a; if (colour) el.style.background = colour; }
@@ -8471,7 +8387,7 @@ window.__game = {
   draw() { manual = true; render(); hud(0); },
   resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE, bikes, HOUSES, houseWorld,
   look(eye, at) { testView = eye ? { eye, at } : null; },
-  cine, CINE, TRIP, Sound, cineStart, cineSkip, get wreck() { return wreck; },
+  cine, CINE, TRIP, Sound, cineStart, get wreck() { return wreck; },
   watch(t) { manual = true; if (!cine.on || t < cine.t) { cineStart(); render(); } while (cine.on && cine.t < t - 1e-6) cineStep(Math.min(1 / 20, t - cine.t)); render(); if (cine.on) cineOverlay(0); },
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },

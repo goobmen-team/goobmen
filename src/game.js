@@ -539,7 +539,7 @@ const keys = new Set();
 const mouse = { fire: false, pressed: false, aim: false, drag: null };
 const game = { running: false, locked: false, lockWorked: false, aimToggle: false, enemiesShoot: true, godMode: false, kills: 0, deaths: 0, marker: 0, hurtFade: 0, note: 0, time: 0 };
 const ui = {};
-for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'skipcine', 'songfile', 'songname', 'songoff', 'msg', 'reloadbar', 'boomflash', 'minimap', 'killcount']) ui[id] = document.getElementById(id);
+for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'msg', 'reloadbar', 'boomflash', 'minimap', 'killcount']) ui[id] = document.getElementById(id);
 let hudDirty = true;
 function notify(text) { }                                    // the messages in the middle of the screen are switched off
 
@@ -555,7 +555,7 @@ function lockMouse() {
 }
 // start (or carry on) playing
 function enterGame() { Sound.init(); game.enemiesShoot = ui.shootback.checked; setRunning(true); ui.play.blur(); ui.island.blur(); lockMouse(); canvas.focus(); }
-// the two tiles on the menu. The island starts with the boat trip, unless he asks to skip it
+// the two tiles on the menu. The island always starts with the boat trip
 function pickMap(name) {
   const resume = game.started && world.map === name && !(name === 'island' && world.low !== ui.lowend.checked);
   if (!resume) {
@@ -565,8 +565,7 @@ function pickMap(name) {
   }
   game.started = true;
   enterGame();
-  if (!resume && name === 'island' && !ui.skipcine.checked) cineStart();
-  else if (!resume && name === 'island') washUp();
+  if (!resume && name === 'island') cineStart();
   menuTiles();
 }
 function menuTiles() {
@@ -576,35 +575,6 @@ function menuTiles() {
 ui.play.addEventListener('click', () => pickMap('plate'));
 ui.island.addEventListener('click', () => pickMap('island'));
 
-// the player's own song for the boombox: kept in this browser only
-function songStore(mode, run) {
-  return new Promise(done => {
-    try {
-      const open = indexedDB.open('goobmen', 1);
-      open.onupgradeneeded = () => open.result.createObjectStore('files');
-      open.onerror = () => done(null);
-      open.onsuccess = () => {
-        const tx = open.result.transaction('files', mode), q = run(tx.objectStore('files'));
-        tx.oncomplete = () => { done(q.result); open.result.close(); };
-        tx.onerror = tx.onabort = () => { done(null); open.result.close(); };
-      };
-    } catch (e) { done(null); }
-  });
-}
-function showSong(name) { ui.songname.textContent = name || "the game's own"; ui.songoff.hidden = !name; }
-ui.songfile.addEventListener('change', async () => {
-  const file = ui.songfile.files[0];
-  ui.songfile.value = '';
-  if (!file) return;
-  if (file.size > 30e6) { ui.songname.textContent = 'that file is too big (30 MB at most)'; return; }
-  const bytes = await file.arrayBuffer();
-  Sound.init();
-  if (!(await Sound.setSong(bytes))) { showSong(null); ui.songname.textContent = "couldn't play that file, try an MP3"; return; }
-  showSong(file.name);
-  songStore('readwrite', st => st.put({ name: file.name, bytes }, 'song'));
-});
-ui.songoff.addEventListener('click', () => { Sound.setSong(null); showSong(null); songStore('readwrite', st => st.delete('song')); });
-songStore('readonly', st => st.get('song')).then(saved => { if (saved) { Sound.setSong(saved.bytes); showSong(saved.name); } });
 document.addEventListener('pointerlockchange', () => {
   game.locked = document.pointerLockElement === canvas;
   if (game.locked) game.lockWorked = true; else if (game.running) setRunning(false);
@@ -643,11 +613,10 @@ function fullscreen() {
 addEventListener('keydown', e => {
   if (!game.running) { if (e.code === 'Escape' && !game.lockWorked && game.started) setRunning(true); return; }
   if (e.metaKey || e.altKey) return;
-  if (cine.on) {                                              // watching: only skip, pause, sound and fullscreen
+  if (cine.on) {                                              // watching: only pause, sound and fullscreen (no skipping)
     e.preventDefault();
     if (e.repeat) return;
-    if (e.code === 'Space' || e.code === 'Enter') cineSkip();
-    else if (e.code === 'Escape') setRunning(false);
+    if (e.code === 'Escape') setRunning(false);
     else if (e.code === 'KeyF') fullscreen();
     else if (e.code === 'KeyM') Sound.toggle();
     return;
@@ -661,7 +630,7 @@ addEventListener('keydown', e => {
   if (e.code === 'Escape') setRunning(false);
   else if (e.code === 'Space') { if (!FLY.on) startJump(player); }
   else if (e.code === 'KeyR') startReload(player);
-  else if (world.asking && ['Digit1', 'Digit2', 'Numpad1', 'Numpad2'].includes(e.code)) { setMap('island', e.code.endsWith('2')); menuTiles(); }
+  else if (world.asking && ['Digit1', 'Digit2', 'Numpad1', 'Numpad2'].includes(e.code)) { setMap('island', e.code.endsWith('2')); menuTiles(); cineStart(); }
   else if (e.code === 'Digit1') equip(player, 'ak');
   else if (e.code === 'Digit2') equip(player, 'glock');
   else if (e.code === 'Digit3') equip(player, 'awp');
@@ -1262,7 +1231,7 @@ window.__game = {
   draw() { manual = true; render(); hud(0); },
   resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE, bikes, HOUSES, houseWorld,
   look(eye, at) { testView = eye ? { eye, at } : null; },
-  cine, CINE, TRIP, Sound, cineStart, cineSkip, get wreck() { return wreck; },
+  cine, CINE, TRIP, Sound, cineStart, get wreck() { return wreck; },
   watch(t) { manual = true; if (!cine.on || t < cine.t) { cineStart(); render(); } while (cine.on && cine.t < t - 1e-6) cineStep(Math.min(1 / 20, t - cine.t)); render(); if (cine.on) cineOverlay(0); },
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },

@@ -4,9 +4,9 @@ A third-person caveman fighting game with real guns. Loot chests, fight other ca
 
 **To play:** download `index.html` and open it in Chrome. The whole game is in that one file.
 
-On the menu pick **Baseplate** or **Island**. The island starts with a boat trip: you in your gold shades, your mate at the wheel, a boombox and a few cans, and then a rock. You wake up on the beach with the boat still burning, get up, and throw the shades in the sand. Space skips it, and there is a box on the menu to skip it every time.
+On the menu pick **Baseplate** or **Island**. The island starts with a boat trip: you in your gold shades, your mate at the wheel, a boombox and a few cans, and then a rock. You wake up on the beach with the boat still burning, get up, and throw the shades in the sand. It can't be skipped.
 
-The boombox plays the game's own tune. "Use my MP3" on the menu plays a song from your own computer instead; it stays in your browser and is never part of the game.
+The boombox plays the game's own tune.
 
 ## Controls
 
@@ -28,7 +28,6 @@ The boombox plays the game's own tune. "Use my MP3" on the menu plays a song fro
 | F | fullscreen |
 | N | flight mode for testing: WASD flies where you look, Space up, C down, wheel changes speed |
 | T | go to the island, then press 1 for the normal map or 2 for the optimized one; T again to go back (temporary) |
-| Space / Enter | skip the boat trip |
 | P / M / Esc | enemy fire / sound / pause |
 
 ## Files
