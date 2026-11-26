@@ -133,11 +133,12 @@ function reachMap() {
 // ---------------------------------------------------------------- chests
 const CHEST_COUNT = 130;
 // x, z, radius, how many: the places worth searching. whatever is left over lands anywhere
+const area = (name, radius, count) => [SPOTS[name][0], SPOTS[name][1], radius, count];
 const CHEST_AREAS = [
-  [SPOTS.circle[0], SPOTS.circle[1], 15, 7], [SPOTS.elder[0], SPOTS.elder[1], 15, 6], [SPOTS.bones[0], SPOTS.bones[1], 16, 7],
-  [SPOTS.camp[0], SPOTS.camp[1], 20, 10], [SPOTS.boulders[0], SPOTS.boulders[1], 32, 9], [SPOTS.crater[0], SPOTS.crater[1], 22, 9],
-  [SPOTS.pines[0], SPOTS.pines[1], 34, 8], [SPOTS.cove[0], SPOTS.cove[1], 30, 7],
-  [-124, 30, 22, 8], [-30, 96, 45, 9], [25, -125, 75, 10], [-112, -118, 48, 8]
+  area('circle', 15, 5), area('elder', 15, 4), area('bones', 16, 5), area('camp', 20, 7), area('boulders', 32, 6), area('crater', 22, 6),
+  area('pines', 34, 5), area('cove', 30, 4), area('volcano', 90, 9), area('tables', 55, 8), area('arches', 28, 7), area('mammoths', 32, 8),
+  area('fishers', 32, 8), area('grove', 38, 7), area('heads', 28, 7), area('fort', 26, 9), area('canyon', 50, 6), area('tower', 20, 5),
+  [-124, 30, 22, 4], [-30, 96, 45, 4], [25, -125, 75, 4]
 ];
 // level ground, room to stand in front of the lid, nothing growing through it
 function goodChestSpot(x, z, taken) {
@@ -340,9 +341,141 @@ function buildPlaces(T) {
       post(x, z, 0.3 * s, 3.5 * s);
     }
   }
+  // black boulders thrown round the lip of the volcano
+  {
+    const [cx, cz] = SPOTS.volcano;
+    for (let k = 0; k < 22; k++) {
+      const a = k / 22 * Math.PI * 2, d = 23 + bump(k, 41) * 30, x = cx + Math.sin(a) * d, z = cz + Math.cos(a) * d;
+      const at = here(x, z, 1000 + k), rock = stone([x, at[1] - 0.9, z], 0.8 + bump(k, 7) * 1.8, [0.17, 0.14, 0.13], 1);
+      if (first) addShape(rock.tris, ground(x, z));
+    }
+  }
+  // natural stone arches: one run of overlapping rock from the ground, over, and down again
+  {
+    const [cx, cz] = SPOTS.arches;
+    [[-14, -8, 0.3, 1], [8, 4, 1.5, 1.35], [-4, 18, 2.4, 0.8]].forEach(([ox, oz, turn, s], k) => {
+      const x = cx + ox, z = cz + oz, dx = Math.cos(turn), dz = Math.sin(turn), R = 5.2 * s, y = ground(x, z), PIECES = 17;
+      for (let n = 0; n <= PIECES; n++) {
+        const a = n / PIECES * Math.PI, out = Math.cos(a) * R, up = Math.pow(Math.sin(a), 0.75) * R * 1.15;
+        const px = x + dx * out, pz = z + dz * out, fat = s * (1.45 - 0.5 * Math.sin(a));
+        here(px, pz, 1100 + k * 20 + n);
+        const rock = stone([px, y - 0.5 + up, pz], fat, shadeOf(GREY, rnd(0.85, 1.08)), 1, [1.1, 1.15, 1.1]);
+        if (first && up < 1.4) addShape(rock.tris, ground(px, pz));    // only the feet get in your way
+      }
+    });
+  }
+  // where the mammoths went to die
+  {
+    const [cx, cz] = SPOTS.mammoths;
+    [[-12, -6, 0.4], [10, -10, 2.1], [2, 14, 4.2]].forEach(([ox, oz, turn], n) => {
+      const x = cx + ox, z = cz + oz, y = ground(x, z), at = here(x, z, 1200 + n), fx = Math.sin(turn), fz = Math.cos(turn);
+      const place = (along, side, up) => [x + fx * along - fz * side, y + up, z + fz * along + fx * side];
+      for (let k = 0; k < 4; k++) {
+        const along = -3 + k * 1.7, size = 1 - Math.abs(k - 1.5) * 0.12;
+        limb(place(along, 0, 2.3 * size), place(along + 1.7, 0, 2.3 * size), 0.22, 0.2, IVORY, 6);
+        for (const side of [-1, 1]) {
+          limb(place(along, 0, 2.3 * size), place(along, side * 1.7 * size, 1.9 * size), 0.15, 0.12, IVORY, 6);
+          limb(place(along, side * 1.7 * size, 1.9 * size), place(along, side * 2.0 * size, -0.2), 0.12, 0.06, IVORY, 6);
+          const foot = place(along, side * 2.0 * size, 0);
+          post(foot[0], foot[2], 0.18, 1.6);
+        }
+      }
+      const head = place(5.0, 0, 0), skull = stone([head[0], y + 0.1, head[2]], 1.1, IVORY, 1, [1, 1.1, 1]);
+      if (first) addShape(skull.tris, ground(head[0], head[2]));
+      for (const side of [-1, 1]) {                            // long curling tusks
+        let last = place(5.6, side * 0.6, 1.2);
+        for (let k = 1; k <= 7; k++) {
+          const u = k / 7, next = place(5.6 + 3.4 * Math.sin(u * 2.2), side * (0.6 + 1.1 * u), 1.2 - 1.1 * Math.sin(u * Math.PI) + 1.7 * u * u);
+          limb(last, next, 0.24 * (1 - u * 0.7), 0.24 * (1 - (u + 0.14) * 0.7), [0.88, 0.82, 0.68], 7);
+          last = next;
+        }
+      }
+    });
+  }
+  // a fishing camp: huts, drying racks and dugout boats
+  {
+    const [cx, cz] = SPOTS.fishers;
+    [[-16, -4], [-6, -16], [9, -14], [18, -2], [-12, 13], [12, 12]].forEach(([ox, oz], k) => {
+      const x = cx + ox, z = cz + oz, at = here(x, z, 1300 + k), s = 0.85 + bump(k, 5) * 0.4;
+      add(coneData(2.4 * s, 3.1 * s, 8), at, shadeOf(HIDE, 0.85 + bump(k, 9) * 0.35));
+      limb([x, at[1] + 2.8 * s, z], [x + 0.4, at[1] + 4.0 * s, z - 0.3], 0.07, 0.04, BARK, 5);
+      post(x, z, 1.8 * s, 2.4 * s);
+    });
+    for (let r = 0; r < 3; r++) {
+      const x = cx - 7 + r * 7, z = cz + 1, at = here(x, z, 1320 + r), y = at[1];
+      for (const side of [-1.6, 1.6]) { limb([x + side, y, z], [x + side, y + 2.2, z], 0.12, 0.1, BARK, 6); post(x + side, z, 0.16, 2.2); }
+      limb([x - 1.8, y + 2.1, z], [x + 1.8, y + 2.1, z], 0.07, 0.07, BARK, 6);
+      for (let f = 0; f < 6; f++) add(blob(0.12, 0.34, 0.05, [0, 0, 0], 0.1, 6), [x - 1.25 + f * 0.5, y + 1.7, z], [0.35, 0.45, 0.55]);
+    }
+    for (let k = 0; k < 3; k++) {
+      const x = cx - 9 + k * 9, z = cz + 20 + bump(k, 3) * 3, at = here(x, z, 1340 + k);
+      const boat = stone([x, at[1], z], 0.9, [0.38, 0.25, 0.13], 1, [2.6, 0.55, 0.75]);
+      if (first) addShape(boat.tris, ground(x, z));
+    }
+  }
+  // a grove of giant old trees
+  {
+    const [cx, cz] = SPOTS.grove;
+    for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+      const x = cx + i * 17 + (bump(i * 7, j * 3) - 0.5) * 9, z = cz + j * 17 + (bump(j * 5, i * 11) - 0.5) * 9;
+      if (pastCoast(x, z) > -10 || riverDistance(x, z) < RIVER.bank + 3 || bump(i * 13, j * 17) < 0.2) continue;
+      const at = here(x, z, 1400 + i * 9 + j), s = 1.7 + bump(i, j * 3) * 0.8;
+      leafy(at, s, bump(j * 2, i));
+      post(x, z, 0.4 * s, 3.5 * s);
+    }
+  }
+  // great stone heads, staring
+  {
+    const [cx, cz] = SPOTS.heads;
+    for (let k = 0; k < 6; k++) {
+      const x = cx - 6 + bump(k, 19) * 5, z = cz - 20 + k * 8, at = here(x, z, 1500 + k), y = at[1], s = 0.9 + bump(k, 23) * 0.35;
+      // a column of rock with the face built out of it, everything sunk into its neighbour
+      const head = stone([x, y - 0.5, z], 1.6 * s, [0.38, 0.37, 0.34], 1, [0.95, 1.2, 1.0]);
+      stone([x, y + 0.9 * s, z], 1.45 * s, [0.37, 0.36, 0.33], 1, [0.9, 1.2, 0.95]);
+      stone([x, y + 2.2 * s, z], 1.35 * s, [0.39, 0.38, 0.35], 1, [0.9, 1.2, 0.95]);
+      stone([x - 0.75 * s, y + 2.85 * s, z], 0.75 * s, [0.30, 0.29, 0.26], 1, [1.0, 0.6, 1.6]);    // brow
+      stone([x - 1.0 * s, y + 1.7 * s, z], 0.55 * s, [0.44, 0.42, 0.38], 1, [0.9, 1.9, 0.7]);      // nose
+      stone([x - 0.85 * s, y + 1.0 * s, z], 0.55 * s, [0.24, 0.23, 0.21], 1, [0.9, 0.5, 1.5]);     // mouth
+      if (first) addShape(head.tris, ground(x, z));
+    }
+  }
+  // a ring of sharpened logs with two ways in
+  {
+    const [cx, cz] = SPOTS.fort, R = 21;
+    for (let k = 0; k < 120; k++) {
+      const a = k / 120 * Math.PI * 2;
+      if (Math.abs(Math.sin(a * 0.5 - 0.55)) < 0.09 || Math.abs(Math.sin(a * 0.5 - 2.1)) < 0.09) continue;
+      const x = cx + Math.sin(a) * R, z = cz + Math.cos(a) * R, at = here(x, z, 1600 + k), high = 3.0 + bump(k, 29) * 0.7;
+      limb(at, [x, at[1] + high, z], 0.52, 0.48, BARK, 7);
+      limb([x, at[1] + high, z], [x, at[1] + high + 0.8, z], 0.48, 0.03, [0.45, 0.30, 0.17], 7);
+      post(x, z, 0.55, high);
+    }
+    for (const [ox, oz] of [[-7, -6], [8, 3], [-2, 9]]) {
+      const x = cx + ox, z = cz + oz, at = here(x, z, 1750 + ox);
+      add(coneData(2.5, 3.5, 9), at, shadeOf(HIDE, 0.95));
+      post(x, z, 1.9, 2.7);
+    }
+  }
+  // a lookout built of logs
+  {
+    const [cx, cz] = SPOTS.tower, at = here(cx, cz, 1800), y = at[1];
+    const corner = (i, j, h) => [cx + i * (2.6 - h * 0.09), y + h, cz + j * (2.6 - h * 0.09)];
+    const ring = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+    ring.forEach(([i, j], k) => {
+      const [ni, nj] = ring[(k + 1) % 4];
+      limb(corner(i, j, 0), corner(i, j, 11), 0.28, 0.2, BARK, 8);
+      for (const h of [0, 3.6, 7.2]) { limb(corner(i, j, h), corner(ni, nj, h + 3.6), 0.09, 0.09, BARK, 6); limb(corner(i, j, h + 3.6), corner(ni, nj, h + 3.6), 0.12, 0.12, BARK, 6); }
+      limb(corner(i, j, 12), corner(ni, nj, 12), 0.1, 0.1, BARK, 6);
+      limb(corner(i, j, 11), corner(i, j, 12.1), 0.12, 0.1, BARK, 6);
+      post(cx + i * 2.6, cz + j * 2.6, 0.32, 10);
+    });
+    for (let k = -5; k <= 5; k++) limb([cx - 2, y + 11, cz + k * 0.36], [cx + 2, y + 11, cz + k * 0.36], 0.17, 0.17, [0.42, 0.28, 0.15], 6);
+    add(coneData(2.9, 2.3, 8), [cx, y + 13.3, cz], shadeOf(HIDE, 0.8));
+    for (const [i, j] of ring) limb(corner(i, j, 12), [cx + i * 1.7, y + 13.4, cz + j * 1.7], 0.09, 0.09, BARK, 5);
+  }
   // palms crowding the shore of the bay
   for (let k = 0; k < 46; k++) {
-    const a = 0.55 + bump(k, 91) * 0.42, d = coast(a) - 8 - bump(k, 57) * 20, x = Math.sin(a) * d, z = Math.cos(a) * d;
+    const a = 0.62 + bump(k, 91) * 0.26, d = coast(a) - 8 - bump(k, 57) * 24, x = Math.sin(a) * d, z = Math.cos(a) * d;
     if (ground(x, z) < 0.3) continue;
     const at = here(x, z, 900 + k), s = 0.8 + bump(k, 13) * 0.5;
     palm(at, s, bump(k, 3) * 6.3);

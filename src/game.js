@@ -939,7 +939,7 @@ function render() {
   const eye = V.add(view.eye, [rand(-sh, sh), rand(-sh, sh), rand(-sh, sh)]);
   if (world.map === 'island') eye[1] = Math.max(eye[1], floorAt(eye[0], eye[2]) + 0.18);   // never inside a hill
   const fov = cam.fov + (0.17 - cam.fov) * smooth(0.45, 1, sc);
-  const proj = perspective(fov, w / Math.max(1, h), 0.08, world.map !== 'island' ? 160 : FLY.on ? 1200 : world.low ? 300 : 600);
+  const proj = perspective(fov, w / Math.max(1, h), 0.08, world.map !== 'island' ? 160 : FLY.on ? 2200 : world.low ? 300 : 600);
   const vp = mul4(proj, lookAt(eye, V.add(eye, view.fwd)));
   lastView = { vp, w: canvas.clientWidth, h: canvas.clientHeight };
 
@@ -1055,7 +1055,7 @@ window.__game = {
   ready: true, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
-  resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges,
+  resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork,
   look(eye, at) { testView = eye ? { eye, at } : null; },
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },

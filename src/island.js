@@ -7,20 +7,27 @@ const SEA = { level: -0.2, floor: -1.0, wade: 5, swim: 60, grace: 0.6, every: 0.
 const SKY = { plate: [219 / 255, 219 / 255, 219 / 255], island: [0.66, 0.80, 0.91] };
 // how far the coast is from the middle, in each direction (the same formula is in the water shader)
 const bulge = (a, at, wide) => Math.exp(-((Math.sin((a - at) / 2) / wide) ** 2));
-const coast = a => 2 * (105 + 13 * Math.sin(3 * a + 1.1) + 9 * Math.sin(5 * a + 2.6) + 4 * Math.sin(11 * a) + 3 * Math.sin(19 * a + 0.7)
+const coast = a => 4 * (105 + 13 * Math.sin(3 * a + 1.1) + 9 * Math.sin(5 * a + 2.6) + 4 * Math.sin(11 * a) + 3 * Math.sin(19 * a + 0.7)
   - 34 * bulge(a, 0.75, 0.11) + 28 * bulge(a, -2.3, 0.09));      // a deep bay and a long headland
 const pastCoast = (x, z) => Math.hypot(x, z) - coast(Math.atan2(x, z));
 const MEADOW = 2.0;                                          // the flat clearing you start in
 // x, z, how much ground to keep clear of ordinary trees
 const SPOTS = {
   circle: [-62, -52, 18], elder: [92, 36, 17], bones: [-96, 128, 18], camp: [168, 14, 22],
-  boulders: [38, 188, 36], crater: [150, -96, 40], pines: [-196, -34, 0], cove: [104, 112, 0]
+  boulders: [38, 188, 36], crater: [150, -96, 40], pines: [-196, -34, 0], cove: [104, 112, 0],
+  // the outer island
+  volcano: [-318, 48, 40], tables: [262, -168, 0], arches: [240, 56, 30], mammoths: [-222, -246, 34],
+  fishers: [36, 372, 36], grove: [-218, 214, 0], heads: [300, -22, 30], fort: [-262, -92, 34], canyon: [52, -352, 0], tower: [140, 258, 22]
 };
 // x, z, height, radius of the smaller hills
 const HILLS = [[112, 82, 11, 30], [104, -42, 9, 26], [-72, -104, 8, 24], [-16, 168, 8, 26], [158, -26, 7, 22], [-170, -44, 8, 26],
-  [62, -190, 10, 32], [-150, 108, 9, 28], [112, 170, 7, 24], [-46, -186, 11, 34], [196, 70, 8, 26], [-190, 40, 6, 22], [44, 62, 5, 18], [-52, 38, 4, 16]];
+  [62, -190, 10, 32], [-150, 108, 9, 28], [112, 170, 7, 24], [-46, -186, 11, 34], [196, 70, 8, 26], [-190, 40, 6, 22], [44, 62, 5, 18], [-52, 38, 4, 16],
+  [230, 20, 12, 40], [300, 190, 11, 44], [150, 215, 8, 30], [-60, 300, 13, 48], [-170, 170, 9, 34], [-330, 190, 15, 55], [-300, -190, 10, 40],
+  [-130, -300, 14, 52], [190, -260, 12, 46], [330, -110, 9, 38], [-390, -40, 12, 44], [110, 380, 8, 34], [-140, 390, 11, 42], [10, -430, 9, 36], [370, 120, 7, 30], [-250, 30, 8, 30]];
 const PEAK_AT = [25, -125], TWIN_AT = [-112, -118], MESA_AT = [-124, 30];
 const GORGE = [[-92, 94], [-48, 80], [-2, 106], [46, 90], [84, 70]];   // a winding pass with rock walls
+const CANYON = [[-4, -318], [34, -352], [72, -340], [104, -372]];     // a second, deeper one far to the south
+const TABLES = [[236, -150, 15, 11], [270, -182, 19, 14], [300, -146, 12, 8], [228, -196, 11, 9], [292, -214, 13, 10]];   // x, z, radius, height
 // two rivers from coast to coast. the bed is below sea level, so the same water fills them
 const RIVER = { wet: 6, bank: 10, valley: 30 };
 const smoothPath = knots => {
@@ -36,17 +43,37 @@ const smoothPath = knots => {
   return out;
 };
 const RIVERS = [
-  [[-40, -290], [-52, -200], [-55, -135], [-34, -82], [-30, -40], [-48, 2], [-74, 42], [-112, 78], [-140, 132], [-146, 205], [-170, 290]],
-  [[160, -285], [108, -192], [96, -122], [80, -62], [52, -22], [46, 20], [62, 54], [102, 60], [152, 72], [204, 112], [275, 150]]
+  [[-70, -760], [-96, -560], [-34, -420], [-40, -290], [-52, -200], [-55, -135], [-34, -82], [-30, -40], [-48, 2], [-74, 42], [-112, 78], [-140, 132], [-146, 205], [-170, 290], [-132, 392], [-196, 490], [-262, 740]],
+  [[250, -740], [190, -540], [138, -400], [160, -285], [108, -192], [96, -122], [80, -62], [52, -22], [46, 20], [62, 54], [102, 60], [152, 72], [204, 112], [275, 150], [372, 204], [480, 196], [720, 262]]
 ].map(smoothPath);
-const riverDistance = (x, z) => Math.min(pathDistance(x, z, RIVERS[0]), pathDistance(x, z, RIVERS[1]));
+// in short pieces with a box round each, so far-off ones are skipped quickly
+const REACHES = RIVERS.flatMap(path => {
+  const out = [];
+  for (let k = 0; k + 1 < path.length; k += 6) {
+    const pts = path.slice(k, k + 7), xs = pts.map(p => p[0]), zs = pts.map(p => p[1]);
+    out.push({ pts, x0: Math.min(...xs), x1: Math.max(...xs), z0: Math.min(...zs), z1: Math.max(...zs) });
+  }
+  return out;
+});
+function riverDistance(x, z) {
+  let best = 99;                                             // further than anything cares about
+  for (const r of REACHES) {
+    const dx = Math.max(r.x0 - x, 0, x - r.x1), dz = Math.max(r.z0 - z, 0, z - r.z1);
+    if (dx < best && dz < best) best = Math.min(best, pathDistance(x, z, r.pts));
+  }
+  return best;
+}
 const bridges = [];                                          // filled in by bridges.js
 const MOUTHS = [];                                           // x, z of each place a river meets the coast
-for (const path of RIVERS) for (let k = 0; k + 1 < path.length; k++) {
-  const a = path[k], b = path[k + 1], ea = pastCoast(a[0], a[1]), eb = pastCoast(b[0], b[1]);
-  if ((ea < 0) === (eb < 0)) continue;
-  const u = ea / (ea - eb);
-  MOUTHS.push(a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u);
+for (const path of RIVERS) {
+  const found = [];
+  for (let k = 0; k + 1 < path.length; k++) {
+    const a = path[k], b = path[k + 1], ea = pastCoast(a[0], a[1]), eb = pastCoast(b[0], b[1]);
+    if ((ea < 0) === (eb < 0)) continue;
+    const u = ea / (ea - eb);
+    found.push([a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u]);
+  }
+  MOUTHS.push(...found[0], ...found[found.length - 1]);      // one at each end
 }
 const bump = (i, j) => { const n = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return n - Math.floor(n); };
 function roll(x, z, size) {
@@ -106,17 +133,32 @@ function rawGround(x, z, e) {
     const rim = smooth(40, 31, kd) * smooth(19, 27, kd) * smooth(0.18, 0.42, side);
     h = h * (1 - smooth(44, 30, kd)) + (2.0 + roll(x, z, 11) * 0.5) * smooth(44, 30, kd) + 10 * rim;
   }
+  // the volcano: a tall cone with a bowl in the top
+  const [vx, vz] = SPOTS.volcano, vm = Math.hypot(x - vx, z - vz) / 105;
+  if (vm < 1) h += 52 * (1 - vm) ** 1.5 * (0.9 + 0.2 * Math.abs(Math.sin(Math.atan2(x - vx, z - vz) * 5 + roll(x, z, 19) * 3))) - 17 * smooth(0.2, 0.05, vm);
+  // table rocks: flat tops on sheer sides
+  for (const [tx, tz, wide, tall] of TABLES) {
+    const q = Math.hypot(x - tx, z - tz) + roll(x, z, 7) * 3.5;
+    if (q < wide + 3) { const up = smooth(wide + 2, wide - 1.5, q); h = h * (1 - up) + (tall + roll(x, z, 8) * 0.8) * up; }
+  }
+  // the far canyon
+  const c = pathDistance(x, z, CANYON) + roll(x, z, 8) * 3;
+  if (c < 24) {
+    h += 11 * smooth(23, 11, c);
+    const bottom = smooth(8, 4, c);
+    h = h * (1 - bottom) + (1.3 + roll(x, z, 12) * 0.5) * bottom;
+  }
   // level ground where something stands
-  for (const name of ['circle', 'elder', 'bones', 'camp', 'boulders']) {
+  for (const name of ['circle', 'elder', 'bones', 'camp', 'boulders', 'arches', 'mammoths', 'fishers', 'heads', 'fort', 'tower']) {
     const [px, pz, r] = SPOTS[name], flat = smooth(r + 10, r - 2, Math.hypot(x - px, z - pz));
-    h = h * (1 - flat) + (name === 'circle' || name === 'elder' ? 4.2 : 2.4) * flat;
+    h = h * (1 - flat) + (name === 'circle' || name === 'elder' || name === 'tower' || name === 'heads' ? 4.2 : 2.4) * flat;
   }
 
   h = MEADOW + (h - MEADOW) * smooth(12, 27, Math.hypot(x, z));
   return Math.max(0, h) * smooth(0, 24, -e);
 }
 // heights on a grid: the drawn land and your feet read the same numbers
-const GRID = { half: 345, n: 500 };
+const GRID = { half: 660, n: 760 };
 GRID.cell = GRID.half * 2 / GRID.n;
 const heights = new Float32Array((GRID.n + 1) * (GRID.n + 1));
 for (let j = 0; j <= GRID.n; j++) for (let i = 0; i <= GRID.n; i++) heights[j * (GRID.n + 1) + i] = shape(i * GRID.cell - GRID.half, j * GRID.cell - GRID.half);
@@ -330,7 +372,7 @@ ${FOG}
 float bulge(float a, float at, float wide) { float q = sin((a - at) / 2.0) / wide; return exp(-q * q); }
 void main() {
   float a = atan(vW.x, vW.z);
-  float past = length(vW.xz) - 2.0 * (105.0 + 13.0 * sin(3.0 * a + 1.1) + 9.0 * sin(5.0 * a + 2.6) + 4.0 * sin(11.0 * a) + 3.0 * sin(19.0 * a + 0.7)
+  float past = length(vW.xz) - 4.0 * (105.0 + 13.0 * sin(3.0 * a + 1.1) + 9.0 * sin(5.0 * a + 2.6) + 4.0 * sin(11.0 * a) + 3.0 * sin(19.0 * a + 0.7)
     - 34.0 * bulge(a, 0.75, 0.11) + 28.0 * bulge(a, -2.3, 0.09));
   float wave = sin(vW.x * 0.9 + uTime * 1.4) * sin(vW.z * 0.7 - uTime * 1.1) + 0.5 * sin((vW.x + vW.z) * 2.1 + uTime * 2.3);
   float mouth = 0.0;                                        // 1 where a river runs into the sea
@@ -347,9 +389,11 @@ function groundColour(x, z, h, up) {
   let col = V.lerp(GRASS, LUSH, smooth(-0.1, 0.2, roll(x, z, 29)));
   col = V.lerp(col, DRY, smooth(0.08, 0.28, roll(x + 90, z, 23)));
   col = V.lerp(SAND, col, smooth(0.7, 1.5, h));
-  col = V.lerp(col, DIRT, smooth(7, 4, pathDistance(x, z, GORGE)));
+  col = V.lerp(col, DIRT, smooth(7, 4, Math.min(pathDistance(x, z, GORGE), pathDistance(x, z, CANYON))));
+  const ash = Math.hypot(x - SPOTS.volcano[0], z - SPOTS.volcano[1]);
+  col = V.lerp(col, [0.20, 0.17, 0.15], smooth(80, 45, ash + roll(x, z, 9) * 14) * smooth(8, 16, h));     // dark rock up the volcano
   col = V.lerp(col, ROCK, Math.max(smooth(0.17, 0.30, 1 - up), smooth(17, 21, h)));
-  col = V.lerp(col, PEAK, smooth(24, 28, h));
+  col = V.lerp(col, PEAK, smooth(24, 28, h) * smooth(60, 90, Math.hypot(x - SPOTS.volcano[0], z - SPOTS.volcano[1])));
   return V.lerp(col, DEEP, smooth(0, 0.8, -h));
 }
 // the grid as a mesh
@@ -378,13 +422,15 @@ const land = (() => {
 const solids = [], leaves = [];                              // what you bump into, what the camera avoids
 // built in square patches, so only the ones in view get drawn
 const PATCH = 44;
-function buildFlora(low) {
-  const patches = new Map(), first = !solids.length;          // what you bump into is the same for both
-  let cur = null, seed = 1;
+// what stands where is decided once. the shapes are only made for the patches you come near, in a
+// full version close by and a light one further off
+function buildFlora() {
+  const patches = new Map(), first = !solids.length;
+  let cur = null, seed = 1, low = false;
   const rnd = (a, b) => { seed = seed * 16807 % 2147483647; return a + (b - a) * seed / 2147483647; };
   const patch = (x, z) => {
     const i = Math.floor((x + GRID.half) / PATCH), j = Math.floor((z + GRID.half) / PATCH), key = i * 100 + j;
-    if (!patches.has(key)) patches.set(key, { x: (i + 0.5) * PATCH - GRID.half, z: (j + 0.5) * PATCH - GRID.half, big: { v: [], i: [] } });
+    if (!patches.has(key)) patches.set(key, { x: (i + 0.5) * PATCH - GRID.half, z: (j + 0.5) * PATCH - GRID.half, big: { v: [], i: [] }, jobs: [], mesh: [null, null] });
     return patches.get(key);
   };
   const vert = (m, p, col, n) => { m.v.push(p[0], p[1], p[2], col[0], col[1], col[2], n[0], n[1], n[2]); };
@@ -554,52 +600,86 @@ function buildFlora(low) {
   };
 
   // one chance every few metres, nudged about; woods grow where the noise says so
-  const STEP = 6.2;
-  for (let i = -52; i <= 52; i++) for (let j = -52; j <= 52; j++) {
+  const STEP = 6.2, ACROSS = Math.ceil(GRID.half / STEP);
+  for (let i = -ACROSS; i <= ACROSS; i++) for (let j = -ACROSS; j <= ACROSS; j++) {
     const r = k => bump(i * 3 + k * 17, j * 5 - k * 11);
-    const x = (i + r(1) - 0.5) * STEP, z = (j + r(2) - 0.5) * STEP, e = pastCoast(x, z);
-    if (e > -4 || Math.hypot(x, z) < 17 || pathDistance(x, z, GORGE) < 5) continue;
+    const x = (i + r(1) - 0.5) * STEP, z = (j + r(2) - 0.5) * STEP;
+    if (Math.hypot(x, z) > GRID.half) continue;
+    const e = pastCoast(x, z);
+    if (e > -4 || Math.hypot(x, z) < 17 || pathDistance(x, z, GORGE) < 5 || pathDistance(x, z, CANYON) < 6) continue;
     if (riverDistance(x, z) < RIVER.bank + 1 || nearBridge(x, z, 4)) continue;
     if (Object.values(SPOTS).some(([px, pz, r]) => Math.hypot(x - px, z - pz) < r)) continue;
     const y = groundHeight(x, z), slope = Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y), s = 0.75 + r(3) * 0.6, at = [x, y - 0.15, z];
     const woods = roll(x - 50, z + 30, 31);
-    cur = patch(x, z); seed = 1 + Math.floor(r(8) * 2147483000);
+    const here = patch(x, z), start = 1 + Math.floor(r(8) * 2147483000);
+    const later = make => here.jobs.push([start, make]);      // built when someone gets close
     if (e > -26 && y < 3) {
-      if (r(4) < 0.2) { palm(at, s, r(5) * 6.3); if (first) solids.push({ x, z, y, r: 0.24 * s, h: 2.2 * s }); }
+      if (r(4) < 0.2) { const turn = r(5) * 6.3; later(() => palm(at, s, turn)); if (first) solids.push({ x, z, y, r: 0.24 * s, h: 2.2 * s }); }
     } else if (slope < 0.8 && y < 20 && r(4) < (woods > 0.04 ? 0.7 : 0.05)) {
-      (woods > 0.17 || y > 9 ? pine : leafy)(at, s, r(5));
+      const kind = woods > 0.17 || y > 9 ? pine : leafy, shade = r(5);
+      later(() => kind(at, s, shade));
       if (first) { solids.push({ x, z, y, r: 0.3 * s, h: 3.5 * s }); leaves.push([x, y + 4.4 * s, z, 1.9 * s]); }
     } else if (r(6) < (y > 12 || slope > 0.8 ? 0.2 : 0.07)) {
       const size = 0.35 + r(7) ** 2 * 1.9;
       const base = y - 0.1 - Math.min(slope, 1) * size * 0.6;                         // sunk in, so none hang off a slope
-      const rock = boulder([x, base, z], size, r(5));
-      if (first) addShape(rock.flatMap(part => part.tris), y);       // one shape for the whole heap
-    } else if (slope < 0.7 && y < 16 && r(6) < (woods > 0 ? 0.5 : 0.17)) bush(at, s, r(5));
+      const spot = [x, base, z], shade = r(5);
+      later(() => boulder(spot, size, shade));
+      // its real shape is needed now, for walking into
+      if (first) { cur = { big: { v: [], i: [] } }; seed = start; low = false; addShape(boulder(spot, size, shade).flatMap(part => part.tris), y); }
+    } else if (slope < 0.7 && y < 16 && r(6) < (woods > 0 ? 0.5 : 0.17)) { const shade = r(5); later(() => bush(at, s, shade)); }
   }
 
   buildPlaces({ rnd, patch, add, limb, stone, boulder, leafy, pine, palm, clump, shadeOf, first, use: (p, k) => { cur = p; seed = 1 + k * 7919; } });
   const upload = m => {
+    if (!m.i.length) return { count: 0 };
     const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
-    attrib(0, new Float32Array(m.v), 3, gl.FLOAT, false, 36, 0); attrib(1, null, 3, gl.FLOAT, false, 36, 12); attrib(2, null, 3, gl.FLOAT, false, 36, 24);
-    buffer(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(m.i));
+    const points = buffer(gl.ARRAY_BUFFER, new Float32Array(m.v));
+    attrib(0, null, 3, gl.FLOAT, false, 36, 0); attrib(1, null, 3, gl.FLOAT, false, 36, 12); attrib(2, null, 3, gl.FLOAT, false, 36, 24);
+    const order = buffer(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(m.i));
     gl.bindVertexArray(null);
-    return { vao, count: m.i.length };
+    return { vao, count: m.i.length, points, order };
   };
-  return [...patches.values()].map(p => ({ x: p.x, z: p.z, big: upload(p.big) }));
+  // make one patch's shapes: the landmarks standing in it, then each tree, rock and bush
+  const realize = (p, light) => {
+    const m = { v: p.big.v.slice(), i: p.big.i.slice() };
+    cur = { big: m }; low = !!light;
+    for (const [start, make] of p.jobs) { seed = start; make(); }
+    p.mesh[light] = upload(m);
+  };
+  return { list: [...patches.values()], realize };
 }
-const floras = [];
-let flora = [];
+let plants = null, flora = [];
+const treeWork = { prime: false, built: 0 };
 function loadFlora() {
-  const k = world.low ? 1 : 0;
-  if (!floras[k]) floras[k] = buildFlora(world.low);
-  flora = floras[k];
+  if (!plants) plants = buildFlora();
+  flora = plants.list;
+  treeWork.prime = true;
 }
+// make what is needed, a little each frame, and let go of detail far behind
+function growFlora(eye, wanted) {
+  let budget = treeWork.prime ? Infinity : 5;
+  treeWork.prime = false;
+  wanted.sort((a, b) => a[0] - b[0]);
+  for (const [d, p] of wanted) {
+    const light = world.low || d > 95 ? 1 : 0;
+    if (!p.mesh[light] && budget > 0) { plants.realize(p, light); budget -= light ? 1 : 3; treeWork.built++; }
+  }
+  for (const p of flora) {
+    const full = p.mesh[0];
+    if (full && Math.hypot(p.x - eye[0], p.z - eye[2]) > 190) {
+      if (full.count) { gl.deleteVertexArray(full.vao); gl.deleteBuffer(full.points); gl.deleteBuffer(full.order); }
+      p.mesh[0] = null;
+    }
+  }
+}
+const meshOf = (p, d) => (world.low || d > 95 ? p.mesh[1] || p.mesh[0] : p.mesh[0] || p.mesh[1]);
+
 // ---------------------------------------------------------------- grass
 const TURF = 18, turf = new Map();                           // square patches of grass, made when you come near
 let grassNow = false;
 const grassHere = (x, z) => {
   const y = groundHeight(x, z);
-  if (y < 1.4 || y > 16 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7 || riverDistance(x, z) < RIVER.bank || nearBridge(x, z, 0.5)) return null;
+  if (y < 1.4 || y > 16 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7 || pathDistance(x, z, CANYON) < 8 || riverDistance(x, z) < RIVER.bank || nearBridge(x, z, 0.5)) return null;
   return Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y) > 0.6 ? null : y;
 };
 function growTurf(ti, tj, low) {
@@ -676,53 +756,75 @@ function drawFloraShadow(light, eye) {
   globals(staticDepth, light, light, eye);
   gl.uniformMatrix4fv(staticDepth.u.uModel, false, m4(M3.id(), [0, 0, 0]));
   drawBridgeShadow();
-  for (const p of flora) if (Math.hypot(p.x - player.pos[0], p.z - player.pos[2]) < PATCH * 0.75 + 16) drawPart(p.big);
+  for (const p of flora) if (Math.hypot(p.x - player.pos[0], p.z - player.pos[2]) < PATCH * 0.75 + 16) { const m = meshOf(p, 0); if (m) drawPart(m); }
 }
 
-// ---------------------------------------------------------------- shadows of the whole island
-// the land and everything on it never moves, so its shadows are drawn once, the first time they are needed
+// ---------------------------------------------------------------- the long shadows
+// nothing on the island moves, so these are drawn for the ground round you and only redone as you travel
 const baked = [];
-function bakeShadows() {
-  const SIZE = Math.min(world.low ? 3072 : 4096, gl.getParameter(gl.MAX_TEXTURE_SIZE));
-  const tex = gl.createTexture(); gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, SIZE, SIZE, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
-  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE], [gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
-  gl.bindTexture(gl.TEXTURE_2D, null);
-  const fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, tex, 0); gl.drawBuffers([gl.NONE]);
-  const light = mul4(ortho(GRID.half, GRID.half, 1, 500), lookAt(V.mul(SUN, 250), [0, 0, 0]));
-  gl.viewport(0, 0, SIZE, SIZE); gl.clear(gl.DEPTH_BUFFER_BIT);
-  globals(staticDepth, light, light, [0, 0, 0]);
+const REACH = 190;
+function bakeShadows(shade, at) {
+  if (!shade) {
+    const SIZE = Math.min(world.low ? 2048 : 4096, gl.getParameter(gl.MAX_TEXTURE_SIZE));
+    const tex = gl.createTexture(); gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, SIZE, SIZE, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE], [gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    const fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, tex, 0); gl.drawBuffers([gl.NONE]);
+    shade = { tex, fbo, size: SIZE };
+  }
+  const centre = [at[0], 0, at[2]];
+  shade.light = mul4(ortho(REACH, REACH, 1, 500), lookAt(V.mad(centre, SUN, 250), centre));
+  shade.at = centre; shade.built = treeWork.built; shade.time = game.time;
+  gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, null);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, shade.fbo);
+  gl.viewport(0, 0, shade.size, shade.size); gl.clear(gl.DEPTH_BUFFER_BIT);
+  globals(staticDepth, shade.light, shade.light, [0, 0, 0]);
   gl.uniformMatrix4fv(staticDepth.u.uModel, false, m4(M3.id(), [0, 0, 0]));
-  drawPart(land);
-  for (const p of flora) drawPart(p.big);
+  gl.bindVertexArray(land.vao);
+  for (const p of land.pieces) if (Math.hypot(p.x - at[0], p.z - at[2]) < REACH + land.reach) gl.drawElements(gl.TRIANGLES, p.count, gl.UNSIGNED_INT, p.from * 4);
+  for (const p of flora) if (Math.hypot(p.x - at[0], p.z - at[2]) < REACH + PATCH) { const m = p.mesh[1] || p.mesh[0]; if (m) drawPart(m); }
   drawBridgeShadow();
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fbo);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, canvas.width, canvas.height);
-  gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, tex);       // it stays on unit 4
-  return { tex, light };
+  return shade;
+}
+function longShadows(eye) {
+  const k = world.low ? 1 : 0, s = baked[k];
+  const stale = !s || Math.hypot(eye[0] - s.at[0], eye[2] - s.at[2]) > 60 || (s.built !== treeWork.built && game.time - s.time > 0.8);
+  if (stale) baked[k] = bakeShadows(s, eye);
+  return baked[k];
 }
 const seaVao = (() => {
-  const vao = gl.createVertexArray(), S = 900, y = SEA.level; gl.bindVertexArray(vao);
+  const vao = gl.createVertexArray(), S = 2400, y = SEA.level; gl.bindVertexArray(vao);
   attrib(0, new Float32Array([-S, y, S, S, y, S, S, y, -S, -S, y, S, S, y, -S, -S, y, -S]), 3, gl.FLOAT);
   gl.bindVertexArray(null); return vao;
 })();
-const fogRange = () => FLY.on ? [280, 800] : world.low ? [70, 200] : [90, 330];
+const fogRange = () => FLY.on ? [450, 1400] : world.low ? [70, 200] : [90, 330];
 function drawLand(vp, light, eye) {
-  const k = world.low ? 1 : 0, shade = baked[k] || (baked[k] = bakeShadows());
-  globals(landProg, vp, light, eye); gl.uniform3fv(landProg.u.uSky, SKY.island); gl.uniform2fv(landProg.u.uFog, fogRange());
-  gl.uniform1i(landProg.u.uLow, k);
-  gl.uniform1i(landProg.u.uBaked, 4); gl.uniformMatrix4fv(landProg.u.uBakedLight, false, shade.light);
-  gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, shade.tex);
+  const k = world.low ? 1 : 0;
   // skip what is behind you, off to the side or lost in the haze
   const seen = (p, R) => {
     const x = vp[0] * p.x + vp[4] * 8 + vp[8] * p.z + vp[12], w = vp[3] * p.x + vp[7] * 8 + vp[11] * p.z + vp[15];
     return w > -R && Math.abs(x) <= Math.max(w, 0) + R * 2.5 && Math.hypot(p.x - eye[0], p.z - eye[2]) < fogRange()[1] + R;
   };
+  const shown = [], wanted = [];
+  for (const p of flora) {
+    const d = Math.hypot(p.x - eye[0], p.z - eye[2]);
+    if (d > fogRange()[1] + PATCH) continue;
+    if (seen(p, PATCH * 0.75)) { shown.push([d, p]); wanted.push([d, p]); }
+    else if (d < 110) wanted.push([d, p]);                    // behind you, but close enough to turn to
+  }
+  growFlora(eye, wanted);
+  const shade = longShadows(eye);
+  globals(landProg, vp, light, eye); gl.uniform3fv(landProg.u.uSky, SKY.island); gl.uniform2fv(landProg.u.uFog, fogRange());
+  gl.uniform1i(landProg.u.uLow, k);
+  gl.uniform1i(landProg.u.uBaked, 4); gl.uniformMatrix4fv(landProg.u.uBakedLight, false, shade.light);
+  gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, shade.tex);
   gl.uniform1i(landProg.u.uKind, 0); gl.bindVertexArray(land.vao);
   for (const p of land.pieces) if (seen(p, land.reach)) gl.drawElements(gl.TRIANGLES, p.count, gl.UNSIGNED_INT, p.from * 4);
   gl.uniform1i(landProg.u.uKind, 1);
-  for (const p of flora) if (seen(p, PATCH * 0.75)) drawPart(p.big);
+  for (const [d, p] of shown) { const m = meshOf(p, d); if (m) drawPart(m); }
   drawGrass(eye);
   drawSign(vp, light, eye);
   drawBridges(vp, light, eye);

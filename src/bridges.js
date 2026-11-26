@@ -3,9 +3,12 @@
 const DECK = { half: 2.1, rise: 2.2, plank: 0.42 };
 
 // which river (0 or 1) and how far along it, from one end to the other
-const CROSSINGS = [[0, 0.20], [0, 0.46], [0, 0.72], [1, 0.22], [1, 0.47], [1, 0.74]];
-for (const [river, along] of CROSSINGS) {
-  const path = RIVERS[river], k = Math.round(along * (path.length - 1));
+// which river and roughly where
+const CROSSINGS = [[0, -55, -135], [0, -41, -12], [0, -117, 86], [1, 94, -111], [1, 46, 7], [1, 118, 63]];
+for (const [river, nx, nz] of CROSSINGS) {
+  const path = RIVERS[river];
+  let k = 0;
+  path.forEach((p, i) => { if (Math.hypot(p[0] - nx, p[1] - nz) < Math.hypot(path[k][0] - nx, path[k][1] - nz)) k = i; });
   const [x, z] = path[k], [ax, az] = path[Math.max(0, k - 2)], [bx, bz] = path[Math.min(path.length - 1, k + 2)];
   const len = Math.hypot(bx - ax, bz - az) || 1, dx = -(bz - az) / len, dz = (bx - ax) / len;     // straight across the water
   // walk out each way until the bank is properly dry
