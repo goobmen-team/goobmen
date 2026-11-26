@@ -859,7 +859,7 @@ function drawEffects(vp, eye, fwd) {
   gl.enable(gl.BLEND); gl.depthMask(false);
   const right = V.norm(V.cross(fwd, [0, 1, 0])), up = V.cross(right, fwd);
   for (const m of marks) quad([m[0], m[1] + 0.012, m[2]], [0.045, 0, 0], [0, 0, 0.045], [0.08, 0.07, 0.06, 0.75]);
-  for (const p of particles) { const a = Math.min(1, p.life / p.max * 1.6); quad(p.p, V.mul(right, p.size), V.mul(up, p.size), [p.color[0], p.color[1], p.color[2], p.color[3] * a]); }
+  for (const p of particles) if (!p.add) { const a = Math.min(1, p.life / p.max * 1.6); quad(p.p, V.mul(right, p.size), V.mul(up, p.size), [p.color[0], p.color[1], p.color[2], p.color[3] * a]); }
   flushFx(false);
   for (const t of tracers) {
     const d = V.sub(t.b, t.a), len = V.len(d);
@@ -880,6 +880,7 @@ function drawEffects(vp, eye, fwd) {
     const side = V.norm(V.cross(fwdDir, V.sub(base, eye)));
     quad(V.mad(f.p, fwdDir, 0.14 * s), V.mul(fwdDir, 0.17 * s), V.mul(side, 0.05 * s), [1.0, 0.65, 0.2, 0.9]);
   }
+  for (const p of particles) if (p.add) { const a = Math.min(1, p.life / p.max * 1.4); quad(p.p, V.mul(right, p.size), V.mul(up, p.size), [p.color[0] * a, p.color[1] * a, p.color[2] * a, p.color[3] * a]); }
   flushFx(true);
   gl.depthMask(true); gl.disable(gl.BLEND);
 }
@@ -907,6 +908,8 @@ function render() {
   const fl = flashes.find(f => f.f.isPlayer) || flashes[0];
   lastView.hideSelf = hideSelf;
   if (fl) { flashPos[0] = fl.p[0]; flashPos[1] = fl.p[1]; flashPos[2] = fl.p[2]; flashCol[0] = 2.2; flashCol[1] = 1.35; flashCol[2] = 0.5; }
+
+  if (blast && game.time - blast.t < 1.0) { const k = Math.pow(1 - (game.time - blast.t), 2); flashPos[0] = blast.p[0]; flashPos[1] = blast.p[1] + 1; flashPos[2] = blast.p[2]; flashCol[0] = 12 * k; flashCol[1] = 6 * k; flashCol[2] = 1.6 * k; }
 
   gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
   gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, null);

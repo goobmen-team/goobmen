@@ -367,6 +367,14 @@ const Sound = (() => {
     screech: v => { tone(1500, 900, 0.24, 0.2 * v, 0, 'square'); burst(0.25, 2800, 0.45 * v, 'bandpass', 0, 4); },
     pump: (v, k) => { const f = 260 + 120 * (k || 0); burst(0.2, 1200 + 300 * (k || 0), 0.45 * v, 'bandpass', 0, 2); tone(f, f * 1.7, 0.17, 0.2 * v, 0.02, 'triangle'); },
     slideup: v => { tone(300, 1700, 1.9, 0.22 * v, 0, 'sine'); tone(305, 1730, 1.9, 0.1 * v, 0, 'triangle'); },
+    beep: v => { tone(2900, 2900, 0.075, 0.2 * v, 0, 'square'); },
+    explode: v => {                                   // crack, blast, sub boom, rumble, echoes, then debris pattering down
+      burst(0.04, 7500, 1.5 * v, 'highpass'); burst(0.55, 4600, 1.6 * v); burst(1.9, 2000, 1.2 * v, null, 0.02);
+      tone(85, 22, 1.7, 1.9 * v); tone(52, 18, 2.6, 1.3 * v, 0.04);
+      burst(3.0, 420, 1.0 * v, null, 0.12); burst(1.3, 1500, 0.45 * v, null, 0.38); burst(1.6, 800, 0.32 * v, null, 0.8);
+      for (let i = 0; i < 16; i++) burst(0.04 + Math.random() * 0.05, 1500 + Math.random() * 3500, 0.13 * v * (1 - i / 20), 'bandpass', 0.8 + i * 0.11 + Math.random() * 0.1, 3);
+    },
+    ring: v => { tone(3300, 3300, 3.2, 0.045 * v, 0.25, 'sine'); },
     ting: v => { tone(2100, 2100, 0.5, 0.25 * v, 0, 'sine'); tone(3150, 3150, 0.35, 0.14 * v, 0.04, 'sine'); }
   };
   return {
