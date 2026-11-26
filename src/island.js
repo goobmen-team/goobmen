@@ -226,14 +226,13 @@ void main() {
     float grass = (1.0 - rock) * (1.0 - sand) * smoothstep(-0.10, -0.06, col.g - col.r);
     float dirt = max(0.0, 1.0 - rock - sand - grass);
     float broad = noise(p * 0.23), middle = noise(p * 1.1), fine = noise(p * 5.0), grit = noise(p * 17.0);
-    float tone = 0.80 + 0.22 * broad + 0.18 * middle + near * (0.22 * (fine - 0.5) + 0.20 * (grit - 0.5));
-    col *= tone;
-    // grass: streaky blades, bare and yellowed patches, the odd flower
-    float blades = noise(vec2(p.x * 22.0 + 3.0 * middle, p.y * 6.0)) * noise(vec2(p.x * 6.0, p.y * 22.0 - 3.0 * fine));
-    col *= 1.0 + grass * near * (blades - 0.27) * 0.7;
-    col = mix(col, col * vec3(1.14, 1.05, 0.84), grass * smoothstep(0.56, 0.80, noise(p * 0.62 + 7.0)));
+    float calm = 1.0 - 0.8 * grass;
+    col *= 0.86 + calm * (0.16 * broad + 0.12 * middle + near * (0.22 * (fine - 0.5) + 0.20 * (grit - 0.5))) + grass * (0.16 * broad + 0.07 * middle);
+    // grass: a soft mottle, with a few yellowed patches and the odd flower. the blades themselves are real
+    col *= 1.0 + grass * near * (fine - 0.5) * 0.10;
+    col = mix(col, col * vec3(1.10, 1.04, 0.86), grass * smoothstep(0.56, 0.85, noise(p * 0.3 + 7.0)));
     vec2 flower = stones(p * 1.9);
-    col = mix(col, flower.y > 0.975 ? vec3(0.92, 0.85, 0.30) : vec3(0.90, 0.90, 0.86), grass * near * step(0.95, flower.y) * (1.0 - smoothstep(0.07, 0.11, flower.x)));
+    col = mix(col, flower.y > 0.975 ? vec3(0.92, 0.85, 0.30) : vec3(0.90, 0.90, 0.86), grass * near * step(0.975, flower.y) * (1.0 - smoothstep(0.07, 0.11, flower.x)));
     // sand: wind ripples and grains
     float ripple = sin(p.x * 7.0 + p.y * 2.5 + 5.0 * noise(p * 0.7));
     col *= 1.0 + sand * near * (0.07 * ripple + 0.22 * (noise(p * 38.0) - 0.5));
@@ -249,7 +248,7 @@ void main() {
     vec2 e = vec2(0.09, 0.0);
     float h0 = noise(p * 2.6) + 0.4 * noise(p * 8.0);
     float hx = noise((p + e.xy) * 2.6) + 0.4 * noise((p + e.xy) * 8.0), hz = noise((p + e.yx) * 2.6) + 0.4 * noise((p + e.yx) * 8.0);
-    N = normalize(N - vec3(hx - h0, 0.0, hz - h0) * (0.35 + 0.65 * rock) * (0.25 + 0.75 * near));
+    N = normalize(N - vec3(hx - h0, 0.0, hz - h0) * (0.35 + 0.65 * rock) * (0.25 + 0.75 * near) * (1.0 - 0.85 * grass));
   } else {
     float bark = step(col.g, col.r);                          // trunks and rocks are not greener than they are red
     float grain = noise(vec2((vW.x + vW.z) * 14.0, vW.y * 3.5));
@@ -381,10 +380,10 @@ const flora = (() => {
   const pine = (at, s, shade) => {
     const up = (x, y, z) => V.add(at, [x * s, y * s, z * s]), col = [0.07 + shade * 0.05, 0.25 + shade * 0.09, 0.13];
     limb(up(0, 0, 0), up(0, 0.5, 0), 0.42 * s, 0.27 * s, BARK, 8);
-    limb(up(0, 0.5, 0), up(0, 7.4, 0), 0.27 * s, 0.03 * s, BARK, 8);
+    limb(up(0, 0.5, 0), up(0, 8.25, 0), 0.27 * s, 0.03 * s, BARK, 8);
     const TIERS = 10;
     for (let t = 0; t < TIERS; t++) {
-      const u = t / TIERS, y = 2.25 + t * 0.52, reach = 2.2 * (1 - u * 0.82) * rnd(0.9, 1.1), turn = rnd(0, 6.3), arms = 9;
+      const u = t / TIERS, y = 3.1 + t * 0.52, reach = 2.2 * (1 - u * 0.82) * rnd(0.9, 1.1), turn = rnd(0, 6.3), arms = 9;
       for (let k = 0; k < arms; k++) {
         const a = turn + k * Math.PI * 2 / arms + rnd(-0.18, 0.18), out = [Math.cos(a), 0, Math.sin(a)], across = [-out[2], 0, out[0]];
         const len = reach * rnd(0.78, 1.12), drop = rnd(0.25, 0.5), from = up(0, y + rnd(-0.1, 0.1), 0);
@@ -397,7 +396,7 @@ const flora = (() => {
         }
       }
     }
-    for (let k = 0; k < 6; k++) leaf(up(0, 7.1, 0), V.mul([Math.cos(k) * 0.28, 0.75, Math.sin(k) * 0.28], s), V.mul([-Math.sin(k), 0, Math.cos(k)], 0.1 * s), col, V.norm([Math.cos(k), 0.6, Math.sin(k)]));
+    for (let k = 0; k < 6; k++) leaf(up(0, 7.95, 0), V.mul([Math.cos(k) * 0.28, 0.75, Math.sin(k) * 0.28], s), V.mul([-Math.sin(k), 0, Math.cos(k)], 0.1 * s), col, V.norm([Math.cos(k), 0.6, Math.sin(k)]));
   };
 
   const palm = (at, s, turn) => {
@@ -461,22 +460,42 @@ const flora = (() => {
     } else if (slope < 0.7 && y < 16 && r(6) < (woods > 0 ? 0.5 : 0.17)) bush(at, s, r(5));
   }
 
-  // tufts of grass wherever the ground is green
-  const CELL = 1.5, half = Math.floor(135 / CELL);
-  for (let i = -half; i <= half; i++) for (let j = -half; j <= half; j++) {
-    const r = k => bump(i * 7 + k * 13, j * 3 + k * 29);
-    const x = (i + r(1) - 0.5) * CELL, z = (j + r(2) - 0.5) * CELL, y = groundHeight(x, z);
-    if (y < 1.4 || y > 16 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7 || r(3) < 0.22) continue;
-    if (Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y) > 0.6) continue;
-    const m = patch(x, z).grass, col = groundColour(x, z, y, 1), tall = 0.13 + r(4) * r(5) * 0.34;
-    for (let k = 0; k < 6; k++) {
-      const a = r(6 + k) * 6.3, d = r(12 + k) * 0.28, bx = x + Math.cos(a) * d, bz = z + Math.sin(a) * d, by = groundHeight(bx, bz) - 0.02;
-      const base = m.v.length / 9, w = 0.022, sx = -Math.sin(a) * w, sz = Math.cos(a) * w, h = tall * (0.7 + r(18 + k) * 0.6);
-      vert(m, [bx - sx, by, bz - sz], col, [0, 1, 0]); vert(m, [bx + sx, by, bz + sz], col, [0, 1, 0]);
-      vert(m, [bx + Math.cos(a) * h * 0.55, by + h, bz + Math.sin(a) * h * 0.55], [col[0] * 1.15, col[1] * 1.3, col[2] * 1.05], [0, 1, 0]);
-      m.i.push(base, base + 1, base + 2);
+  // grass wherever the ground is green: short tufts everywhere, and thick piles of long bending blades
+  const grassHere = (x, z) => {
+    const y = groundHeight(x, z);
+    if (y < 1.4 || y > 16 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7) return null;
+    return Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y) > 0.6 ? null : y;
+  };
+  // one blade: two bends, narrowing to a point, darker at the root
+  const blade = (m, x, y, z, a, tall, wide, lean, col) => {
+    const base = m.v.length / 9, cx = Math.cos(a), cz = Math.sin(a);
+    const root = [col[0] * 0.8, col[1] * 0.85, col[2] * 0.8], mid = [col[0] * 1.05, col[1] * 1.15, col[2]], tip = [col[0] * 1.3, col[1] * 1.45, col[2] * 1.1];
+    for (const [u, w, c] of [[0, 1, root], [0.55, 0.72, mid]]) {
+      const out = lean * u * u, px = x + cx * out, pz = z + cz * out, py = y + tall * u;
+      vert(m, [px + cz * wide * w, py, pz - cx * wide * w], c, [0, 1, 0]);
+      vert(m, [px - cz * wide * w, py, pz + cx * wide * w], c, [0, 1, 0]);
     }
-  }
+    vert(m, [x + cx * lean, y + tall * 0.9, z + cz * lean], tip, [0, 1, 0]);
+    m.i.push(base, base + 1, base + 3, base, base + 3, base + 2, base + 2, base + 3, base + 4);
+  };
+  const sow = (cell, salt, chance, count, spread, height, wide) => {
+    const half = Math.floor(135 / cell);
+    for (let i = -half; i <= half; i++) for (let j = -half; j <= half; j++) {
+      seed = 1 + Math.floor(bump(i * 7 + salt, j * 3 - salt) * 2147483000);
+      const x = (i + rnd(-0.5, 0.5)) * cell, z = (j + rnd(-0.5, 0.5)) * cell;
+      if (rnd(0, 1) > chance) continue;
+      const y = grassHere(x, z);
+      if (y === null) continue;
+      const m = patch(x, z).grass, col = groundColour(x, z, y, 1), tall = rnd(height[0], height[1]);
+      for (let k = 0; k < count; k++) {
+        const a = rnd(0, 6.3), d = Math.sqrt(rnd(0, 1)) * spread, bx = x + Math.cos(a) * d, bz = z + Math.sin(a) * d;
+        // blades fan out from the middle, the outer ones leaning further
+        blade(m, bx, groundHeight(bx, bz) - 0.03, bz, a + rnd(-0.7, 0.7), tall * rnd(0.55, 1.15), wide, tall * rnd(0.15, 0.4) + d * 0.35, col);
+      }
+    }
+  };
+  sow(1.0, 11, 0.85, 7, 0.24, [0.13, 0.27], 0.022);
+  sow(1.9, 53, 0.65, 30, 0.34, [0.32, 0.62], 0.028);
 
   const upload = m => {
     const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
@@ -535,7 +554,7 @@ function drawLand(vp, light, eye) {
     const x = vp[0] * p.x + vp[4] * 8 + vp[8] * p.z + vp[12], w = vp[3] * p.x + vp[7] * 8 + vp[11] * p.z + vp[15];
     if (w < -R || Math.abs(x) > Math.max(w, 0) + R * 2.5) continue;
     drawPart(p.big);
-    if (Math.hypot(p.x - eye[0], p.z - eye[2]) < 45 + R) drawPart(p.grass);
+    if (Math.hypot(p.x - eye[0], p.z - eye[2]) < 40 + R) drawPart(p.grass);
   }
 }
 // after everything solid, so legs show through the water
