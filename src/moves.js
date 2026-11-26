@@ -248,6 +248,14 @@ function sendStep(s, dt) {
 // ---------------------------------------------------------------- the bomb visit
 // a caveman who has never seen a bomb, planting one
 const bombSpot = s => V.add(bonePos(s.f, 'spine'), [0, 0.3, 0]);          // on top of his belly
+const KNEEL_IN = 0.3;                                                       // how far he shuffles in to reach the belly
+// both hands on the ends of the bomb; c is the bottom middle of the bomb, in his own space
+function holdGoals(c) {
+  return {
+    R: hand(V.add(c, [-0.16, 0.045, 0]), [0, -0.3, 1], [1, 0, 0], [-1, -0.6, -0.3], 0.6),
+    L: hand(V.add(c, [0.16, 0.045, 0]), [0, -0.3, 1], [-1, 0, 0], [1, -0.6, -0.3], 0.6)
+  };
+}
 let blast = null;                             // the latest one, for the light it throws
 const blasts = [];                            // every explosion still going: fire, smoke, chunks, the ring
 const fx = (p, v, life, size, color, grav, grow, add) => particles.push({ p: p.slice(), v, life, max: life, size, color, grav, grow, add });
@@ -350,8 +358,8 @@ function drawBlasts(quad, right, up, additive) {
     }
   }
 }
-// the C4: the textured brick, its keypad screen lighting up, and a blinking light that speeds up
-function drawC4(prog, at, R0, t, left, lit) {
+// the C4: the textured brick, its screen lighting up when armed and flashing with each beep
+function drawC4(prog, at, R0, lit, glow) {
   const R = M3.mul(R0, M3.ry(Math.PI / 2)), q = o => V.add(at, M3.vec(R, o));
   if (prog.u.uOrm) {
     gl.uniform1i(prog.u.uHasTex, 1);
@@ -360,9 +368,8 @@ function drawC4(prog, at, R0, t, left, lit) {
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, C4.orm);
   }
   drawMesh(prog, C4.parts.body, R, at);
-  const on = lit && (left < 1 ? true : Math.sin(t * (left > 3 ? 6.3 : 20)) > 0);
-  flat(prog, lit ? [0.25, 0.75, 0.25] : [0.04, 0.08, 0.05], 0.2, 0.0); drawMesh(prog, C4.parts.panel, R, V.add(at, M3.vec(R, [0, 0.001, 0])));
-  flat(prog, on ? [3, 0.15, 0.08] : [0.3, 0.04, 0.03], 0.3, 0.0); drawMesh(prog, party().pom, scaled(R, 0.012, 0.012, 0.012), q(V.add(C4.panelAt, [0.03, 0.004, -0.035])));
+  const k = lit ? 0.25 + 0.75 * glow : 0;
+  flat(prog, [0.04 + 0.3 * k, 0.08 + 0.85 * k, 0.05 + 0.3 * k], 0.2, 0.0); drawMesh(prog, C4.parts.panel, R, V.add(at, M3.vec(R, [0, 0.001, 0])));
 }
 function bombStep(s, dt) {
   const f = s.f, h = s.helper;
@@ -380,20 +387,39 @@ function bombStep(s, dt) {
   const arm = (x, wrist, dir, palm, curl) => ({ wrist, dir: dir || [0, -0.3, 1], palm: palm || [-x, 0, 0], pole: [x, -0.4, -0.5], curl: [curl === undefined ? 0.7 : curl, curl === undefined ? 0.7 : curl] });
   const hips0 = Rig.rest[IDX.hips];
   const script = (S, w) => { h.script = S; h.scriptW = w === undefined ? 1 : w; };
-  s.bonk = 0;
+  s.bonk = 0; h.carry = null; s.hold = null;
+  // where the bomb sits on the belly, seen from where he kneels
+  const kneel = V.mad(s.spot, [Math.sin(s.face), 0, Math.cos(s.face)], KNEEL_IN);
+  const onBelly = M3.vec(M3.ry(-s.face), V.sub(bombSpot(s), kneel));
+  const CARRY = [0, 0.9, 0.36];
 
-  if (t < 0.72) {                                              // here he comes, hugging a big black ball
+  if (t < 0.72) {                                              // here he comes, hugging the bomb to his belly
     runTo(s.from, s.spot, 1 - Math.pow(1 - u01(t / 0.72), 1.35)); dust();
+    s.hold = CARRY; h.carry = holdGoals(CARRY);
   } else if (t < 1.0) {                                        // brakes, a bit too late
     h.pos = s.spot.slice();
     const dirIn = Math.atan2(s.spot[0] - s.from[0], s.spot[2] - s.from[2]), turn = smooth(0.82, 1.0, t);
     h.yaw = dirIn + wrap(s.face - dirIn) * turn; h.tilt = -0.42 * (1 - turn); dust();
-  } else if (t < 2.2) {                                         // puts the bomb down, then pats it. twice. good bomb.
-    h.pos = s.spot.slice(); h.yaw = s.face;
-    const pat = Math.max(0, Math.sin((t - 1.5) * 13)) * smooth(1.45, 1.6, t) * (1 - smooth(2.0, 2.15, t));
-    const S = { hips: V.add(hips0, [0, -0.30, -0.12]), bend: 1.0, head: M3.rx(-0.3), arms: {} };
-    for (const [side, x] of [['R', -1], ['L', 1]]) S.arms[side] = arm(x, [x * 0.2, 0.52 + pat * 0.1, 0.5], [0, -0.5, 1], [0, -1, 0], 0.4);
-    script(S, smooth(1.0, 1.15, t) * (1 - smooth(2.05, 2.2, t)));
+    s.hold = CARRY; h.carry = holdGoals(CARRY);
+  } else if (t < 2.2) {                                         // kneels, lowers it gently onto the belly, then punches in a code
+    const inn = smooth(1.0, 1.25, t) * (1 - smooth(2.05, 2.2, t));
+    h.pos = V.lerp(s.spot, kneel, inn); h.yaw = s.face;
+    const down = smooth(1.0, 1.45, t) * (1 - smooth(2.05, 2.2, t));
+    const lower = smooth(1.1, 1.55, t);
+    const c = V.lerp(CARRY, onBelly, lower);
+    if (t < 1.6) s.hold = c;                                    // still in his hands
+    const S = { hips: V.add(hips0, [0, -0.42 * down, -0.1 * down]), bend: 0.85 * down, head: M3.rx(-0.45 * down), arms: {} };
+    const G = holdGoals(c);
+    S.arms.L = G.L;
+    if (t < 1.62) S.arms.R = G.R;
+    else {                                                      // the right hand lets go and taps the keypad, beep, beep, beep, beep
+      const key = V.add(onBelly, M3.vec(M3.ry(Math.PI / 2), V.add(C4.panelAt, [0, 0.0, -0.05])));
+      const tap = t > 1.72 && t < 2.08 ? Math.abs(Math.sin((t - 1.72) / 0.09 * Math.PI)) : 0;
+      const lift = smooth(1.6, 1.72, t) * (1 - smooth(2.05, 2.15, t));
+      S.arms.R = hand(V.add(key, [0.02 * Math.sin(t * 40), 0.03 + 0.06 * (1 - tap) * lift + 0.05 * (1 - lift), 0]), [0.25, -0.55, 0.8], [0.3, -0.2, -1], [-1, -1, -0.1], 1.1);
+    }
+    script(S, smooth(1.0, 1.12, t) * (1 - smooth(2.05, 2.2, t)));
+    if (t < 1.12) h.carry = holdGoals(CARRY);
   } else if (t < FUSE_AT) {                                     // bangs two rocks to make a spark... and bonks himself
     h.pos = s.spot.slice(); h.yaw = s.face;
     const swing = t < 2.85 ? Math.abs(Math.sin((t - 2.2) * 9)) : 0;     // clack clack clack
@@ -425,11 +451,11 @@ function bombStep(s, dt) {
   // ---------- the cues
   if (crossed(0.001)) { Sound.play('zoom', near); popWord(V.add(V.lerp(s.from, s.spot, 0.75), [0, 2.0, 0]), 'NYOOOM!', 0.8); }
   if (crossed(0.74)) { Sound.play('screech', near); popWord(V.add(s.spot, [0, 2.05, 0]), 'SKRRT', 0.5); puff(s.spot.slice(), 20, [0.55, 0.53, 0.49, 0.75], 1.7, 0.09, 0.6, 0.8); }
-  if (crossed(1.2)) { Sound.play('thud', near); popWord(V.add(s.spot, [0, 1.9, 0]), 'OOK.', 0.7); }
-  for (const at of [1.55, 1.9]) if (crossed(at)) Sound.play('click', near);
+  if (crossed(1.56)) { Sound.play('set', near); popWord(V.add(s.spot, [0, 1.6, 0]), 'OOK.', 0.7); }
+  for (let k = 0; k < 4; k++) if (crossed(1.765 + k * 0.09)) Sound.play('key', near, k);
   for (let k = 0; k < 4; k++) if (crossed(2.2 + k * 0.7 + 0.31) && 2.2 + k * 0.7 < 2.85) { Sound.play('bonk', near * 0.6); puff(V.add(s.spot, M3.vec(M3.ry(s.face), [0, 1.2, 0.42])), 4, [1, 0.8, 0.3, 1], 1.4, 0.03, 0.3, 4); }
   if (crossed(2.9)) { Sound.play('bonk', near); popWord(V.add(s.spot, [0, 2.1, 0]), 'OUCH!!', 0.9); }
-  if (crossed(FUSE_AT)) { Sound.play('beep', near); popWord(V.add(s.spot, [0, 1.6, 0]), 'BEEP BEEP', 0.8); s.lit = true; }
+  if (crossed(FUSE_AT)) { Sound.play('armed', near); popWord(V.add(s.spot, [0, 1.6, 0]), 'BEEP BEEP', 0.8); s.lit = true; s.beepAt = t; }
   if (crossed(4.0)) popWord(V.add(s.spot, [0, 2.2, 0]), 'OOGA BOOGA!', 1.0);
   if (crossed(5.4)) { Sound.play('huh', near); popWord(V.add(wrong, [0, 2.1, 0]), 'HUH?', 1.0); }
   if (crossed(6.1)) { Sound.play('ooga', near * 0.8); popWord(V.add(wrong, [0, 2.1, 0]), 'OH NO!', 0.8); }
@@ -438,8 +464,10 @@ function bombStep(s, dt) {
   // ---------- the countdown
   if (s.lit && !s.boom) {
     const left = FUSE - (t - FUSE_AT), c = bombSpot(s);
-    if (s.nextBeep === undefined) s.nextBeep = FUSE;
-    if (left <= s.nextBeep) { Sound.play('beep', near); s.nextBeep = left > 3.5 ? Math.floor(left - 0.01) : left > 1.5 ? left - 0.5 : left - 0.2; }
+    // beeps that come smoothly faster as it runs out, then one long tone right before it goes
+    if (s.nextBeep === undefined) s.nextBeep = FUSE - 1;
+    if (left <= s.nextBeep && left > 0.45) { Sound.play('beep', near, 1 - left / FUSE); s.beepAt = t; s.nextBeep = left - clamp(0.08 + left * 0.095, 0.11, 1); }
+    if (left <= 0.45 && !s.final) { s.final = true; Sound.play('final', near); }
     for (let n = FUSE; n >= 1; n--) if (s.prev - FUSE_AT < FUSE - n && t - FUSE_AT >= FUSE - n) popWord(V.add(c, [0, 0.9, 0]), String(n), 0.9);
     if (left <= 0) {                                             // KABOOM
       s.boom = true; s.boomAt = t; f.gone = true;
@@ -492,9 +520,10 @@ function drawSends(prog) {
     const chest = !f.gone ? bonePos(f, 'chest') : null;
 
     if (s.bomb && !(s.boom)) {                                // the bomb, and the poor helper's sore head
-      const hand = V.add(bonePos(h, 'hand_R'), [0, 0.12, 0.1]), left = FUSE - (t - FUSE_AT);
-      let at = t < 1.0 ? hand : t < 1.4 ? V.lerp(hand, bombSpot(s), smooth(1.0, 1.4, t)) : bombSpot(s);
-      drawC4(prog, at, t < 1.4 ? M3.ry(h.yaw + 0.4) : M3.ry(f.yaw + 0.3), t, left, !!s.lit);
+      if (s.hold) {                                           // in his hands
+        const R = M3.mul(M3.ry(h.yaw), M3.rx(h.tilt));
+        drawC4(prog, V.add(h.pos, M3.vec(R, s.hold)), R, false, 0);
+      } else drawC4(prog, bombSpot(s), M3.ry(s.face), !!s.lit, s.lit ? Math.max(0, 1 - (t - s.beepAt) / 0.12) : 0);
       if (s.bonk > 0 && !h.gone) {                            // seeing stars
         const head = V.add(bonePos(h, 'head'), [0, 0.38, 0]);
         flat(prog, [0.95, 0.65, 0.02], 0.3, 0.7);

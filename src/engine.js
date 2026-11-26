@@ -358,6 +358,17 @@ const Sound = (() => {
   function route(g, to) {
     if (to === 'verb') { g.connect(master); g.connect(verb); } else if (to === 'grit') g.connect(grit); else if (to === 'clear') g.connect(clear); else g.connect(master);
   }
+  // a clean electronic chirp: soft attack (no click), a touch of overtone, through a small speaker's bandpass
+  function chirp(f, dur, vol, at, f2) {
+    const t = ac.currentTime + (at || 0), o = ac.createOscillator(), o2 = ac.createOscillator(), g = ac.createGain(), g2 = ac.createGain(), bp = ac.createBiquadFilter();
+    o.type = 'sine'; o2.type = 'triangle';
+    o.frequency.setValueAtTime(f, t); o2.frequency.setValueAtTime(f * 2, t);
+    if (f2) { o.frequency.exponentialRampToValueAtTime(f2, t + dur); o2.frequency.exponentialRampToValueAtTime(f2 * 2, t + dur); }
+    g2.gain.value = 0.1; bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 0.9;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + 0.005); g.gain.setValueAtTime(vol, t + dur * 0.55); g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
+    o.connect(g); o2.connect(g2); g2.connect(g); g.connect(bp); bp.connect(master);
+    o.start(t); o2.start(t); o.stop(t + dur + 0.02); o2.stop(t + dur + 0.02);
+  }
   // a swell: noise that fades in, holds, then fades out (the roar of the fireball, the fire after)
   function swell(rise, dur, freq, vol, at, buf, to) {
     const t = ac.currentTime + (at || 0), s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
@@ -399,7 +410,12 @@ const Sound = (() => {
     screech: v => { tone(1500, 900, 0.24, 0.2 * v, 0, 'square'); burst(0.25, 2800, 0.45 * v, 'bandpass', 0, 4); },
     pump: (v, k) => { const f = 260 + 120 * (k || 0); burst(0.2, 1200 + 300 * (k || 0), 0.45 * v, 'bandpass', 0, 2); tone(f, f * 1.7, 0.17, 0.2 * v, 0.02, 'triangle'); },
     slideup: v => { tone(300, 1700, 1.9, 0.22 * v, 0, 'sine'); tone(305, 1730, 1.9, 0.1 * v, 0, 'triangle'); },
-    beep: v => { tone(2900, 2900, 0.075, 0.2 * v, 0, 'square'); },
+    // the bomb: k is how close to going off it is (0 to 1), so the beep gets a little higher and shorter
+    beep: (v, k) => { k = k || 0; chirp(2000 + 500 * k, 0.12 - 0.05 * k, (0.22 + 0.08 * k) * v); burst(0.006, 5000, 0.04 * v, 'highpass'); },
+    key: (v, k) => { chirp([1320, 1568, 1175, 1760][(k || 0) % 4], 0.06, 0.12 * v); burst(0.01, 3000, 0.12 * v, 'bandpass', 0, 4); },
+    set: v => { tone(140, 70, 0.12, 0.35 * v); burst(0.05, 900, 0.25 * v, 'bandpass', 0, 2); },
+    armed: v => { chirp(1568, 0.08, 0.2 * v); chirp(2093, 0.18, 0.22 * v, 0.1); },
+    final: v => { chirp(2300, 0.45, 0.28 * v, 0, 3300); },
     // the C4. d is how far away you are: sound arrives late (343 m/s), far ones lose their top end,
     // close ones leave you half deaf with ringing ears
     explode: (v, d) => {

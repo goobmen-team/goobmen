@@ -262,6 +262,7 @@ function poseFighter(f) {
       if (g.boltAction) goals.R = boltHand(f, g, G, goals.R);
       arms = {};
     }
+    if (i === IDX.chest && !g && !punching && f.carry) { goals = f.carry; arms = {}; }   // carrying something in both hands
     if (i === IDX.chest && punching) {
       const t = f.punch / 0.4, out = Math.sin(Math.PI * clamp(t, 0, 1));
       goals = { R: { wrist: V.add(wp[i], [-0.2 + 0.1 * out, 0.13 + 0.05 * out, 0.16 + 0.48 * out]), dir: [0, 0, 1], palm: [0, -1, 0], pole: [-1, -0.6, -0.2], curl: [1.4, 1.4] } };
