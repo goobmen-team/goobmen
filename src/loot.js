@@ -66,7 +66,8 @@ const SHAPES = {
   bone: [...ell(0.03, 0.03, 0.12), ...[-1, 1].flatMap(z => [[0.063, 0, z * 0.12], [-0.063, 0, z * 0.12], [0, 0.036, z * 0.12], [0, -0.036, z * 0.12], [0, 0, z * 0.156]])],
   fish: ell(0.035, 0.065, 0.15),
   meat: [...ell(0.075, 0.075, 0.11, [0, 0, 0.03]), [0, 0.028, -0.21], [0, -0.028, -0.21], [0.045, 0, -0.21], [-0.045, 0, -0.21]],
-  c4: [-1, 1].flatMap(x => [-1, 1].flatMap(z => [[x * 0.15, 0, z * 0.105], [x * 0.15, 0.093, z * 0.105]]))   // the brick, bottom at 0
+  c4: [-1, 1].flatMap(x => [-1, 1].flatMap(z => [[x * 0.15, 0, z * 0.105], [x * 0.15, 0.093, z * 0.105]])),  // the brick, bottom at 0
+  roll: [-1, 1].flatMap(y => Array.from({ length: 10 }, (_, i) => [Math.cos(i / 10 * Math.PI * 2) * 0.07, y * 0.024, Math.sin(i / 10 * Math.PI * 2) * 0.07]))   // duct tape, axis y
 };
 const gunShapes = {};
 function gunShape(id) {                       // the corners of the gun's box, placed the way drawProps draws it
@@ -221,6 +222,7 @@ function pickUp(o) {
 function drawProps(prog, textured) {
   for (const o of props) {
     const k = o.scale * Math.min(1, o.life / 0.4), S = o.R.map(x => x * k);
+    if (o.kind === 'roll') { drawRoll(prog, o.p, o.R.map(x => x * Math.min(1, o.life / 0.4))); continue; }
     if (o.kind === 'c4') { drawC4(prog, o.p, o.R.map(x => x * Math.min(1, o.life / 0.4)), false, 0); continue; }
     if (o.kind === 'gun') { const g = GUNS[o.gun]; drawGun(prog, textured, g, S.map(x => x * g.scale / 1.25), V.add(o.p, M3.vec(S, [0, -0.04, -0.1])), {}); continue; }
     for (const part of JUNK[o.kind]) { flat(prog, part.color, part.rough, 0.05); drawMesh(prog, part.mesh, S, o.p); }

@@ -39,6 +39,10 @@ await loadGun(GUNS.glock, window.GUN_DATA.glock);
 await loadGun(GUNS.awp, window.GUN_DATA.awp);
 const C4 = { panelAt: window.C4_DATA.panelAt };        // the bomb (model from tools/make_c4.py)
 await loadGun(C4, window.C4_DATA);
+const ROLL = {};                                         // the roll of duct tape (model from tools/make_tape.py)
+await loadGun(ROLL, window.TAPE_DATA);
+// a strip of tape: a unit box textured with the plain tape from the roll's texture (x across, y thickness, z along)
+ROLL.seg = (() => { const d = boxData(1, 1, 1); for (let i = 0; i < d.v.length; i += 8) { d.v[i + 6] = 0.03 + (d.v[i] + 0.5) * 0.17; d.v[i + 7] = 0.12 + (d.v[i + 2] + 0.5) * 0.25; } return mergeMesh([d]); })();
 C4.parts.panel = staticMesh(new Float32Array(b64bytes(window.C4_DATA.panel.v).buffer), new Uint32Array(b64bytes(window.C4_DATA.panel.i).buffer));
 const IDX = Rig.idx, NB = Rig.NB;
 
@@ -1059,6 +1063,7 @@ window.__game = {
   look(eye, at) { testView = eye ? { eye, at } : null; },
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },
+  get sends() { return sends; },
   gunInfo() { const f = player; if (!f.gun) return null; const g = f.gun.g, hr = bonePos(f, 'hand_R'), hl = bonePos(f, 'hand_L'); const at = q => V.add(f.gun.p, M3.vec(f.gun.S, q)); return { rightErr: V.len(V.sub(hr, at(g.right.at))), leftErr: V.len(V.sub(hl, at(g.left.at))), muzzle: at(g.muzzle), forward: M3.vec(f.gun.R, [0, 0, 1]), target: f.target }; },
   error() { return gl.getError(); }
 };

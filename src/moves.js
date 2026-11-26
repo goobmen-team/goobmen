@@ -251,10 +251,94 @@ function sendStep(s, dt) {
 function bellyTop(f) {
   const side = V.sub(bonePos(f, 'upperArm_L'), bonePos(f, 'upperArm_R')), up = V.sub(bonePos(f, 'neck'), bonePos(f, 'hips'));
   const n = V.norm(V.cross(side, up));
-  return V.add(bonePos(f, 'spine'), [0, n[1] >= 0 ? 0.25 : 0.19, 0]);
+  return V.add(V.lerp(bonePos(f, 'spine'), bonePos(f, 'chest'), 0.75), [0, n[1] >= 0 ? 0.25 : 0.19, 0]);   // up off his loincloth
 }
-const bombSpot = s => bellyTop(s.f);
-const TAPE_AT = 1.6, TAPE = 1.0;                                            // after he puts it down, he tapes it on: two strips
+// ---------------------------------------------------------------- his skin, exactly
+// where a body's skin really is: its own vertices, posed the way it lies right now (done on the CPU, only near the bomb)
+function skinAt(f, prim, k) {
+  const P = prim.cpu.pos, J = prim.cpu.j, W = prim.cpu.w, B = f.bones, M = f.model;
+  const px = P[k * 3], py = P[k * 3 + 1], pz = P[k * 3 + 2];
+  let x = 0, y = 0, z = 0;
+  for (let c = 0; c < 4; c++) {
+    const w = W[k * 4 + c]; if (w <= 0) continue;
+    const m = J[k * 4 + c] * 16;
+    x += w * (B[m] * px + B[m + 4] * py + B[m + 8] * pz + B[m + 12]);
+    y += w * (B[m + 1] * px + B[m + 5] * py + B[m + 9] * pz + B[m + 13]);
+    z += w * (B[m + 2] * px + B[m + 6] * py + B[m + 10] * pz + B[m + 14]);
+  }
+  return [M[0] * x + M[4] * y + M[8] * z + M[12], M[1] * x + M[5] * y + M[9] * z + M[13], M[2] * x + M[6] * y + M[10] * z + M[14]];
+}
+// his vertices within reach of a spot, and the triangles made of them
+function skinNear(f, c, r) {
+  const verts = [], tris = [];
+  for (const prim of Rig.prims) {
+    const n = prim.cpu.pos.length / 3, slot = new Int32Array(n).fill(-1);
+    for (let k = 0; k < n; k++) { const q = skinAt(f, prim, k); if (Math.abs(q[0] - c[0]) < r && Math.abs(q[1] - c[1]) < r && Math.abs(q[2] - c[2]) < r) { slot[k] = verts.length; verts.push([prim, k]); } }
+    const I = prim.cpu.idx;
+    for (let i = 0; i < I.length; i += 3) { const a = slot[I[i]], b = slot[I[i + 1]], d = slot[I[i + 2]]; if (a >= 0 && b >= 0 && d >= 0) tris.push([a, b, d]); }
+  }
+  return { verts, tris };
+}
+// the height of his skin straight below (x, z), in some local space: the top-most triangle there, exactly
+function skinHeight(L, tris, x, z) {
+  let best = -Infinity;
+  for (const [ia, ib, ic] of tris) {
+    const A = L[ia], B = L[ib], C = L[ic];
+    const d = (B[2] - C[2]) * (A[0] - C[0]) + (C[0] - B[0]) * (A[2] - C[2]);
+    if (Math.abs(d) < 1e-10) continue;
+    const u = ((B[2] - C[2]) * (x - C[0]) + (C[0] - B[0]) * (z - C[2])) / d;
+    const v = ((C[2] - A[2]) * (x - C[0]) + (A[0] - C[0]) * (z - C[2])) / d;
+    if (u < -1e-4 || v < -1e-4 || u + v > 1.0001) continue;
+    const y = u * A[1] + v * B[1] + (1 - u - v) * C[1];
+    if (y > best) best = y;
+  }
+  return best;
+}
+// the bomb sitting on him: tipped to follow his shape, then lowered until it just rests on the highest skin under it.
+// Also hands back the skin around it in the bomb's own space, so the tape can be laid right on it.
+function seatOn(f, face, cache) {
+  const top = bellyTop(f);
+  if (!cache.near || V.len(V.sub(cache.c, top)) > 0.1) { cache.near = skinNear(f, top, 0.4); cache.c = top; }
+  const pts = cache.near.verts.map(([prim, k]) => skinAt(f, prim, k)), tris = cache.near.tris;
+  const toLocal = R => { const T = M3.tr(R); return pts.map(q => M3.vec(T, V.sub(q, top))); };
+  const Ry = M3.ry(face);
+  let L = toLocal(Ry);
+  // tip it to follow his shape: a plane fitted (least squares) to the skin all round the edge of the bomb
+  let n = 0, Sx = 0, Sz = 0, Sy = 0, Sxx = 0, Szz = 0, Sxz = 0, Sxy = 0, Szy = 0;
+  for (let gx = -0.16; gx <= 0.1601; gx += 0.02) for (let gz = -0.12; gz <= 0.1201; gz += 0.02) {
+    if (Math.abs(gx) < 0.11 && Math.abs(gz) < 0.07) continue;
+    const y = skinHeight(L, tris, gx, gz);
+    if (!isFinite(y)) continue;
+    n++; Sx += gx; Sz += gz; Sy += y; Sxx += gx * gx; Szz += gz * gz; Sxz += gx * gz; Sxy += gx * y; Szy += gz * y;
+  }
+  let sx = 0, sz = 0;
+  if (n > 12) {
+    const mx = Sx / n, mz = Sz / n, my = Sy / n;
+    const cxx = Sxx / n - mx * mx, czz = Szz / n - mz * mz, cxz = Sxz / n - mx * mz, cxy = Sxy / n - mx * my, czy = Szy / n - mz * my;
+    const det = cxx * czz - cxz * cxz;
+    if (Math.abs(det) > 1e-9) { sx = clamp((cxy * czz - czy * cxz) / det, -0.6, 0.6); sz = clamp((czy * cxx - cxy * cxz) / det, -0.6, 0.6); }
+  }
+  const R = M3.mul(Ry, M3.frame([0, 1, 0], [1, 0, 0], V.norm([-sx, 1, -sz]), [1, sx, 0]));
+  L = toLocal(R);
+  // settle it until its edges just touch his skin all round (the round top of his belly tucks up inside the brick,
+  // where nothing can see it), but never so far that skin would come out through the top
+  let edge = -Infinity, mid = -Infinity;
+  for (let gx = -0.15; gx <= 0.1501; gx += 0.025) for (let gz = -0.105; gz <= 0.1051; gz += 0.021) {
+    const y = skinHeight(L, tris, gx, gz);
+    if (!isFinite(y)) continue;
+    if (Math.abs(gx) > 0.12 || Math.abs(gz) > 0.08) edge = Math.max(edge, y); else mid = Math.max(mid, y);
+  }
+  for (const q of L) if (Math.abs(q[0]) < 0.15 && Math.abs(q[2]) < 0.105 && q[1] > mid) mid = q[1];   // and any vertex poking up in the middle
+  let lift = isFinite(edge) ? Math.max(edge, mid - 0.066) : isFinite(mid) ? mid : 0;
+  lift += 0.003;                                               // a hair above his skin at the edges: touching, never in it
+  const at = V.add(top, M3.vec(R, [0, lift, 0]));
+  for (const q of L) q[1] -= lift;
+  return { at, R, skin: (x, z) => skinHeight(L, tris, x, z) };
+}
+const bombSpot = s => s.seat ? s.seat.at : bellyTop(s.f);
+// after he puts it down he tapes it on. The taping is a pause slipped into his timeline; inside it (u = seconds in):
+const TAPE_AT = 1.6, TAPE = 3.0;
+const GRAB = 0.32, TOSS = 0.62, CATCH = 1.0, BITE = 1.24, RIP = 1.3, LAY = 1.7, LAID = 2.7, YEET = 2.82;
 const KNEEL_IN = 0.3;                                                       // how far he shuffles in to reach the belly
 // both hands on the ends of the bomb; c is the bottom middle of the bomb, in his own space
 function holdGoals(c) {
@@ -369,34 +453,54 @@ function drawBlasts(quad, right, up, additive) {
   }
 }
 // the C4: the textured brick, its screen lighting up when armed and flashing with each beep
-// duct tape: two thin strips, each one piece laid over the brick: a short tail stuck to his skin, up the far side,
-// across the top, down the near side, onto his skin again. k is how far along the taping is (far side first).
-const TAPE_PATH = (() => {
-  const Z = 0.099, TOP = 0.075, pts = [];                          // (z, y) in the bomb's own space: around the end bricks, not the keypad
-  for (const z of [0.13, 0.112]) pts.push([z, -0.004 - (z - Z) * (z - Z) * 6]);
-  pts.push([Z, 0.0], [Z, TOP], [-Z, TOP], [-Z, 0.0]);
-  for (const z of [-0.112, -0.13]) pts.push([z, -0.004 - (z + Z) * (z + Z) * 6]);
-  let len = 0; const at = [0];
-  for (let i = 1; i < pts.length; i++) { len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); at.push(len); }
-  return { pts, at, len };
-})();
-function drawTape(prog, at, R0, k) {
-  if (k <= 0) return;
-  const X = M3.vec(R0, [1, 0, 0]), W = 0.032, T = 0.0018;
-  flat(prog, [0.035, 0.035, 0.04], 0.55, 0.0);                  // black tape
+// the roll of duct tape, and strips of its tape
+function bindRoll(prog) {
+  if (!prog.u.uOrm) return;
+  gl.uniform1i(prog.u.uHasTex, 1);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, ROLL.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, ROLL.normal);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, ROLL.orm);
+}
+function drawRoll(prog, at, R) { bindRoll(prog); drawMesh(prog, ROLL.parts.body, R, at); }
+// a flat piece of tape from a to b; across says which way its width lies
+function drawStrip(prog, a, b, across, lift) {
+  const d = V.sub(b, a), len = V.len(d);
+  if (len < 1e-4) return;
+  const along = V.mul(d, 1 / len), X = V.norm(V.orth(across, along)), out = V.cross(X, along);
+  drawMesh(prog, ROLL.seg, M3.cols(V.mul(X, 0.034), V.mul(out, 0.0018), V.mul(along, len + 0.002)), V.mad(V.lerp(a, b, 0.5), out, lift || 0));
+}
+// two strips, each one piece: a tail stuck to his skin, up the far side of an end brick, across its top, down the near
+// side, a tail onto his skin again. The tails lie on his real skin (skin: its height in the bomb's own space).
+// k is how far along the taping is (far side first). Returns the end of the strip being laid, if one is.
+function drawTape(prog, at, R0, k, skin) {
+  if (k <= 0) return null;
+  const Z = 0.099, TOP = 0.075, X = M3.vec(R0, [1, 0, 0]);
+  bindRoll(prog);
+  let end = null;
   for (let j = 0; j < 2; j++) {
-    const g = clamp(k * 2 - j, 0, 1), x = j ? 0.118 : -0.118, upto = TAPE_PATH.len * g;
+    const g = clamp(k * 2 - j, 0, 1);
     if (g <= 0) continue;
-    const skew = j ? 0.1 : -0.13;                                 // stuck on by hand: a little crooked
-    const P = TAPE_PATH.pts, A = TAPE_PATH.at, w = o => V.add(at, M3.vec(R0, [x + o[0] * skew, o[1], o[0]]));
-    for (let i = 1; i < P.length && A[i - 1] < upto; i++) {
-      const u = Math.min(1, (upto - A[i - 1]) / (A[i] - A[i - 1]));
-      const a = w(P[i - 1]), b = V.lerp(a, w(P[i]), u), d = V.sub(b, a), len = V.len(d);
-      if (len < 1e-4) continue;
-      const along = V.mul(d, 1 / len), out = V.norm(V.cross(X, along));     // the tape's face points away from the bomb
-      drawMesh(prog, meshes.shell, M3.cols(V.mul(X, W), V.mul(out, T), V.mul(along, len + 0.002)), V.mad(V.lerp(a, b, 0.5), out, T * 0.6));
+    const x0 = j ? 0.118 : -0.118, skew = j ? 0.1 : -0.13, xs = z => x0 + z * skew;
+    const tail = z => { const h = skin ? skin(xs(z), z) : -Infinity; return isFinite(h) ? h + 0.0022 : -0.004 - (Math.abs(z) - Z) * (Math.abs(z) - Z) * 6; };
+    const zy = [];
+    // the tails: one straight span from the brick's bottom edge down to his skin, then flat along his skin
+    for (const z of [0.15, 0.125]) zy.push([z, tail(z)]);
+    zy.push([Z, 0.002], [Z, TOP], [-Z, TOP], [-Z, 0.002]);
+    for (const z of [-0.125, -0.15]) zy.push([z, tail(z)]);
+    const P = zy.map(([z, y]) => V.add(at, M3.vec(R0, [xs(z), y, z])));
+    let total = 0; for (let i = 1; i < P.length; i++) total += V.len(V.sub(P[i], P[i - 1]));
+    let left = total * g;
+    for (let i = 1; i < P.length && left > 0; i++) {
+      const seg = V.len(V.sub(P[i], P[i - 1])), b = seg <= left ? P[i] : V.lerp(P[i - 1], P[i], left / seg);
+      // lifted a touch off whatever it lies on (the brick or his skin), on the outside
+      const mid = V.lerp(P[i - 1], b, 0.5), away = V.sub(mid, V.add(at, M3.vec(R0, [xs(0), TOP * 0.5, 0])));
+      const out = V.cross(V.norm(V.orth(X, V.sub(b, P[i - 1]))), V.norm(V.sub(b, P[i - 1])));
+      drawStrip(prog, P[i - 1], b, X, 0.0011 * (V.dot(out, away) >= 0 ? 1 : -1));
+      left -= seg; end = b;
     }
+    if (g >= 1) end = null;
   }
+  return end;
 }
 function drawC4(prog, at, R0, lit, glow) {
   const R = M3.mul(R0, M3.ry(Math.PI / 2)), q = o => V.add(at, M3.vec(R, o));
@@ -415,9 +519,10 @@ function bombStep(s, dt) {
   s.prev = s.t; s.t += dt;
   // the taping is slipped in as a pause in his timeline: everything after it runs TAPE seconds later
   const raw = s.t, warp = x => x < TAPE_AT ? x : x < TAPE_AT + TAPE ? TAPE_AT : x - TAPE;
-  const t = warp(raw), tp = (raw - TAPE_AT) / TAPE, taping = tp >= 0 && tp < 1;
-  s.tape = clamp(tp, 0, 1); s.taping = taping;
+  const t = warp(raw), u = raw - TAPE_AT, taping = u >= 0 && u < TAPE, tp = (u - LAY) / (LAID - LAY);
+  s.tape = clamp(tp, 0, 1); s.taping = taping; s.u = u;
   if (raw < 0) return;
+  if (!f.gone) s.seat = seatOn(f, s.face, s.seatCache || (s.seatCache = {}));
   h.time += dt;
   const crossed = at => warp(s.prev) < at && t >= at, crossedRaw = at => s.prev < at && raw >= at;
   const near = clamp(1.5 - V.len(V.sub(s.spot, player.pos)) / 30, 0.25, 1);
@@ -460,11 +565,39 @@ function bombStep(s, dt) {
       const lift = smooth(1.6, 1.72, t) * (1 - smooth(2.05, 2.15, t));
       S.arms.R = hand(V.add(key, [0.02 * Math.sin(t * 40), 0.03 + 0.06 * (1 - tap) * lift + 0.05 * (1 - lift), 0]), [0.25, -0.55, 0.8], [0.3, -0.2, -1], [-1, -1, -0.1], 1.1);
     }
-    if (taping) {                                               // one hand holds it still, the other runs tape over it, far side to near
-      const k = tp < 0.5 ? 0 : 1, u = smooth(0.08, 0.85, (tp - k * 0.5) / 0.5), sx = k ? 0.118 : -0.118;
-      S.arms.R = hand(V.add(onBelly, [sx, 0.12 + 0.04 * Math.sin(u * Math.PI), 0.22 - 0.44 * u]), [0, -0.5, 1], [0, -1, -0.5], [-1, -1, -0.1], 0.5);
-      S.arms.L = hand(V.add(onBelly, [k ? 0.0 : 0.1, 0.1, 0.0]), [0, -0.6, 1], [0, -1, -0.6], [1, -0.6, -0.3], 0.3);
-      S.head = M3.mul(M3.rx(-0.55), M3.ry(-sx * 2));
+    if (taping) {
+      // his left hand keeps the bomb still the whole time; the right does the show
+      S.arms.L = hand(V.add(onBelly, [0.1, 0.09, 0.0]), [0, -0.6, 1], [0, -1, -0.6], [1, -0.6, -0.3], 0.3);
+      const W = (wrist, dir, palm, pole, curl) => ({ wrist, dir: V.norm(dir), palm, pole, curl: [curl, curl] });
+      const BACK = [-0.24, 0.38, -0.17], UP = [-0.13, 0.8, 0.34], OUT = [-0.5, 0.62, 0.32], SHOULDER = [-0.22, 1.12, -0.12];
+      const mouth = V.add(h.wp[IDX.head], [-0.03, 0.0, 0.12]);
+      let R = null;
+      if (u < TOSS) {                                           // reaches round to his back, grabs the roll off his hip, brings it out
+        const reach = smooth(0, 0.26, u), out = smooth(GRAB + 0.04, TOSS, u);
+        const from = holdGoals(onBelly).R.wrist, wrist = V.lerp(V.lerp(from, BACK, reach), V.add(UP, [0, 0.13 * smooth(0.5, TOSS, u), 0]), out);
+        R = W(wrist, V.lerp([0, -1, -0.5], [0, 0.4, 1], out), [1, 0, 0], [-1, -0.2, 0.4], u > GRAB ? 1.1 : 0.4);
+        S.twist = -0.55 * reach * (1 - out);
+        S.head = M3.mul(M3.rx(-0.3), M3.ry(-0.6 * reach * (1 - out)));
+      } else if (u < CATCH) {                                   // flips it up spinning... and catches it one-handed
+        const w = (u - TOSS) / (CATCH - TOSS), dip = u > CATCH - 0.06 ? 0.05 : 0;
+        R = W(V.add(UP, [0, -dip, 0]), [0, 0.15, 1], [0, 1, 0], [-1, -0.6, -0.2], 0.35);
+        S.head = M3.rx(-0.75 + 0.35 * Math.sin(w * Math.PI));
+      } else if (u < RIP) {                                     // up to his mouth, bites the end of the tape
+        R = W(V.lerp(UP, V.add(mouth, [-0.05, -0.07, 0.02]), smooth(CATCH, BITE, u)), [0.3, 0.6, 0.6], [1, 0, 0], [-1, -0.8, 0], 1.1);
+        S.head = M3.rx(-0.2);
+      } else if (u < LAY) {                                     // and RIIIP: yanks the roll away, a strip stretched to his teeth
+        R = W(V.lerp(V.add(mouth, [-0.05, -0.07, 0.02]), OUT, smooth(RIP, RIP + 0.16, u)), [-0.6, 0, 1], [0, 1, 0], [-1, -0.8, 0], 1.1);
+        S.head = M3.mul(M3.rx(-0.15), M3.ry(0.35 * smooth(RIP, RIP + 0.16, u)));
+      } else if (u < LAID) {                                    // lays the two strips over the bricks, far side to near
+        const k = tp < 0.5 ? 0 : 1, v = smooth(0.08, 0.85, (tp - k * 0.5) / 0.5), sx = k ? 0.118 : -0.118;
+        R = hand(V.add(onBelly, [sx, 0.15 + 0.04 * Math.sin(v * Math.PI), 0.24 - 0.48 * v]), [0, -0.5, 1], [0, -1, -0.5], [-1, -1, -0.1], 0.9);
+        S.head = M3.mul(M3.rx(-0.55), M3.ry(-sx * 2));
+      } else {                                                  // done: the roll goes over his shoulder
+        const wind = smooth(LAID, YEET, u), follow = smooth(YEET, TAPE, u);
+        R = W(V.lerp(V.lerp(holdGoals(onBelly).R.wrist, SHOULDER, wind), [-0.35, 0.75, -0.3], follow), [0, 1, -0.5], [1, 0, 0], [-1, 0, -0.6], u < YEET ? 1.1 : 0.3);
+        S.twist = 0.3 * wind * (1 - follow);
+      }
+      S.arms.R = R;
     }
     script(S, smooth(1.0, 1.12, t) * (1 - smooth(2.05, 2.2, t)));
     if (t < 1.12) h.carry = holdGoals(CARRY);
@@ -499,8 +632,19 @@ function bombStep(s, dt) {
   // ---------- the cues
   if (crossed(0.001)) { Sound.play('zoom', near); popWord(V.add(V.lerp(s.from, s.spot, 0.75), [0, 2.0, 0]), 'NYOOOM!', 0.8); }
   if (crossed(0.74)) { Sound.play('screech', near); popWord(V.add(s.spot, [0, 2.05, 0]), 'SKRRT', 0.5); puff(s.spot.slice(), 20, [0.55, 0.53, 0.49, 0.75], 1.7, 0.09, 0.6, 0.8); }
-  for (const at of [TAPE_AT + 0.05, TAPE_AT + TAPE * 0.5 + 0.05]) if (crossedRaw(at)) Sound.play('tape', near);
-  if (crossedRaw(TAPE_AT + TAPE - 0.05)) popWord(V.add(s.spot, [0, 1.5, 0]), 'STICKY.', 0.7);
+  const at = x => crossedRaw(TAPE_AT + x);
+  if (at(GRAB)) Sound.play('click', near);
+  if (at(TOSS)) Sound.play('whoosh', near * 0.8);
+  if (at(CATCH)) { Sound.play('thud', near * 0.5); popWord(V.add(s.spot, [0, 1.5, 0]), 'HA!', 0.6); }
+  if (at(BITE)) Sound.play('chomp', near);
+  if (at(RIP)) { Sound.play('rip', near); popWord(V.add(s.spot, [0, 1.6, 0]), 'RIIIP', 0.6); }
+  if (at(LAY + (LAID - LAY) * 0.5)) Sound.play('tape', near);
+  if (at(LAID - 0.05)) popWord(V.add(s.spot, [0, 1.5, 0]), 'STICKY.', 0.7);
+  if (at(YEET)) {                                              // the roll flies off over his shoulder, and lands where it lands
+    Sound.play('whoosh', near); popWord(V.add(s.spot, [0, 1.8, 0]), 'YEET!', 0.7);
+    const Hw = M3.mul(h.R, h.wr[IDX.hand_R]), back = [-Math.sin(s.face), 0, -Math.cos(s.face)], side = [Math.cos(s.face), 0, -Math.sin(s.face)];
+    spawnProp('roll', V.add(bonePos(h, 'hand_R'), M3.vec(Hw, ROLL_IN_HAND)), V.add(V.add(V.mul(back, 3.2), V.mul(side, -1.2)), [0, 4.2, 0]), { R: Hw, scale: 1, life: 40, w: [rand(-9, 9), rand(-4, 4), rand(-9, 9)] });
+  }
   if (crossed(1.56)) { Sound.play('set', near); popWord(V.add(s.spot, [0, 1.6, 0]), 'OOK.', 0.7); }
   for (let k = 0; k < 4; k++) if (crossed(1.765 + k * 0.09)) Sound.play('key', near, k);
   for (let k = 0; k < 4; k++) if (crossed(2.2 + k * 0.7 + 0.31) && 2.2 + k * 0.7 < 2.85) { Sound.play('bonk', near * 0.6); puff(V.add(s.spot, M3.vec(M3.ry(s.face), [0, 1.2, 0.42])), 4, [1, 0.8, 0.3, 1], 1.4, 0.03, 0.3, 4); }
@@ -642,6 +786,25 @@ function rod(prog, a, b, thick) {
   drawMesh(prog, meshes.shell, M3.cols(V.mul(x, thick), V.mul(y, len), V.mul(z, thick)), V.lerp(a, b, 0.5));
 }
 const scaled = (R, x, y, z) => M3.mul(R, [x, 0, 0, 0, y, 0, 0, 0, z]);
+// where the roll of tape is during the bomb visit: on his hip, in his hand, in the air, or already thrown away
+const ROLL_IN_HAND = [-0.08, -0.065, 0.01];
+function drawRollAt(prog, s, h) {
+  if (h.gone || (s.u !== undefined && s.u >= YEET)) return;
+  const u = s.u === undefined ? -1 : s.u, Hw = M3.mul(h.R, h.wr[IDX.hand_R]);
+  const inHand = { p: V.add(bonePos(h, 'hand_R'), M3.vec(Hw, ROLL_IN_HAND)), R: Hw };
+  let r;
+  if (u < GRAB) { const Rh = M3.mul(h.R, h.wr[IDX.hips]); r = { p: V.add(bonePos(h, 'hips'), M3.vec(Rh, [-0.2, 0.03, -0.1])), R: M3.mul(Rh, M3.rz(Math.PI / 2)) }; }
+  else if (u >= TOSS && u < CATCH) {                          // up it goes, spinning, and back down into his hand
+    const w = (u - TOSS) / (CATCH - TOSS);
+    r = { p: V.add(inHand.p, [0, 0.62 * 4 * w * (1 - w), 0]), R: M3.mul(Hw, M3.rx(w * Math.PI * 4)) };
+  } else r = inHand;
+  drawRoll(prog, r.p, r.R);
+  // tape coming off the roll: stretched to his teeth, then to the end of the strip being laid
+  const rim = to => V.add(r.p, V.mul(V.norm(V.sub(to, r.p)), 0.065));
+  const across = M3.vec(r.R, [0, 1, 0]);
+  if (u >= RIP && u < LAY) { const m = V.add(bonePos(h, 'head'), M3.vec(M3.mul(h.R, h.wr[IDX.head]), [0, 0.0, 0.13])); drawStrip(prog, rim(m), m, across); }
+  else if (u >= LAY && u < LAID && s.tapeEnd) drawStrip(prog, rim(s.tapeEnd), s.tapeEnd, across);
+}
 function drawSends(prog) {
   if (!sends.length) return;
   const P = party(), I = M3.id();
@@ -661,13 +824,11 @@ function drawSends(prog) {
         const R = M3.mul(M3.ry(h.yaw), M3.rx(h.tilt));
         drawC4(prog, V.add(h.pos, M3.vec(R, s.hold)), R, false, 0);
       } else {
-        drawC4(prog, bombSpot(s), M3.ry(s.face), !!s.lit, s.lit ? Math.max(0, 1 - (game.time - s.beepAt) / 0.12) : 0);
-        drawTape(prog, bombSpot(s), M3.ry(s.face), s.tape || 0);
+        const seat = s.seat || { at: bombSpot(s), R: M3.ry(s.face) };
+        drawC4(prog, seat.at, seat.R, !!s.lit, s.lit ? Math.max(0, 1 - (game.time - s.beepAt) / 0.12) : 0);
+        s.tapeEnd = drawTape(prog, seat.at, seat.R, s.tape || 0, seat.skin);
       }
-      if (s.taping && !h.gone) {                              // the roll of tape in his hand
-        flat(prog, [0.2, 0.21, 0.23], 0.5, 0.15);
-        drawMesh(prog, party().pom, scaled(M3.ry(h.yaw), 0.045, 0.022, 0.045), V.add(bonePos(h, 'hand_R'), [0, 0.03, 0]));
-      }
+      drawRollAt(prog, s, h);
       if (s.bonk > 0 && !h.gone) {                            // seeing stars
         const head = V.add(bonePos(h, 'head'), [0, 0.38, 0]);
         flat(prog, [0.95, 0.65, 0.02], 0.3, 0.7);

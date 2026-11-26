@@ -269,6 +269,7 @@ async function loadCaveman(glb64) {
     const m = g.materials[p.material], pbr = m.pbrMetallicRoughness;
     gl.bindVertexArray(null);
     Rig.prims.push({ vao, count: idx.length, name: m.name, rough: pbr.roughnessFactor, color: (pbr.baseColorFactor || [1, 1, 1]).slice(0, 3),
+      cpu: { pos: acc(p.attributes.POSITION), j: acc(p.attributes.JOINTS_0), w: acc(p.attributes.WEIGHTS_0), idx },   // for finding his skin (tape, bombs)
       tex: pbr.baseColorTexture ? await tex(pbr.baseColorTexture.index, true) : null, normal: m.normalTexture ? await tex(m.normalTexture.index, false) : null });
   }
 }
@@ -422,6 +423,11 @@ const Sound = (() => {
     // the bomb: k is how close to going off it is (0 to 1): the bip gets a touch higher and shorter
     beep: (v, k) => { k = k || 0; chirp(1870 * (1 + 0.07 * k), 0.085 - 0.03 * k, 0.32 * v); },
     key: (v, k) => { chirp([1175, 1397, 1047, 1568][(k || 0) % 4], 0.05, 0.16 * v); burst(0.008, 2600, 0.06 * v, 'bandpass', 0, 3); },
+    rip: v => {                                       // a long strip yanked off the roll: a ragged tearing crackle that speeds up, with a hiss under it
+      let at = 0;
+      for (let i = 0; i < 38; i++) { at += 0.016 - i * 0.00018 + Math.random() * 0.004; burst(0.01 + Math.random() * 0.012, 1100 + Math.random() * 3200 + i * 40, (0.2 + Math.random() * 0.16) * v, 'bandpass', at, 2.2); }
+      swell(0.04, 0.5, 3600, 0.16 * v, 0);
+    },
     tape: v => {                                      // duct tape peeling off the roll: a fast, ragged crackle that sweeps up
       for (let i = 0; i < 22; i++) burst(0.012 + Math.random() * 0.012, 1400 + i * 110 + Math.random() * 900, (0.16 + Math.random() * 0.12) * v * (1 - i / 30), 'bandpass', i * 0.019 + Math.random() * 0.006, 2.5);
       burst(0.45, 2200, 0.08 * v, 'bandpass', 0, 0.8);
