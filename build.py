@@ -11,7 +11,8 @@ def read(name):
 
 model = base64.b64encode((root / 'assets/caveman.glb').read_bytes()).decode()
 parts = ['<script>window.MODEL_B64="%s";</script>' % model,
-         '<script>window.GUN_DATA=%s;</script>' % read('assets/guns.json')]
+         '<script>window.GUN_DATA=%s;</script>' % read('assets/guns.json'),
+         '<script>window.C4_DATA=%s;</script>' % read('assets/c4.json')]
 
 for name in ('engine.js', 'game.js'):
     code = read('src/' + name)

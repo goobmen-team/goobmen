@@ -37,6 +37,9 @@ await loadCaveman(window.MODEL_B64);
 await loadGun(GUNS.ak, window.GUN_DATA.ak);
 await loadGun(GUNS.glock, window.GUN_DATA.glock);
 await loadGun(GUNS.awp, window.GUN_DATA.awp);
+const C4 = { panelAt: window.C4_DATA.panelAt };        // the bomb (model from tools/make_c4.py)
+await loadGun(C4, window.C4_DATA);
+C4.parts.panel = staticMesh(new Float32Array(b64bytes(window.C4_DATA.panel.v).buffer), new Uint32Array(b64bytes(window.C4_DATA.panel.i).buffer));
 const IDX = Rig.idx, NB = Rig.NB;
 
 // ======================================================================= scene
@@ -431,7 +434,7 @@ const keys = new Set();
 const mouse = { fire: false, pressed: false, aim: false, drag: null };
 const game = { running: false, locked: false, lockWorked: false, aimToggle: false, enemiesShoot: true, godMode: false, kills: 0, deaths: 0, marker: 0, hurtFade: 0, note: 0, time: 0 };
 const ui = {};
-for (const id of ['scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'shootback', 'msg', 'reloadbar']) ui[id] = document.getElementById(id);
+for (const id of ['scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'shootback', 'msg', 'reloadbar', 'boomflash']) ui[id] = document.getElementById(id);
 let hudDirty = true;
 function notify(text) { ui.note.textContent = text; ui.note.style.opacity = 1; game.note = 2.4; }
 
@@ -868,6 +871,7 @@ function drawEffects(vp, eye, fwd) {
   gl.enable(gl.BLEND); gl.depthMask(false);
   const right = V.norm(V.cross(fwd, [0, 1, 0])), up = V.cross(right, fwd);
   for (const m of marks) quad([m[0], m[1] + 0.012, m[2]], [0.045, 0, 0], [0, 0, 0.045], [0.08, 0.07, 0.06, 0.75]);
+  drawBlasts(quad, right, up, false);
   for (const p of particles) if (!p.add) { const a = Math.min(1, p.life / p.max * 1.6); quad(p.p, V.mul(right, p.size), V.mul(up, p.size), [p.color[0], p.color[1], p.color[2], p.color[3] * a]); }
   flushFx(false);
   for (const t of tracers) {
@@ -890,6 +894,7 @@ function drawEffects(vp, eye, fwd) {
     quad(V.mad(f.p, fwdDir, 0.14 * s), V.mul(fwdDir, 0.17 * s), V.mul(side, 0.05 * s), [1.0, 0.65, 0.2, 0.9]);
   }
   for (const p of particles) if (p.add) { const a = Math.min(1, p.life / p.max * 1.4); quad(p.p, V.mul(right, p.size), V.mul(up, p.size), [p.color[0] * a, p.color[1] * a, p.color[2] * a, p.color[3] * a]); }
+  drawBlasts(quad, right, up, true);
   flushFx(true);
   gl.depthMask(true); gl.disable(gl.BLEND);
 }
@@ -919,7 +924,14 @@ function render() {
   lastView.hideSelf = hideSelf;
   if (fl) { flashPos[0] = fl.p[0]; flashPos[1] = fl.p[1]; flashPos[2] = fl.p[2]; flashCol[0] = 2.2; flashCol[1] = 1.35; flashCol[2] = 0.5; }
 
-  if (blast && game.time - blast.t < 1.0) { const k = Math.pow(1 - (game.time - blast.t), 2); flashPos[0] = blast.p[0]; flashPos[1] = blast.p[1] + 1; flashPos[2] = blast.p[2]; flashCol[0] = 12 * k; flashCol[1] = 6 * k; flashCol[2] = 1.6 * k; }
+  ui.boomflash.style.opacity = 0;
+  if (blast && game.time - blast.t < BLAST_LIFE) {                // a blinding flash, then the flicker of the fire
+    const age = game.time - blast.t, k = Math.pow(Math.max(0, 1 - age / 1.4), 2.5);
+    const fire = (1 - age / BLAST_LIFE) * (0.75 + 0.25 * Math.sin(age * 23) * Math.sin(age * 9.7)) * 1.4;
+    flashPos[0] = blast.p[0]; flashPos[1] = blast.p[1] + 1 + age * 1.5 * (age < 1.4); flashPos[2] = blast.p[2];
+    flashCol[0] = 30 * k + 2.6 * fire; flashCol[1] = 16 * k + 1.1 * fire; flashCol[2] = 5 * k + 0.25 * fire;
+    if (age < 0.5) ui.boomflash.style.opacity = (blast.near * 0.6 + 0.12) * Math.pow(1 - age / 0.5, 2);
+  }
 
   gl.enable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE);
   gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, null);
@@ -1015,7 +1027,7 @@ window.__game = {
   ready: true, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
-  resume() { manual = false; }, give, equip, startReload,
+  resume() { manual = false; }, give, equip, startReload, damage,
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },
   gunInfo() { const f = player; if (!f.gun) return null; const g = f.gun.g, hr = bonePos(f, 'hand_R'), hl = bonePos(f, 'hand_L'); const at = q => V.add(f.gun.p, M3.vec(f.gun.S, q)); return { rightErr: V.len(V.sub(hr, at(g.right.at))), leftErr: V.len(V.sub(hl, at(g.left.at))), muzzle: at(g.muzzle), forward: M3.vec(f.gun.R, [0, 0, 1]), target: f.target }; },
