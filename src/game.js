@@ -438,7 +438,7 @@ function notify(text) { ui.note.textContent = text; ui.note.style.opacity = 1; g
 function setRunning(on) {
   game.running = on;
   ui.menu.hidden = on; ui.hud.hidden = !on;
-  if (!on) { keys.clear(); mouse.fire = mouse.pressed = mouse.aim = false; }
+  if (!on) { keys.clear(); mouse.fire = mouse.pressed = mouse.aim = false; askMap(false); }
   hudDirty = true;
 }
 function lockMouse() {
@@ -490,12 +490,13 @@ addEventListener('keydown', e => {
   if (e.code === 'Escape') setRunning(false);
   else if (e.code === 'Space') startJump(player);
   else if (e.code === 'KeyR') startReload(player);
+  else if (world.asking && ['Digit1', 'Digit2', 'Numpad1', 'Numpad2'].includes(e.code)) setMap('island', e.code.endsWith('2'));
   else if (e.code === 'Digit1') equip(player, 'ak');
   else if (e.code === 'Digit2') equip(player, 'glock');
   else if (e.code === 'Digit3') equip(player, 'awp');
   else if (e.code === 'Digit4' || e.code === 'KeyH') equip(player, null);
   else if (e.code === 'KeyV') { if (player.weapon && player.reload < 0 && player.cycle < 0 && player.equip >= 1 && player.inspect < 0) player.inspect = 0; }
-  else if (e.code === 'KeyT') setMap(world.map === 'island' ? 'plate' : 'island');   // temporary, while the map is being made
+  else if (e.code === 'KeyT') { if (world.map === 'island') setMap('plate'); else askMap(!world.asking); }   // temporary, while the map is being made
   else if (e.code === 'KeyQ') game.aimToggle = !game.aimToggle;
   else if (e.code === 'KeyF') fullscreen();
   else if (e.code === 'KeyP') { game.enemiesShoot = !game.enemiesShoot; ui.shootback.checked = game.enemiesShoot; notify(game.enemiesShoot ? 'Enemies shoot back' : 'Enemies hold fire'); }
@@ -886,7 +887,8 @@ function drawEffects(vp, eye, fwd) {
 }
 let lastView = null, quality = 1, frameAvg = 0.016, qualityWait = 3;
 function render() {
-  const dpr = Math.min(window.devicePixelRatio || 1, 1.5) * quality;
+  const slim = world.map === 'island' && world.low;           // the optimized map also draws fewer pixels
+  const dpr = Math.min(window.devicePixelRatio || 1, slim ? 1 : 1.5) * quality * (slim ? 0.75 : 1);
   const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   for (const f of fighters.concat(helpers)) poseFighter(f);
@@ -897,7 +899,7 @@ function render() {
   const eye = V.add(view.eye, [rand(-sh, sh), rand(-sh, sh), rand(-sh, sh)]);
   if (world.map === 'island') eye[1] = Math.max(eye[1], floorAt(eye[0], eye[2]) + 0.18);   // never inside a hill
   const fov = cam.fov + (0.17 - cam.fov) * smooth(0.45, 1, sc);
-  const proj = perspective(fov, w / Math.max(1, h), 0.08, world.map === 'island' ? 600 : 160);
+  const proj = perspective(fov, w / Math.max(1, h), 0.08, world.map !== 'island' ? 160 : world.low ? 220 : 600);
   const vp = mul4(proj, lookAt(eye, V.add(eye, view.fwd)));
   lastView = { vp, w: canvas.clientWidth, h: canvas.clientHeight };
 

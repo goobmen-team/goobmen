@@ -17,7 +17,7 @@ A third-person caveman fighting game with real guns. Loot chests, fight other ca
 | R / V | reload / show off your gun |
 | 1, 2, 3, 4 or wheel | AK-74, Glock 17, AWP, fists |
 | F | fullscreen |
-| T | swap between the baseplate and the island (temporary) |
+| T | go to the island, then press 1 for the normal map or 2 for the optimized one; T again to go back (temporary) |
 | P / M / Esc | enemy fire / sound / pause |
 
 ## Files
