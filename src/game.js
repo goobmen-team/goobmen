@@ -90,7 +90,7 @@ function spawnBot(b, i) {
   endSend(b);
   const a = Math.PI + (i - 1) * 0.75 + rand(-0.25, 0.25), d = rand(13, 19);
   b.pos = [clamp(player.pos[0] + Math.sin(a) * d, -HALF + 2, HALF - 2), 0, clamp(player.pos[2] + Math.cos(a) * d, -HALF + 2, HALF - 2)];
-  if (world.map === 'island') { b.pos = [player.pos[0] + Math.sin(a) * d, 0, player.pos[2] + Math.cos(a) * d]; confine(b); b.pos[1] = groundAt(b.pos[0], b.pos[2]); }
+  if (world.map === 'island') b.pos = enemySpot(player.pos);
   b.hp = 100; b.dead = -1; b.hurt = 0; b.air = 0; b.jump = -1; b.looted = b.beingLooted = false; b.script = null; b.scriptW = 0; b.cycle = -1; b.inv = []; b.ammo = {}; b.weapon = null; b.crouch = false; b.ai.wait = rand(1.0, 2.2); b.ai.seen = false;
   give(b, i === 1 ? 'ak' : 'glock', 999); equip(b, b.inv[0]);
   b.yaw = Math.atan2(player.pos[0] - b.pos[0], player.pos[2] - b.pos[2]);
@@ -610,7 +610,7 @@ function cameraEye() {
 function respawnPlayer() {
   abortLoot();
   const f = player;
-  f.dead = -1; f.hp = 100; f.pos = [0, groundAt(0, 0), 0]; f.air = 0; f.jump = -1; f.equip = 0;
+  f.dead = -1; f.hp = 100; f.pos = world.map === 'island' ? [START[0], groundAt(START[0], START[2]), START[2]] : [0, 0, 0]; f.air = 0; f.jump = -1; f.equip = 0;
   deathCam = 0; deathShot = null; hudDirty = true;
   bots.forEach(spawnBot); notify('Back on your feet');
 }
@@ -831,7 +831,9 @@ function drawStatics(prog, textured, hideSelf) {
     }
     drawGun(prog, textured, g, R, p, o);
   }
+  const chestRange = !textured ? 16 : world.low ? 60 : 110;
   for (const c of chests) {
+    if (world.map === 'island' && Math.hypot(c.pos[0] - player.pos[0], c.pos[2] - player.pos[2]) > chestRange) continue;
     const tip = M3.rz(Math.sin(game.time * 38) * c.wobble * 0.09), hinge = V.add(c.pos, M3.vec(tip, [0, 0.44, -0.30])), lid = M3.mul(tip, M3.rx(-1.9 * c.open));
     flat(prog, [0.19, 0.095, 0.035], 0.75, 0.0); drawMesh(prog, meshes.chest, tip, c.pos); drawMesh(prog, meshes.lid, lid, hinge);
     flat(prog, c.gun === 'ak' ? [0.75, 0.45, 0.08] : c.gun === 'awp' ? [0.10, 0.28, 0.08] : [0.30, 0.32, 0.35], 0.38, 0.9);
@@ -975,7 +977,7 @@ function hud(dt) {
     // health bar over the living, an arrow over bodies that still have loot
     const body = b.dead >= 1.2 && !b.looted && !looting && !b.send, alive = b.dead < 0;
     const at = alive ? V.add(b.pos, [0, b.crouch ? 1.6 : 1.92, 0]) : [b.pos[0] - Math.sin(b.yaw) * 0.8, b.pos[1] + 0.75 + Math.sin(game.time * 5) * 0.08, b.pos[2] - Math.cos(b.yaw) * 0.8];
-    const el = barEls[i], p = (alive || body) && lastView && scopeAmount() < 0.5 && !behindHill(cameraEye().eye, at) ? project(at) : null;
+    const el = barEls[i], p = (alive || body) && Math.hypot(at[0] - player.pos[0], at[2] - player.pos[2]) < 60 && lastView && scopeAmount() < 0.5 && !behindHill(cameraEye().eye, at) ? project(at) : null;
     el.style.display = p ? 'block' : 'none';
     el.classList.toggle('loot', body);
     el.classList.toggle('soon', body && b.dead > LOOT_WINDOW - 3);

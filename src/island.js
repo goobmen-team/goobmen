@@ -7,14 +7,20 @@ const SEA = { level: -0.2, floor: -1.0, wade: 5, swim: 60, grace: 0.6, every: 0.
 const SKY = { plate: [219 / 255, 219 / 255, 219 / 255], island: [0.66, 0.80, 0.91] };
 // how far the coast is from the middle, in each direction (the same formula is in the water shader)
 const bulge = (a, at, wide) => Math.exp(-((Math.sin((a - at) / 2) / wide) ** 2));
-const coast = a => 105 + 13 * Math.sin(3 * a + 1.1) + 9 * Math.sin(5 * a + 2.6) + 4 * Math.sin(11 * a) + 3 * Math.sin(19 * a + 0.7)
-  - 34 * bulge(a, 0.75, 0.11) + 28 * bulge(a, -2.3, 0.09);      // a deep bay and a long headland
+const coast = a => 2 * (105 + 13 * Math.sin(3 * a + 1.1) + 9 * Math.sin(5 * a + 2.6) + 4 * Math.sin(11 * a) + 3 * Math.sin(19 * a + 0.7)
+  - 34 * bulge(a, 0.75, 0.11) + 28 * bulge(a, -2.3, 0.09));      // a deep bay and a long headland
 const pastCoast = (x, z) => Math.hypot(x, z) - coast(Math.atan2(x, z));
 const MEADOW = 2.0;                                          // the flat clearing you start in
+// x, z, how much ground to keep clear of ordinary trees
+const SPOTS = {
+  circle: [-62, -52, 18], elder: [92, 36, 17], bones: [-96, 128, 18], camp: [168, 14, 22],
+  boulders: [38, 188, 36], crater: [150, -96, 40], pines: [-196, -34, 0], cove: [104, 112, 0]
+};
 // x, z, height, radius of the smaller hills
-const HILLS = [[58, 42, 9, 24], [55, -22, 8, 22], [-45, -55, 10, 24], [-8, 88, 6, 18], [82, -48, 7, 20], [-88, -22, 6, 18]];
-const PEAK_AT = [12, -66], MESA_AT = [-62, 14];
-const GORGE = [[-52, 50], [-22, 40], [6, 56], [34, 47], [62, 62]];   // a winding pass with rock walls
+const HILLS = [[112, 82, 11, 30], [104, -42, 9, 26], [-72, -104, 8, 24], [-16, 168, 8, 26], [158, -26, 7, 22], [-170, -44, 8, 26],
+  [62, -190, 10, 32], [-150, 108, 9, 28], [112, 170, 7, 24], [-46, -186, 11, 34], [196, 70, 8, 26], [-190, 40, 6, 22], [44, 62, 5, 18], [-52, 38, 4, 16]];
+const PEAK_AT = [25, -125], TWIN_AT = [-112, -118], MESA_AT = [-124, 30];
+const GORGE = [[-92, 94], [-48, 80], [-2, 106], [46, 90], [84, 70]];   // a winding pass with rock walls
 const bump = (i, j) => { const n = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return n - Math.floor(n); };
 function roll(x, z, size) {
   const u = x / size, v = z / size, i = Math.floor(u), j = Math.floor(v), a = smooth(0, 1, u - i), b = smooth(0, 1, v - j);
@@ -37,11 +43,13 @@ function shape(x, z) {
     const d = ((x - hx) ** 2 + (z - hz) ** 2) / (r * r);
     if (d < 1) h += top * (1 - d) * (1 - d) * (1 + roll(x, z, 9) * 0.5);
   }
-  // the mountain: spurs and gullies running down from the summit
-  const mx = x - PEAK_AT[0], mz = z - PEAK_AT[1], m = Math.hypot(mx, mz) / 54;
-  if (m < 1) {
-    const spur = Math.abs(Math.sin(Math.atan2(mx, mz) * 3.5 + roll(x, z, 21) * 3));
-    h += 27 * (1 - m) ** 1.6 * (0.72 + 0.4 * (0.5 + (spur - 0.5) * smooth(0, 0.35, m))) + roll(x, z, 8) * 4 * (1 - m);
+  // the two mountains: spurs and gullies running down from each summit
+  for (const [at, wide, tall] of [[PEAK_AT, 74, 36], [TWIN_AT, 48, 22]]) {
+    const mx = x - at[0], mz = z - at[1], m = Math.hypot(mx, mz) / wide;
+    if (m < 1) {
+      const spur = Math.abs(Math.sin(Math.atan2(mx, mz) * 3.5 + roll(x, z, 21) * 3));
+      h += tall * (1 - m) ** 1.6 * (0.72 + 0.4 * (0.5 + (spur - 0.5) * smooth(0, 0.35, m))) + roll(x, z, 8) * 4 * (1 - m);
+    }
   }
   // the mesa: flat top, cliffs all round, one ramp on the side facing the start
   const qx = x - MESA_AT[0], qz = z - MESA_AT[1], q = Math.hypot(qx, qz) + roll(x, z, 7) * 4;
@@ -54,11 +62,24 @@ function shape(x, z) {
   const floor = smooth(7, 3.5, g);
   h = h * (1 - floor) + (1.3 + roll(x, z, 12) * 0.5) * floor;
 
+  // the crater: a ring of rock with a way in on two sides
+  const [kx, kz] = SPOTS.crater, kd = Math.hypot(x - kx, z - kz) + roll(x, z, 9) * 3;
+  if (kd < 48) {
+    const side = Math.abs(Math.sin(Math.atan2(x - kx, z - kz) - Math.atan2(-kx, -kz)));     // 0 at the two ways in
+    const rim = smooth(40, 31, kd) * smooth(19, 27, kd) * smooth(0.18, 0.42, side);
+    h = h * (1 - smooth(44, 30, kd)) + (2.0 + roll(x, z, 11) * 0.5) * smooth(44, 30, kd) + 10 * rim;
+  }
+  // level ground where something stands
+  for (const name of ['circle', 'elder', 'bones', 'camp', 'boulders']) {
+    const [px, pz, r] = SPOTS[name], flat = smooth(r + 10, r - 2, Math.hypot(x - px, z - pz));
+    h = h * (1 - flat) + (name === 'circle' || name === 'elder' ? 4.2 : 2.4) * flat;
+  }
+
   h = MEADOW + (h - MEADOW) * smooth(12, 27, Math.hypot(x, z));
-  return Math.max(0, h) * smooth(0, 20, -e);
+  return Math.max(0, h) * smooth(0, 24, -e);
 }
 // heights on a grid: the drawn land and your feet read the same numbers
-const GRID = { half: 175, n: 300 };
+const GRID = { half: 345, n: 500 };
 GRID.cell = GRID.half * 2 / GRID.n;
 const heights = new Float32Array((GRID.n + 1) * (GRID.n + 1));
 for (let j = 0; j <= GRID.n; j++) for (let i = 0; i <= GRID.n; i++) heights[j * (GRID.n + 1) + i] = shape(i * GRID.cell - GRID.half, j * GRID.cell - GRID.half);
@@ -85,7 +106,7 @@ function confine(f) {
     p[0] = clamp(p[0], -HALF + 0.6, HALF - 0.6); p[2] = clamp(p[2], -HALF + 0.6, HALF - 0.6);
     return;
   }
-  for (const o of solids) if (Math.abs(p[0] - o.x) < 3 && Math.abs(p[2] - o.z) < 3) push(f, [o.x, 0, o.z], o.r + 0.28);
+  pushSolids(f, 0.28); pushSolids(f, 0.28);                    // twice, so being pushed off one cannot leave you in the next
   const d = Math.hypot(p[0], p[2]), max = coast(Math.atan2(p[0], p[2])) + (f.isPlayer ? SEA.swim : -1.5);
   if (d > max) { p[0] *= max / d; p[2] *= max / d; }
 }
@@ -107,19 +128,6 @@ function cliffs(f, x0, z0) {
   else { p[0] = x0; p[2] = z0; }
 }
 
-// distance to the first trunk or boulder on the ray, or Infinity
-function solidHit(origin, dir) {
-  const a = dir[0] * dir[0] + dir[2] * dir[2];
-  let best = Infinity;
-  if (a < 1e-6) return best;
-  for (const o of solids) {
-    const x = origin[0] - o.x, z = origin[2] - o.z, b = x * dir[0] + z * dir[2], disc = b * b - a * (x * x + z * z - o.r * o.r);
-    if (disc < 0) continue;
-    const t = (-b - Math.sqrt(disc)) / a, y = origin[1] + dir[1] * t;
-    if (t > 0 && t < best && y > o.y - 0.3 && y < o.y + o.h) best = t;
-  }
-  return best;
-}
 // where a ray meets the ground, the sea, a tree or a rock, or null
 function surfaceHit(origin, dir) {
   if (world.map !== 'island') {
@@ -178,9 +186,10 @@ function setMap(name, low) {
   abortLoot(); endSend(player);
   world.map = name; world.low = name === 'island' && !!low;
   if (name === 'island') loadFlora();
+  setChests(name);
+  grassNow = true;
   for (const q of pops) q.el.remove();
   for (const list of [pops, props, stars, particles, tracers, shells, flashes, marks]) list.length = 0;
-  for (const c of chests) { c.t = -1; c.open = c.openV = c.wobble = 0; c.forced = false; c.pos[1] = groundAt(c.pos[0], c.pos[2]); }
   player.yaw = Math.PI; cam.yaw = 0; cam.pitch = 0.12;
   player.hurt = 0; player.wet = 0; player.reload = -1; player.cycle = -1; game.hurtFade = 0;
   respawnPlayer();
@@ -283,7 +292,7 @@ ${FOG}
 float bulge(float a, float at, float wide) { float q = sin((a - at) / 2.0) / wide; return exp(-q * q); }
 void main() {
   float a = atan(vW.x, vW.z);
-  float past = length(vW.xz) - (105.0 + 13.0 * sin(3.0 * a + 1.1) + 9.0 * sin(5.0 * a + 2.6) + 4.0 * sin(11.0 * a) + 3.0 * sin(19.0 * a + 0.7)
+  float past = length(vW.xz) - 2.0 * (105.0 + 13.0 * sin(3.0 * a + 1.1) + 9.0 * sin(5.0 * a + 2.6) + 4.0 * sin(11.0 * a) + 3.0 * sin(19.0 * a + 0.7)
     - 34.0 * bulge(a, 0.75, 0.11) + 28.0 * bulge(a, -2.3, 0.09));
   float wave = sin(vW.x * 0.9 + uTime * 1.4) * sin(vW.z * 0.7 - uTime * 1.1) + 0.5 * sin((vW.x + vW.z) * 2.1 + uTime * 2.3);
   vec3 col = mix(vec3(0.22, 0.62, 0.66), vec3(0.04, 0.24, 0.42), smoothstep(1.0, 16.0, past)) + 0.035 * wave;
@@ -312,12 +321,17 @@ const land = (() => {
     const col = groundColour(x, z, h, nrm[1]);
     v.push(x, h, z, ...col, ...nrm);
   }
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const k = j * row + i; idx.push(k, k + row + 1, k + 1, k, k + row, k + row + 1); }
+  const PIECE = 50, pieces = [];
+  for (let pj = 0; pj < n; pj += PIECE) for (let pi = 0; pi < n; pi += PIECE) {
+    const from = idx.length;
+    for (let j = pj; j < Math.min(n, pj + PIECE); j++) for (let i = pi; i < Math.min(n, pi + PIECE); i++) { const k = j * row + i; idx.push(k, k + row + 1, k + 1, k, k + row, k + row + 1); }
+    pieces.push({ x: (pi + PIECE / 2) * GRID.cell - GRID.half, z: (pj + PIECE / 2) * GRID.cell - GRID.half, from, count: idx.length - from });
+  }
   const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
   attrib(0, new Float32Array(v), 3, gl.FLOAT, false, 36, 0); attrib(1, null, 3, gl.FLOAT, false, 36, 12); attrib(2, null, 3, gl.FLOAT, false, 36, 24);
   buffer(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(idx));
   gl.bindVertexArray(null);
-  return { vao, count: idx.length };
+  return { vao, count: idx.length, pieces, reach: PIECE * GRID.cell * 0.75 };
 })();
 // ---------------------------------------------------------------- trees, bushes, rocks and grass
 const solids = [], leaves = [];                              // what you bump into, what the camera avoids
@@ -329,7 +343,7 @@ function buildFlora(low) {
   const rnd = (a, b) => { seed = seed * 16807 % 2147483647; return a + (b - a) * seed / 2147483647; };
   const patch = (x, z) => {
     const i = Math.floor((x + GRID.half) / PATCH), j = Math.floor((z + GRID.half) / PATCH), key = i * 100 + j;
-    if (!patches.has(key)) patches.set(key, { x: (i + 0.5) * PATCH - GRID.half, z: (j + 0.5) * PATCH - GRID.half, big: { v: [], i: [] }, grass: { v: [], i: [] } });
+    if (!patches.has(key)) patches.set(key, { x: (i + 0.5) * PATCH - GRID.half, z: (j + 0.5) * PATCH - GRID.half, big: { v: [], i: [] } });
     return patches.get(key);
   };
   const vert = (m, p, col, n) => { m.v.push(p[0], p[1], p[2], col[0], col[1], col[2], n[0], n[1], n[2]); };
@@ -387,9 +401,9 @@ function buildFlora(low) {
       const a = start + k * 1.26 + rnd(-0.25, 0.25), reach = rnd(1.1, 1.8), high = rnd(3.7, 5.0), from = up(bend[0] * 0.8, rnd(2.4, 3.4), bend[1] * 0.8);
       const knee = up(Math.cos(a) * reach * 0.55, high - 0.65, Math.sin(a) * reach * 0.55), end = up(Math.cos(a) * reach, high, Math.sin(a) * reach);
       limb(from, knee, 0.13 * s, 0.09 * s, BARK, 5); limb(knee, end, 0.09 * s, 0.03 * s, BARK, 5);
-      clump(end, rnd(0.8, 1.1) * s, 75, 0.34 * s, col);
+      clump(end, rnd(0.8, 1.1) * s, 48, 0.42 * s, col);
     }
-    clump(up(0, 5.2, 0), 1.3 * s, 120, 0.34 * s, col);
+    clump(up(0, 5.2, 0), 1.3 * s, 75, 0.42 * s, col);
   };
 
   const pine = (at, s, shade) => {
@@ -457,7 +471,8 @@ function buildFlora(low) {
     return faces;
   };
   // one stone: every corner pushed in or out by its own amount, then broken off flat on a few sides
-  const stone = (at, size, col, depth) => {
+  const stone = (at, size, col, depth, stretch) => {
+    const [fx, fy, fz] = stretch || [1, 1, 1];
     const cuts = Array.from({ length: 8 }, () => ({ n: anyway(), k: rnd(0.45, 0.85) }));
     const turn = M3.ry(rnd(0, 6.3)), wide = rnd(0.9, 1.35), tall = rnd(0.65, 1.05), lean = rnd(-0.35, 0.35), corners = new Map();
     const carve = d => {
@@ -465,90 +480,116 @@ function buildFlora(low) {
       if (!corners.has(key)) {
         let q = V.mul(d, rnd(0.72, 1.38));
         for (const c of cuts) { const over = V.dot(q, c.n) - c.k; if (over > 0) q = V.mad(q, c.n, -over); }
-        corners.set(key, V.add(at, M3.vec(turn, [(q[0] + q[1] * lean) * size * wide, q[1] * size * tall + size * 0.28, q[2] * size])));
+        corners.set(key, V.add(at, M3.vec(turn, [(q[0] + q[1] * lean) * size * wide * fx, (q[1] * tall + 0.28) * size * fy, q[2] * size * fz])));
       }
       return corners.get(key);
     };
     const m = cur.big;
-    let reach = 0, top = 0;
+    const tris = [];
     for (const face of ball(depth)) {
       const pts = face.map(carve);
       let n = V.norm(V.cross(V.sub(pts[1], pts[0]), V.sub(pts[2], pts[0])));
       if (V.dot(n, M3.vec(turn, face[0])) < 0) n = V.mul(n, -1);
       const base = m.v.length / 9, tone = shadeOf(col, rnd(0.86, 1.14));
-      for (const q of pts) { vert(m, q, tone, n); reach += Math.hypot(q[0] - at[0], q[2] - at[2]) / (ball(depth).length * 3); top = Math.max(top, q[1] - at[1]); }
+      for (const q of pts) vert(m, q, tone, n);
+      tris.push(pts);
       m.i.push(base, base + 1, base + 2);
     }
-    return { reach, top };
+    return { tris };
   };
   const boulder = (at, s, shade) => {
     const grey = 0.36 + shade * 0.10, col = [grey + 0.02, grey, grey - 0.035];
-    const main = stone(at, s * 0.95, col, s > 0.8 ? 2 : 1);
+    const parts = [stone(at, s * 0.95, col, s > 0.8 ? 2 : 1)];
     if (s > 0.8) {                                            // big ones are a heap: a slab leaning on the main lump
       const a = rnd(0, 6.3);
-      stone(V.add(at, [Math.cos(a) * s * 0.65, 0, Math.sin(a) * s * 0.65]), s * rnd(0.5, 0.65), shadeOf(col, rnd(0.88, 1.08)), 1);
+      parts.push(stone(V.add(at, [Math.cos(a) * s * 0.65, 0, Math.sin(a) * s * 0.65]), s * rnd(0.5, 0.65), shadeOf(col, rnd(0.88, 1.08)), 1));
     }
     for (let k = 0; k < (low ? 2 : 4); k++) {                 // broken bits round the foot
-      const a = rnd(0, 6.3), r = s * rnd(0.1, 0.28);
+      const a = rnd(0, 6.3), r = s * rnd(0.08, 0.18);
       const far = s * rnd(1.05, 1.5), x = at[0] + Math.cos(a) * far, z = at[2] + Math.sin(a) * far;
       stone([x, groundHeight(x, z) - r * 0.25, z], r, shadeOf(col, rnd(0.85, 1.1)), 0);        // each on its own patch of ground
     }
-    return main;
+    return parts;                                            // the parts big enough to bump into
   };
 
   // one chance every few metres, nudged about; woods grow where the noise says so
-  const STEP = 5.5;
-  for (let i = -24; i <= 24; i++) for (let j = -24; j <= 24; j++) {
+  const STEP = 6.2;
+  for (let i = -52; i <= 52; i++) for (let j = -52; j <= 52; j++) {
     const r = k => bump(i * 3 + k * 17, j * 5 - k * 11);
     const x = (i + r(1) - 0.5) * STEP, z = (j + r(2) - 0.5) * STEP, e = pastCoast(x, z);
     if (e > -4 || Math.hypot(x, z) < 17 || pathDistance(x, z, GORGE) < 5) continue;
+    if (Object.values(SPOTS).some(([px, pz, r]) => Math.hypot(x - px, z - pz) < r)) continue;
     const y = groundHeight(x, z), slope = Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y), s = 0.75 + r(3) * 0.6, at = [x, y - 0.15, z];
     const woods = roll(x - 50, z + 30, 31);
     cur = patch(x, z); seed = 1 + Math.floor(r(8) * 2147483000);
-    if (e > -22 && y < 3) {
+    if (e > -26 && y < 3) {
       if (r(4) < 0.2) { palm(at, s, r(5) * 6.3); if (first) solids.push({ x, z, y, r: 0.24 * s, h: 2.2 * s }); }
-    } else if (slope < 0.8 && y < 18 && r(4) < (woods > 0.04 ? 0.7 : 0.05)) {
+    } else if (slope < 0.8 && y < 20 && r(4) < (woods > 0.04 ? 0.7 : 0.05)) {
       (woods > 0.17 || y > 9 ? pine : leafy)(at, s, r(5));
       if (first) { solids.push({ x, z, y, r: 0.3 * s, h: 3.5 * s }); leaves.push([x, y + 4.4 * s, z, 1.9 * s]); }
     } else if (r(6) < (y > 12 || slope > 0.8 ? 0.2 : 0.07)) {
       const size = 0.35 + r(7) ** 2 * 1.9;
       const base = y - 0.1 - Math.min(slope, 1) * size * 0.6;                         // sunk in, so none hang off a slope
-      const rock = boulder([x, base, z], size, r(5)), high = base + rock.top - y;
-      if (size > 0.6 && high > 0.45 && first) solids.push({ x, z, y, r: rock.reach * 0.85, h: high * 0.85, rock: true });
+      const rock = boulder([x, base, z], size, r(5));
+      if (first) addShape(rock.flatMap(part => part.tris), y);       // one shape for the whole heap
     } else if (slope < 0.7 && y < 16 && r(6) < (woods > 0 ? 0.5 : 0.17)) bush(at, s, r(5));
   }
 
-  // grass wherever the ground is green: short tufts everywhere, and thick piles of long bending blades
-  const grassHere = (x, z) => {
-    const y = groundHeight(x, z);
-    if (y < 1.4 || y > 16 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7) return null;
-    return Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y) > 0.6 ? null : y;
+  buildPlaces({ rnd, patch, add, limb, stone, boulder, leafy, pine, palm, clump, shadeOf, first, use: (p, k) => { cur = p; seed = 1 + k * 7919; } });
+  const upload = m => {
+    const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+    attrib(0, new Float32Array(m.v), 3, gl.FLOAT, false, 36, 0); attrib(1, null, 3, gl.FLOAT, false, 36, 12); attrib(2, null, 3, gl.FLOAT, false, 36, 24);
+    buffer(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(m.i));
+    gl.bindVertexArray(null);
+    return { vao, count: m.i.length };
   };
+  return [...patches.values()].map(p => ({ x: p.x, z: p.z, big: upload(p.big) }));
+}
+const floras = [];
+let flora = [];
+function loadFlora() {
+  const k = world.low ? 1 : 0;
+  if (!floras[k]) floras[k] = buildFlora(world.low);
+  flora = floras[k];
+}
+// ---------------------------------------------------------------- grass
+const TURF = 18, turf = new Map();                           // square patches of grass, made when you come near
+let grassNow = false;
+const grassHere = (x, z) => {
+  const y = groundHeight(x, z);
+  if (y < 1.4 || y > 16 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7) return null;
+  return Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y) > 0.6 ? null : y;
+};
+function growTurf(ti, tj, low) {
+  const v = [], idx = [];
+  let seed = 1;
+  const rnd = (a, b) => { seed = seed * 16807 % 2147483647; return a + (b - a) * seed / 2147483647; };
+  const vert = (p, col) => v.push(p[0], p[1], p[2], col[0], col[1], col[2], 0, 1, 0);
   // one blade: two bends, narrowing to a point, darker at the root
-  const blade = (m, x, y, z, a, tall, wide, lean, col) => {
-    const base = m.v.length / 9, cx = Math.cos(a), cz = Math.sin(a);
+  const blade = (x, y, z, a, tall, wide, lean, col) => {
+    const base = v.length / 9, cx = Math.cos(a), cz = Math.sin(a);
     const root = [col[0] * 0.8, col[1] * 0.85, col[2] * 0.8], mid = [col[0] * 1.05, col[1] * 1.15, col[2]], tip = [col[0] * 1.3, col[1] * 1.45, col[2] * 1.1];
     for (const [u, w, c] of [[0, 1, root], [0.55, 0.72, mid]]) {
       const out = lean * u * u, px = x + cx * out, pz = z + cz * out, py = y + tall * u;
-      vert(m, [px + cz * wide * w, py, pz - cx * wide * w], c, [0, 1, 0]);
-      vert(m, [px - cz * wide * w, py, pz + cx * wide * w], c, [0, 1, 0]);
+      vert([px + cz * wide * w, py, pz - cx * wide * w], c);
+      vert([px - cz * wide * w, py, pz + cx * wide * w], c);
     }
-    vert(m, [x + cx * lean, y + tall * 0.9, z + cz * lean], tip, [0, 1, 0]);
-    m.i.push(base, base + 1, base + 3, base, base + 3, base + 2, base + 2, base + 3, base + 4);
+    vert([x + cx * lean, y + tall * 0.9, z + cz * lean], tip);
+    idx.push(base, base + 1, base + 3, base, base + 3, base + 2, base + 2, base + 3, base + 4);
   };
   const sow = (cell, salt, chance, count, spread, height, wide) => {
-    const half = Math.floor(135 / cell);
-    for (let i = -half; i <= half; i++) for (let j = -half; j <= half; j++) {
+    const first = v => Math.ceil(v * TURF / cell), last = v => Math.ceil((v + 1) * TURF / cell);
+    for (let i = first(ti); i < last(ti); i++) for (let j = first(tj); j < last(tj); j++) {
       seed = 1 + Math.floor(bump(i * 7 + salt, j * 3 - salt) * 2147483000);
       const x = (i + rnd(-0.5, 0.5)) * cell, z = (j + rnd(-0.5, 0.5)) * cell;
       if (rnd(0, 1) > chance) continue;
       const y = grassHere(x, z);
       if (y === null) continue;
-      const m = patch(x, z).grass, col = groundColour(x, z, y, 1), tall = rnd(height[0], height[1]);
+      const col = groundColour(x, z, y, 1), tall = rnd(height[0], height[1]);
       for (let k = 0; k < count; k++) {
         const a = rnd(0, 6.3), d = Math.sqrt(rnd(0, 1)) * spread, bx = x + Math.cos(a) * d, bz = z + Math.sin(a) * d;
         // blades fan out from the middle, the outer ones leaning further
-        blade(m, bx, groundHeight(bx, bz) - 0.03, bz, a + rnd(-0.7, 0.7), tall * rnd(0.55, 1.15), wide, tall * rnd(0.15, 0.4) + d * 0.35, col);
+        blade(bx, groundHeight(bx, bz) - 0.03, bz, a + rnd(-0.7, 0.7), tall * rnd(0.55, 1.15), wide, tall * rnd(0.15, 0.4) + d * 0.35, col);
       }
     }
   };
@@ -557,22 +598,34 @@ function buildFlora(low) {
     sow(1.0, 11, 0.85, 7, 0.24, [0.13, 0.27], 0.022);
     sow(1.9, 53, 0.65, 30, 0.34, [0.32, 0.62], 0.028);
   }
-
-  const upload = m => {
-    const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
-    attrib(0, new Float32Array(m.v), 3, gl.FLOAT, false, 36, 0); attrib(1, null, 3, gl.FLOAT, false, 36, 12); attrib(2, null, 3, gl.FLOAT, false, 36, 24);
-    buffer(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(m.i));
-    gl.bindVertexArray(null);
-    return { vao, count: m.i.length };
-  };
-  return [...patches.values()].map(p => ({ x: p.x, z: p.z, big: upload(p.big), grass: upload(p.grass) }));
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  const points = buffer(gl.ARRAY_BUFFER, new Float32Array(v));
+  attrib(0, null, 3, gl.FLOAT, false, 36, 0); attrib(1, null, 3, gl.FLOAT, false, 36, 12); attrib(2, null, 3, gl.FLOAT, false, 36, 24);
+  const order = buffer(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(idx));
+  gl.bindVertexArray(null);
+  return { vao, count: idx.length, points, order };
 }
-const floras = [];
-let flora = [];
-function loadFlora() {
-  const k = world.low ? 1 : 0;
-  if (!floras[k]) floras[k] = buildFlora(world.low);
-  flora = floras[k];
+function drawGrass(eye) {
+  const low = world.low, far = (low ? 26 : 52), reach = Math.ceil(far / TURF) + 1;
+  const ci = Math.floor(eye[0] / TURF), cj = Math.floor(eye[2] / TURF), wanted = [];
+  for (let i = ci - reach; i <= ci + reach; i++) for (let j = cj - reach; j <= cj + reach; j++) {
+    const d = Math.hypot((i + 0.5) * TURF - eye[0], (j + 0.5) * TURF - eye[2]);
+    if (d < far + TURF * 0.6) wanted.push([d, i, j, (low ? 'low ' : '') + i + ' ' + j]);
+  }
+  wanted.sort((a, b) => a[0] - b[0]);
+  let budget = grassNow ? Infinity : 1;                      // one new patch a frame, so walking stays smooth
+  grassNow = false;
+  for (const [, i, j, key] of wanted) {
+    let t = turf.get(key);
+    if (!t) { if (budget <= 0) continue; budget--; t = growTurf(i, j, low); }
+    else turf.delete(key);
+    turf.set(key, t);                                        // newest last
+    drawPart(t);
+  }
+  while (turf.size > 90) {
+    const [key, t] = turf.entries().next().value;
+    gl.deleteVertexArray(t.vao); gl.deleteBuffer(t.points); gl.deleteBuffer(t.order); turf.delete(key);
+  }
 }
 const drawPart = m => { if (m.count) { gl.bindVertexArray(m.vao); gl.drawElements(gl.TRIANGLES, m.count, gl.UNSIGNED_INT, 0); } };
 // moving shadows only cover the ground round you, so only the patches there are needed
@@ -610,24 +663,24 @@ const seaVao = (() => {
   attrib(0, new Float32Array([-S, y, S, S, y, S, S, y, -S, -S, y, S, S, y, -S, -S, y, -S]), 3, gl.FLOAT);
   gl.bindVertexArray(null); return vao;
 })();
-const fogRange = () => world.low ? [70, 200] : [90, 420];
+const fogRange = () => world.low ? [70, 200] : [90, 330];
 function drawLand(vp, light, eye) {
   const k = world.low ? 1 : 0, shade = baked[k] || (baked[k] = bakeShadows());
   globals(landProg, vp, light, eye); gl.uniform3fv(landProg.u.uSky, SKY.island); gl.uniform2fv(landProg.u.uFog, fogRange());
   gl.uniform1i(landProg.u.uLow, k);
   gl.uniform1i(landProg.u.uBaked, 4); gl.uniformMatrix4fv(landProg.u.uBakedLight, false, shade.light);
   gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, shade.tex);
-  gl.uniform1i(landProg.u.uKind, 0); drawPart(land);
-  gl.uniform1i(landProg.u.uKind, 1);
-  // skip the patches behind you or off to the side; grass is only drawn close by
-  const R = PATCH * 0.75;
-  for (const p of flora) {
+  // skip what is behind you, off to the side or lost in the haze
+  const seen = (p, R) => {
     const x = vp[0] * p.x + vp[4] * 8 + vp[8] * p.z + vp[12], w = vp[3] * p.x + vp[7] * 8 + vp[11] * p.z + vp[15];
-    if (w < -R || Math.abs(x) > Math.max(w, 0) + R * 2.5) continue;
-    if (world.low && Math.hypot(p.x - eye[0], p.z - eye[2]) > fogRange()[1] + R) continue;
-    drawPart(p.big);
-    if (Math.hypot(p.x - eye[0], p.z - eye[2]) < (world.low ? 18 : 40) + R) drawPart(p.grass);
-  }
+    return w > -R && Math.abs(x) <= Math.max(w, 0) + R * 2.5 && Math.hypot(p.x - eye[0], p.z - eye[2]) < fogRange()[1] + R;
+  };
+  gl.uniform1i(landProg.u.uKind, 0); gl.bindVertexArray(land.vao);
+  for (const p of land.pieces) if (seen(p, land.reach)) gl.drawElements(gl.TRIANGLES, p.count, gl.UNSIGNED_INT, p.from * 4);
+  gl.uniform1i(landProg.u.uKind, 1);
+  for (const p of flora) if (seen(p, PATCH * 0.75)) drawPart(p.big);
+  drawGrass(eye);
+  drawSign(vp, light, eye);
 }
 // after everything solid, so legs show through the water
 function drawSea(vp, light, eye) {

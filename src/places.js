@@ -1,0 +1,346 @@
+// ======================================================================= places on the island
+// the landmarks, what you bump into, where chests and enemies turn up, and the sign in the middle
+
+// ---------------------------------------------------------------- solid things
+// a convex outline (seen from above) of some points
+function outline(points) {
+  const p = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const turn = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = list => {
+    const out = [];
+    for (const q of list) { while (out.length > 1 && turn(out[out.length - 2], out[out.length - 1], q) <= 0) out.pop(); out.push(q); }
+    out.pop();
+    return out;
+  };
+  return half(p).concat(half(p.reverse()));
+}
+// a solid with the real shape of its stone: an outline for walking into, the triangles for bullets
+function addShape(tris, ground) {
+  const all = tris.flat(), band = all.filter(q => q[1] > ground - 0.3 && q[1] < ground + 1.9);
+  const top = Math.max(...all.map(q => q[1])) - ground;
+  if (top < 0.5 || band.length < 3) return;                    // low enough to step over
+  const hull = outline(band.map(q => [q[0], q[2]]));
+  if (hull.length < 3) return;
+  const x = hull.reduce((s, q) => s + q[0], 0) / hull.length, z = hull.reduce((s, q) => s + q[1], 0) / hull.length;
+  const r = Math.max(...all.map(q => Math.hypot(q[0] - x, q[2] - z)));
+  solids.push({ x, z, y: ground, r, h: top, hull, tris });
+}
+const BUCKET = 10;
+let buckets = null;
+function solidsNear(x, z) {
+  if (!buckets) {
+    buckets = new Map();
+    for (const o of solids) {
+      const reach = o.r + 1;
+      for (let i = Math.floor((o.x - reach) / BUCKET); i <= Math.floor((o.x + reach) / BUCKET); i++)
+        for (let j = Math.floor((o.z - reach) / BUCKET); j <= Math.floor((o.z + reach) / BUCKET); j++) {
+          const key = i * 1000 + j;
+          if (!buckets.has(key)) buckets.set(key, []);
+          buckets.get(key).push(o);
+        }
+    }
+  }
+  return buckets.get(Math.floor(x / BUCKET) * 1000 + Math.floor(z / BUCKET)) || [];
+}
+// how far a point is from a solid (negative inside), and the nearest point of its edge
+function edgeOf(o, x, z) {
+  if (!o.hull) {
+    const d = Math.hypot(x - o.x, z - o.z) || 1e-6;
+    return { d: d - o.r, at: [o.x + (x - o.x) / d * o.r, o.z + (z - o.z) / d * o.r] };
+  }
+  let best = 1e9, at = null, inside = true;
+  for (let k = 0; k < o.hull.length; k++) {
+    const a = o.hull[k], b = o.hull[(k + 1) % o.hull.length], dx = b[0] - a[0], dz = b[1] - a[1];
+    if (dx * (z - a[1]) - dz * (x - a[0]) < 0) inside = false;
+    const u = clamp(((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz || 1), 0, 1), q = [a[0] + dx * u, a[1] + dz * u];
+    const d = Math.hypot(x - q[0], z - q[1]);
+    if (d < best) { best = d; at = q; }
+  }
+  return { d: inside ? -best : best, at };
+}
+function pushSolids(f, pad) {
+  const p = f.pos;
+  for (const o of solidsNear(p[0], p[2])) {
+    if (p[1] > o.y + o.h - 0.2) continue;                      // above it
+    const e = edgeOf(o, p[0], p[2]);
+    if (e.d >= pad) continue;
+    const dx = p[0] - e.at[0], dz = p[2] - e.at[1], len = Math.hypot(dx, dz);
+    if (len < 1e-6) continue;
+    const out = (e.d < 0 ? -pad : pad) / len;
+    p[0] = e.at[0] + dx * out; p[2] = e.at[1] + dz * out;
+  }
+}
+function rayTriangle(o, d, a, b, c) {
+  const e1 = V.sub(b, a), e2 = V.sub(c, a), h = V.cross(d, e2), det = V.dot(e1, h);
+  if (Math.abs(det) < 1e-9) return Infinity;
+  const s = V.sub(o, a), u = V.dot(s, h) / det;
+  if (u < 0 || u > 1) return Infinity;
+  const q = V.cross(s, e1), v = V.dot(d, q) / det;
+  if (v < 0 || u + v > 1) return Infinity;
+  const t = V.dot(e2, q) / det;
+  return t > 0 ? t : Infinity;
+}
+// distance to the first trunk, rock or post on the ray, or Infinity
+function solidHit(origin, dir) {
+  const a = dir[0] * dir[0] + dir[2] * dir[2];
+  let best = Infinity;
+  if (a < 1e-6) return best;
+  for (const o of solids) {
+    const x = origin[0] - o.x, z = origin[2] - o.z, b = x * dir[0] + z * dir[2], disc = b * b - a * (x * x + z * z - o.r * o.r);
+    if (disc < 0 || (-b + Math.sqrt(disc)) < 0) continue;
+    const near = (-b - Math.sqrt(disc)) / a;
+    if (near > best || near > 95) continue;
+    if (o.tris) {
+      for (const t of o.tris) best = Math.min(best, rayTriangle(origin, dir, t[0], t[1], t[2]));
+    } else {
+      const y = origin[1] + dir[1] * near;
+      if (near > 0 && y > o.y - 0.3 && y < o.y + o.h) best = near;
+    }
+  }
+  return best;
+}
+
+// ---------------------------------------------------------------- where you can walk to
+const WALK = { cell: 2.5 };
+let walkable = null;
+function reachMap() {
+  if (walkable) return walkable;
+  const n = Math.floor(GRID.half * 2 / WALK.cell), seen = new Uint8Array(n * n), at = i => (i + 0.5) * WALK.cell - GRID.half;
+  const start = Math.floor(GRID.half / WALK.cell), queue = [start * n + start];
+  seen[start * n + start] = 1;
+  const clear = (x, z) => solidsNear(x, z).every(o => edgeOf(o, x, z).d > 0.2);
+  for (let head = 0; head < queue.length; head++) {
+    const k = queue[head], i = k % n, j = (k - i) / n;
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const a = i + di, b = j + dj, next = b * n + a;
+      if (a < 0 || b < 0 || a >= n || b >= n || seen[next]) continue;
+      const x = at(a), z = at(b);
+      let y = groundHeight(at(i), at(j)), ok = true;
+      for (let s = 1; s <= 4 && ok; s++) {                     // no climbing a sheer face on the way
+        const u = s / 4, h = groundHeight(at(i) + di * WALK.cell * u, at(j) + dj * WALK.cell * u);
+        ok = h - y <= STEEP * WALK.cell / 4 && h > SEA.level;
+        y = h;
+      }
+      if (ok && clear(x, z)) { seen[next] = 1; queue.push(next); }
+    }
+  }
+  const cells = queue.map(k => [at(k % n), at((k - k % n) / n)]);
+  walkable = { cells, has: (x, z) => !!seen[Math.floor((z + GRID.half) / WALK.cell) * n + Math.floor((x + GRID.half) / WALK.cell)] };
+  return walkable;
+}
+
+// ---------------------------------------------------------------- chests
+const CHEST_COUNT = 130;
+// x, z, radius, how many: the places worth searching. whatever is left over lands anywhere
+const CHEST_AREAS = [
+  [SPOTS.circle[0], SPOTS.circle[1], 15, 7], [SPOTS.elder[0], SPOTS.elder[1], 15, 6], [SPOTS.bones[0], SPOTS.bones[1], 16, 7],
+  [SPOTS.camp[0], SPOTS.camp[1], 20, 10], [SPOTS.boulders[0], SPOTS.boulders[1], 32, 9], [SPOTS.crater[0], SPOTS.crater[1], 22, 9],
+  [SPOTS.pines[0], SPOTS.pines[1], 34, 8], [SPOTS.cove[0], SPOTS.cove[1], 30, 7],
+  [-124, 30, 22, 8], [-30, 96, 45, 9], [25, -125, 75, 10], [-112, -118, 48, 8]
+];
+// level ground, room to stand in front of the lid, nothing growing through it
+function goodChestSpot(x, z, taken) {
+  if (Math.hypot(x, z) < 34 || pastCoast(x, z) > -7 || !reachMap().has(x, z)) return false;
+  const y = groundHeight(x, z);
+  if (y < 1.0) return false;
+  for (const [dx, dz, most] of [[0.6, 0, 0.16], [-0.6, 0, 0.16], [0, 0.4, 0.16], [0, -0.4, 0.16], [0, 0.8, 0.2], [0, 1.5, 0.3]])
+    if (Math.abs(groundHeight(x + dx, z + dz) - y) > most) return false;
+  for (const dz of [0, 0.9]) if (solidsNear(x, z + dz).some(o => edgeOf(o, x, z + dz).d < 0.9)) return false;
+  return taken.every(c => Math.hypot(c.pos[0] - x, c.pos[2] - z) > 5);
+}
+const newChest = (gun, x, z) => ({ pos: [x, groundAt(x, z), z], gun, open: 0, openV: 0, wobble: 0, t: -1, forced: false });
+let plateChests = null;
+// the baseplate keeps its three; the island gets a fresh random scatter each visit
+function setChests(name) {
+  if (!plateChests) plateChests = chests.slice();
+  chests.length = 0;
+  if (name !== 'island') {
+    for (const c of plateChests) { c.t = -1; c.open = c.openV = c.wobble = 0; c.forced = false; chests.push(c); }
+    return;
+  }
+  const gun = () => { const r = Math.random(); return r < 0.5 ? 'glock' : r < 0.85 ? 'ak' : 'awp'; };
+  const tryAt = (x, z) => { if (goodChestSpot(x, z, chests)) chests.push(newChest(gun(), x, z)); };
+  for (const [ax, az, radius, count] of CHEST_AREAS) {
+    const want = Math.min(CHEST_COUNT, chests.length + count);
+    for (let k = 0; k < count * 80 && chests.length < want; k++) {
+      const a = rand(0, Math.PI * 2), d = Math.sqrt(Math.random()) * radius;
+      tryAt(ax + Math.sin(a) * d, az + Math.cos(a) * d);
+    }
+  }
+  const cells = reachMap().cells;
+  for (let k = 0; k < 40000 && chests.length < CHEST_COUNT; k++) {
+    const c = cells[Math.floor(Math.random() * cells.length)];
+    tryAt(c[0] + rand(-1, 1), c[1] + rand(-1, 1));
+  }
+}
+// somewhere for an enemy to turn up: anywhere you could walk to, away from you and the middle
+function enemySpot(avoid) {
+  const cells = reachMap().cells;
+  let pick = cells[0];
+  for (let k = 0; k < 200; k++) {
+    pick = cells[Math.floor(Math.random() * cells.length)];
+    if (Math.hypot(pick[0] - avoid[0], pick[1] - avoid[2]) > 50 && Math.hypot(pick[0], pick[1]) > 45 && pastCoast(pick[0], pick[1]) < -8) break;
+  }
+  return [pick[0], groundHeight(pick[0], pick[1]), pick[1]];
+}
+
+// ---------------------------------------------------------------- the sign in the middle
+const START = [0, 0, 7];                                     // you arrive facing it
+const signProg = program(`layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec2 aUv; uniform mat4 uViewProj, uModel; out vec3 vW; out vec3 vN; out vec2 vUv;
+void main() { vec4 w = uModel * vec4(aPos, 1.0); vW = w.xyz; vN = mat3(uModel) * aNrm; vUv = aUv; gl_Position = uViewProj * w; }`, `
+in vec3 vW; in vec3 vN; in vec2 vUv; out vec4 o;
+uniform sampler2D uTex;
+${COMMON}
+void main() {
+  vec3 N = normalize(vN);
+  vec3 col = texture(uTex, vUv).rgb * (0.62 + 0.55 * max(dot(N, uSun), 0.0) * shadowAt(vW + N * 0.02));
+  o = vec4(col, 1.0);
+}`);
+let sign = null;
+function makeSign() {
+  const art = document.createElement('canvas'); art.width = 1024; art.height = 512;
+  const g = art.getContext('2d');
+  // top part: the painted board. bottom strip: bare wood for the posts and edges
+  for (let i = 0; i < 16; i++) { g.fillStyle = i % 2 ? '#7a5230' : '#855a35'; g.fillRect(0, i * 32, 1024, 32); }
+  g.fillStyle = 'rgba(40,22,8,0.5)';
+  for (let i = 0; i < 520; i++) g.fillRect(Math.random() * 1024, Math.random() * 512, 20 + Math.random() * 90, 2);
+  g.fillStyle = '#fff3d6'; g.strokeStyle = '#2b1807'; g.lineWidth = 12; g.lineJoin = 'round';
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = 'bold 116px "Trebuchet MS", "Segoe UI", sans-serif';
+  for (const [text, y] of [['something', 130], ['cool here', 266]]) { g.strokeText(text, 512, y); g.fillText(text, 512, y); }
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, art);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  const v = [], idx = [];
+  const quad = (pts, n, uv) => {
+    const base = v.length / 8;
+    pts.forEach((p, k) => v.push(...p, ...n, ...uv[k]));
+    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  };
+  const wood = [[0.02, 0.8], [0.98, 0.8], [0.98, 0.98], [0.02, 0.98]], words = [[0, 0.77], [1, 0.77], [1, 0], [0, 0]];
+  const box = (x0, x1, y0, y1, z0, z1, painted) => {
+    quad([[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [0, 0, 1], painted ? words : wood);
+    quad([[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]], [0, 0, -1], painted ? words : wood);
+    quad([[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]], [1, 0, 0], wood);
+    quad([[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], [-1, 0, 0], wood);
+    quad([[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0]], [0, 1, 0], wood);
+  };
+  box(-1.45, -1.25, 0, 2.5, -0.1, 0.1); box(1.25, 1.45, 0, 2.5, -0.1, 0.1);
+  box(-1.8, 1.8, 1.2, 2.45, 0.1, 0.2, true);
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  buffer(gl.ARRAY_BUFFER, new Float32Array(v));
+  attrib(0, null, 3, gl.FLOAT, false, 32, 0); attrib(1, null, 3, gl.FLOAT, false, 32, 12); attrib(2, null, 2, gl.FLOAT, false, 32, 24);
+  buffer(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx));
+  gl.bindVertexArray(null);
+  return { vao, count: idx.length, tex };
+}
+function drawSign(vp, light, eye) {
+  if (!sign) sign = makeSign();
+  globals(signProg, vp, light, eye); gl.uniform1i(signProg.u.uTex, 0);
+  gl.uniformMatrix4fv(signProg.u.uModel, false, m4(M3.id(), [0, groundHeight(0, 0) - 0.05, 0]));
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, sign.tex);
+  gl.bindVertexArray(sign.vao); gl.drawElements(gl.TRIANGLES, sign.count, gl.UNSIGNED_SHORT, 0);
+}
+
+// ---------------------------------------------------------------- the landmarks
+// T: the tools the plant builder works with
+function buildPlaces(T) {
+  const { rnd, patch, add, limb, stone, boulder, leafy, pine, palm, clump, shadeOf, first } = T;
+  const ground = (x, z) => groundHeight(x, z);
+  const here = (x, z, seed) => { T.use(patch(x, z), seed); return [x, ground(x, z) - 0.1, z]; };
+  const post = (x, z, r, h) => { if (first) solids.push({ x, z, y: ground(x, z), r, h }); };
+  const GREY = [0.42, 0.40, 0.37], IVORY = [0.80, 0.74, 0.60], HIDE = [0.50, 0.34, 0.20], BARK = [0.27, 0.17, 0.10];
+
+  // the sign in the middle is solid too
+  if (first) {
+    const y = ground(0, 0), a = [-1.8, y + 0.2, 0.05], b = [1.8, y + 0.2, 0.05], c = [1.8, y + 2.4, 0.05], d = [-1.8, y + 2.4, 0.05];
+    solids.push({ x: 0, z: 0.05, y, r: 2.3, h: 2.4, hull: [[-1.8, -0.1], [1.8, -0.1], [1.8, 0.2], [-1.8, 0.2]], tris: [[[a[0], y + 1.15, 0.2], [b[0], y + 1.15, 0.2], [c[0], c[1], 0.2]], [[a[0], y + 1.15, 0.2], [c[0], c[1], 0.2], [d[0], d[1], 0.2]]] });
+  }
+
+  // a ring of standing stones round a flat altar
+  {
+    const [cx, cz] = SPOTS.circle;
+    for (let k = 0; k < 9; k++) {
+      const a = k / 9 * Math.PI * 2, x = cx + Math.sin(a) * 11, z = cz + Math.cos(a) * 11, at = here(x, z, 100 + k);
+      const rock = stone([x, at[1] - 0.4, z], 1.0, shadeOf(GREY, rnd(0.9, 1.1)), 1, [0.85, 3.6, 0.7]);
+      if (first) addShape(rock.tris, ground(x, z));
+    }
+    const at = here(cx, cz, 120), slab = stone([cx, at[1] - 0.15, cz], 1.7, shadeOf(GREY, 0.9), 1, [1.3, 0.45, 1]);
+    if (first) addShape(slab.tris, ground(cx, cz));
+  }
+  // one enormous old tree
+  {
+    const [x, z] = SPOTS.elder, at = here(x, z, 200);
+    leafy(at, 2.6, 0.3);
+    for (let k = 0; k < 9; k++) clump([x + rnd(-4.5, 4.5), at[1] + rnd(10.5, 14.5), z + rnd(-4.5, 4.5)], rnd(2.0, 2.8), 90, 0.75, [0.17, 0.38, 0.10]);
+    post(x, z, 1.0, 9);
+  }
+  // the skeleton of something very big
+  {
+    const [cx, cz] = SPOTS.bones, y = ground(cx, cz);
+    let last = null;
+    for (let k = 0; k <= 8; k++) {
+      const x = cx - 8 + k * 2, size = 1 - Math.abs(k - 3.5) / 8, at = here(x, cz, 300 + k), top = [x, y + 2.9 * size + 0.4, cz];
+      if (last) limb(last, top, 0.3, 0.3, IVORY, 7);
+      last = top;
+      if (k % 2 === 0) for (const side of [-1, 1]) {
+        const knee = [x, y + 2.6 * size + 0.3, cz + side * 2.4 * size], foot = [x, ground(x, cz + side * 3.0 * size) - 0.2, cz + side * 3.0 * size];
+        limb(top, knee, 0.2, 0.17, IVORY, 6); limb(knee, foot, 0.17, 0.07, IVORY, 6);
+        post(x, foot[2], 0.22, 2.2 * size);
+      }
+    }
+    const at = here(cx + 10.2, cz, 320), skull = stone([at[0], at[1] + 0.1, cz], 1.25, IVORY, 1, [1.25, 0.95, 0.9]);
+    if (first) addShape(skull.tris, ground(cx + 10.2, cz));
+    for (const side of [-1, 1]) limb([cx + 10.8, y + 1.0, cz + side * 0.8], [cx + 13.2, y + 2.0, cz + side * 1.5], 0.22, 0.03, IVORY, 6);
+  }
+  // an old camp: hide tents round a cold fire, and a totem
+  {
+    const [cx, cz] = SPOTS.camp;
+    for (let k = 0; k < 6; k++) {
+      const a = k / 6 * Math.PI * 2 + 0.3, x = cx + Math.sin(a) * 12, z = cz + Math.cos(a) * 12, at = here(x, z, 400 + k), s = rnd(0.9, 1.2);
+      add(coneData(2.3 * s, 3.4 * s, 9), at, shadeOf(HIDE, rnd(0.85, 1.15)));
+      for (let p = 0; p < 4; p++) { const b = p * 1.57 + 0.4; limb([x + Math.cos(b) * 0.5, at[1] + 2.6 * s, z + Math.sin(b) * 0.5], [x - Math.cos(b) * 0.4, at[1] + 4.0 * s, z - Math.sin(b) * 0.4], 0.06, 0.04, BARK, 5); }
+      post(x, z, 1.8 * s, 2.6 * s);
+    }
+    const at = here(cx, cz, 420);
+    for (let k = 0; k < 10; k++) { const a = k * 0.628; stone([cx + Math.sin(a) * 1.2, at[1], cz + Math.cos(a) * 1.2], 0.3, shadeOf(GREY, rnd(0.8, 1)), 0); }
+    for (let k = 0; k < 4; k++) { const a = k * 0.8; limb([cx - Math.sin(a) * 0.9, at[1] + 0.15, cz - Math.cos(a) * 0.9], [cx + Math.sin(a) * 0.9, at[1] + 0.3, cz + Math.cos(a) * 0.9], 0.12, 0.1, [0.12, 0.08, 0.05], 6); }
+    const foot = here(cx + 4, cz - 3, 430);
+    limb(foot, [foot[0], foot[1] + 4.6, foot[2]], 0.32, 0.24, BARK, 9);
+    for (let k = 0; k < 3; k++) stone([foot[0], foot[1] + 1.3 + k * 1.25, foot[2]], 0.42, shadeOf(IVORY, 1 - k * 0.12), 1);
+    for (const side of [-1, 1]) limb([foot[0], foot[1] + 4.4, foot[2]], [foot[0] + side * 1.3, foot[1] + 5.2, foot[2]], 0.13, 0.03, IVORY, 6);
+    post(foot[0], foot[2], 0.4, 4.6);
+  }
+  // a field of big boulders to duck between
+  {
+    const [cx, cz] = SPOTS.boulders;
+    for (let i = -3; i <= 3; i++) for (let j = -3; j <= 3; j++) {
+      const x = cx + i * 9 + (bump(i * 5, j * 9) - 0.5) * 6, z = cz + j * 9 + (bump(j * 7, i * 3) - 0.5) * 6;
+      if (Math.hypot(x - cx, z - cz) > 31 || pastCoast(x, z) > -8 || bump(i * 11, j * 13) < 0.2) continue;
+      const at = here(x, z, 500 + i * 10 + j), size = 1.1 + bump(i, j * 17) * 1.5;
+      const rock = boulder([x, at[1], z], size, bump(i * 2, j * 2));
+      if (first) addShape(rock.flatMap(part => part.tris), ground(x, z));
+    }
+  }
+  // a dark wood of tall pines
+  {
+    const [cx, cz] = SPOTS.pines;
+    for (let i = -6; i <= 6; i++) for (let j = -6; j <= 6; j++) {
+      const x = cx + i * 6 + (bump(i * 3, j * 8) - 0.5) * 4, z = cz + j * 6 + (bump(j * 4, i * 6) - 0.5) * 4;
+      if (Math.hypot(x - cx, z - cz) > 36 || pastCoast(x, z) > -8 || bump(i * 9, j * 5) < 0.25) continue;
+      const at = here(x, z, 700 + i * 20 + j), s = 1.15 + bump(i, j) * 0.45;
+      pine(at, s, bump(j, i));
+      post(x, z, 0.3 * s, 3.5 * s);
+    }
+  }
+  // palms crowding the shore of the bay
+  for (let k = 0; k < 46; k++) {
+    const a = 0.55 + bump(k, 91) * 0.42, d = coast(a) - 8 - bump(k, 57) * 20, x = Math.sin(a) * d, z = Math.cos(a) * d;
+    if (ground(x, z) < 0.3) continue;
+    const at = here(x, z, 900 + k), s = 0.8 + bump(k, 13) * 0.5;
+    palm(at, s, bump(k, 3) * 6.3);
+    post(x, z, 0.24 * s, 2.2 * s);
+  }
+}
