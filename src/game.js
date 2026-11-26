@@ -26,7 +26,7 @@ const GUNS = {
   awp: {
     name: 'AWP', article: 'an', auto: false, rate: 44, mag: 5, reserve: 20, damage: 160, reload: 3.9, spread: 0.045, bloom: 0.02, maxBloom: 0.05,
     kickUp: 0.085, kickSide: 0.014, kickBack: 0.12, climb: 0.36,
-    scale: 1.04, hip: [-0.31, 1.12, 0.17], ads: [-0.28, 1.28, 0.16], blade: -0.80,
+    scale: 1.22, hip: [-0.31, 1.12, 0.17], ads: [-0.28, 1.28, 0.16], blade: -0.80,
     muzzle: [0, 0.068, 0.90], port: [-0.022, 0.082, 0.10], magPoint: [0, -0.025, 0.127], boltPoint: [-0.056, 0.048, 0.057], boltTravel: 0.065,
     boltAction: true, boltAxis: [0, 0.0703, 0], cycle: 1.3, scoped: true, draw: 0.75,
     right: { at: [0, -0.004, 0.0], dir: [0.18, 0.05, 1], palm: [1, 0, 0], curl: [1.15, 1.25] },

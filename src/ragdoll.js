@@ -95,7 +95,7 @@ function ragStep(f, dt) {
   const R = f.rag, def = ragSetup(), n = R.p.length, h = RAG_H;
   // drag: one point is pulled toward a spot in front of the player
   const drag = dragging && dragging.f === f ? dragging : null;
-  if (drag) { R.sleep = false; R.still = 0; }
+  if (drag || R.pin) { R.sleep = false; R.still = 0; }
   if (R.sleep) return;
   R.acc = (R.acc || 0) + dt;
   let fall = 0;
@@ -115,6 +115,7 @@ function ragStep(f, dt) {
       }
       hinges(R);
       if (drag) { const g = R.p[drag.pt], to = drag.to; R.p[drag.pt] = V.lerp(g, to, 0.35); }
+      if (R.pin) R.p[R.pin.pt] = V.lerp(R.p[R.pin.pt], R.pin.to, R.pin.k || 0.35);     // someone holding a hand or a foot
       for (let i = 0; i < n; i++) {                               // the ground, and the things standing on it
         const p = R.p[i], r = def.rad[i], g = floorAt(p[0], p[2], p[1]) + r;
         if (p[1] < g) {
@@ -146,7 +147,7 @@ function ragStep(f, dt) {
   // fall asleep once he has stopped moving
   let move = 0; for (let i = 0; i < n; i++) move = Math.max(move, V.len(V.sub(R.p[i], R.q[i])) / h);
   R.still = move < 0.06 ? R.still + dt : 0;
-  if (R.still > 0.6 && !drag) R.sleep = true;
+  if (R.still > 0.6 && !drag && !R.pin) R.sleep = true;
   // where the game thinks the body is: feet end on the ground, lying head-ward along "back"
   const H = R.p[RP.hips], C = R.p[RP.neck];
   let back = [C[0] - H[0], 0, C[2] - H[2]];
