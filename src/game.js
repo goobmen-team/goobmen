@@ -376,7 +376,7 @@ function jitter(dir, spread) {
   return V.norm(V.add(dir, V.add(V.mul(x, Math.cos(a) * r), V.mul(y, Math.sin(a) * r))));
 }
 function damage(victim, amount, from, head) {
-  if (victim.dead >= 0 || (victim.isPlayer && game.godMode)) return;
+  if (victim.dead >= 0 || (victim.isPlayer && (game.godMode || FLY.on))) return;
   victim.hp -= amount; victim.hurt = 0.22;
   if (victim.isPlayer) {
     Sound.play('hurt', 0.8); hudDirty = true;
@@ -472,7 +472,9 @@ addEventListener('mouseup', e => { if (e.button === 0) mouse.fire = false; if (e
 addEventListener('contextmenu', e => e.preventDefault());
 addEventListener('blur', () => { keys.clear(); mouse.fire = mouse.aim = false; });
 addEventListener('wheel', e => {
-  if (!game.running || !player.inv.length) return;
+  if (!game.running) return;
+  if (FLY.on) { e.preventDefault(); if (e.deltaY) flySpeed(-e.deltaY); return; }   // up is faster
+  if (!player.inv.length) return;
   e.preventDefault();
   if (looting) return;
   const i = player.inv.indexOf(player.weapon);
@@ -492,7 +494,7 @@ addEventListener('keydown', e => {
   if (e.repeat) return;
   if (looting && !['Escape', 'KeyF', 'KeyP', 'KeyM'].includes(e.code)) return;
   if (e.code === 'Escape') setRunning(false);
-  else if (e.code === 'Space') startJump(player);
+  else if (e.code === 'Space') { if (!FLY.on) startJump(player); }
   else if (e.code === 'KeyR') startReload(player);
   else if (world.asking && ['Digit1', 'Digit2', 'Numpad1', 'Numpad2'].includes(e.code)) setMap('island', e.code.endsWith('2'));
   else if (e.code === 'Digit1') equip(player, 'ak');
@@ -504,6 +506,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyT') { if (world.map === 'island') setMap('plate'); else askMap(!world.asking); }   // temporary, while the map is being made
   else if (e.code === 'KeyQ') game.aimToggle = !game.aimToggle;
   else if (e.code === 'KeyF') fullscreen();
+  else if (e.code === 'KeyN') setFly(!FLY.on);                // developer testing
   else if (e.code === 'KeyP') { game.enemiesShoot = !game.enemiesShoot; ui.shootback.checked = game.enemiesShoot; notify(game.enemiesShoot ? 'Enemies shoot back' : 'Enemies hold fire'); }
   else if (e.code === 'KeyM') notify(Sound.toggle() ? 'Sound off' : 'Sound on');
 });
@@ -548,6 +551,7 @@ function locomotion(f, mx, my, sprint, dt) {
   f.pos[2] += Math.cos(dir) * pace * dt;
   confine(f);
   cliffs(f, x0, z0);
+  if (!f.isPlayer && inSea(f.pos) && !inSea([x0, 0, z0])) { f.pos[0] = x0; f.pos[2] = z0; }   // enemies stay out of the water
   if (f.dead < 0) {
     const floor = groundAt(f.pos[0], f.pos[2]);
     if (f.pos[1] - floor > 0.3) {                             // stepped off a ledge: fall
@@ -609,7 +613,7 @@ function cameraEye() {
   if (world.map === 'island') at[1] = Math.max(at[1], floorAt(at[0], at[2]) + 0.4);     // beside a steep bank
   let dist = cam.dist;
   if (fwd[1] > 0) dist = Math.min(dist, (at[1] - 0.18) / fwd[1]);
-  if (world.map === 'island') dist = cameraRoom(at, fwd, cam.dist);
+  if (world.map === 'island' && !FLY.on) dist = cameraRoom(at, fwd, cam.dist);
   return { eye: V.mad(at, fwd, -dist), at, fwd, dist };
 }
 function respawnPlayer() {
@@ -626,6 +630,7 @@ function playerStep(dt) {
     const before = f.dead; f.dead += dt; deathCues(f, before);
     locomotion(f, 0, 0, false, dt); weaponStep(f, dt); return;
   }
+  if (FLY.on) { flyStep(f, dt); weaponStep(f, dt); mouse.pressed = false; return; }
   if (lootStep(dt)) { mouse.pressed = false; return; }
   const mx = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
   const my = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
@@ -685,7 +690,7 @@ function botStep(b, i, dt) {
   }
   const to = V.sub(player.pos, b.pos), dist = Math.hypot(to[0], to[2]);
   // they leave you alone until you arm yourself or hit them
-  const hostile = game.enemiesShoot && player.dead < 0 && (player.weapon !== null || b.ai.seen);
+  const hostile = game.enemiesShoot && !FLY.on && player.dead < 0 && (player.weapon !== null || b.ai.seen);
   let mx = 0, my = 0;
   if (hostile) {
     b.yaw += wrap(Math.atan2(to[0], to[2]) - b.yaw) * Math.min(1, dt * 6);
@@ -914,7 +919,7 @@ function render() {
   const eye = V.add(view.eye, [rand(-sh, sh), rand(-sh, sh), rand(-sh, sh)]);
   if (world.map === 'island') eye[1] = Math.max(eye[1], floorAt(eye[0], eye[2]) + 0.18);   // never inside a hill
   const fov = cam.fov + (0.17 - cam.fov) * smooth(0.45, 1, sc);
-  const proj = perspective(fov, w / Math.max(1, h), 0.08, world.map !== 'island' ? 160 : world.low ? 300 : 600);
+  const proj = perspective(fov, w / Math.max(1, h), 0.08, world.map !== 'island' ? 160 : FLY.on ? 1200 : world.low ? 300 : 600);
   const vp = mul4(proj, lookAt(eye, V.add(eye, view.fwd)));
   lastView = { vp, w: canvas.clientWidth, h: canvas.clientHeight };
 
@@ -1029,7 +1034,7 @@ window.__game = {
   ready: true, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
-  resume() { manual = false; }, give, equip, startReload, damage, props,
+  resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges,
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },
   gunInfo() { const f = player; if (!f.gun) return null; const g = f.gun.g, hr = bonePos(f, 'hand_R'), hl = bonePos(f, 'hand_L'); const at = q => V.add(f.gun.p, M3.vec(f.gun.S, q)); return { rightErr: V.len(V.sub(hr, at(g.right.at))), leftErr: V.len(V.sub(hl, at(g.left.at))), muzzle: at(g.muzzle), forward: M3.vec(f.gun.R, [0, 0, 1]), target: f.target }; },

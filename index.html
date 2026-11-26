@@ -109,6 +109,7 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
       <tr><td>R / V</td><td>reload / show off your gun</td></tr>
       <tr><td>1, 2, 3, 4 or wheel</td><td>AK-74, Glock 17, AWP, fists</td></tr>
       <tr><td>F</td><td>fullscreen</td></tr>
+      <tr><td>N</td><td>fly (testing): Space up, C down, wheel speed</td></tr>
       <tr><td>T</td><td>island map, then 1 or 2 (temporary)</td></tr>
       <tr><td>P / M / Esc</td><td>enemy fire / sound / pause</td></tr>
     </table>
@@ -676,6 +677,33 @@ const HILLS = [[112, 82, 11, 30], [104, -42, 9, 26], [-72, -104, 8, 24], [-16, 1
   [62, -190, 10, 32], [-150, 108, 9, 28], [112, 170, 7, 24], [-46, -186, 11, 34], [196, 70, 8, 26], [-190, 40, 6, 22], [44, 62, 5, 18], [-52, 38, 4, 16]];
 const PEAK_AT = [25, -125], TWIN_AT = [-112, -118], MESA_AT = [-124, 30];
 const GORGE = [[-92, 94], [-48, 80], [-2, 106], [46, 90], [84, 70]];   // a winding pass with rock walls
+// two rivers from coast to coast. the bed is below sea level, so the same water fills them
+const RIVER = { wet: 6, bank: 10, valley: 30 };
+const smoothPath = knots => {
+  const out = [];
+  for (let k = 0; k + 1 < knots.length; k++) {
+    const p0 = knots[Math.max(0, k - 1)], p1 = knots[k], p2 = knots[k + 1], p3 = knots[Math.min(knots.length - 1, k + 2)];
+    for (let s = 0; s < 6; s++) {
+      const t = s / 6, at = i => 0.5 * (2 * p1[i] + (p2[i] - p0[i]) * t + (2 * p0[i] - 5 * p1[i] + 4 * p2[i] - p3[i]) * t * t + (3 * p1[i] - p0[i] - 3 * p2[i] + p3[i]) * t * t * t);
+      out.push([at(0), at(1)]);
+    }
+  }
+  out.push(knots[knots.length - 1]);
+  return out;
+};
+const RIVERS = [
+  [[-40, -290], [-52, -200], [-55, -135], [-34, -82], [-30, -40], [-48, 2], [-74, 42], [-112, 78], [-140, 132], [-146, 205], [-170, 290]],
+  [[160, -285], [108, -192], [96, -122], [80, -62], [52, -22], [46, 20], [62, 54], [102, 60], [152, 72], [204, 112], [275, 150]]
+].map(smoothPath);
+const riverDistance = (x, z) => Math.min(pathDistance(x, z, RIVERS[0]), pathDistance(x, z, RIVERS[1]));
+const bridges = [];                                          // filled in by bridges.js
+const MOUTHS = [];                                           // x, z of each place a river meets the coast
+for (const path of RIVERS) for (let k = 0; k + 1 < path.length; k++) {
+  const a = path[k], b = path[k + 1], ea = pastCoast(a[0], a[1]), eb = pastCoast(b[0], b[1]);
+  if ((ea < 0) === (eb < 0)) continue;
+  const u = ea / (ea - eb);
+  MOUTHS.push(a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u);
+}
 const bump = (i, j) => { const n = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return n - Math.floor(n); };
 function roll(x, z, size) {
   const u = x / size, v = z / size, i = Math.floor(u), j = Math.floor(v), a = smooth(0, 1, u - i), b = smooth(0, 1, v - j);
@@ -691,7 +719,17 @@ function pathDistance(x, z, path) {
 }
 function shape(x, z) {
   const e = pastCoast(x, z);
-  if (e >= 0) return SEA.floor * clamp(e / SEA.wade, 0, 1);
+  return carveRivers(x, z, e >= 0 ? SEA.floor * clamp(e / SEA.wade, 0, 1) : rawGround(x, z, e), e);
+}
+// a sandy bank beside the water, then the ground eases back up to what it was
+function carveRivers(x, z, h, e) {
+  const d = riverDistance(x, z) + roll(x, z, 13) * 2.4 - 5 * smooth(-38, 0, e);   // a wider mouth at the coast
+  if (d >= RIVER.valley) return h;
+  const bed = d < RIVER.bank ? SEA.floor + (1.1 - SEA.floor) * smooth(RIVER.wet - 2.5, RIVER.bank, d) : 1.1;
+  const back = smooth(RIVER.bank, RIVER.valley, d);
+  return Math.min(h, bed + (Math.max(h, bed) - bed) * back);
+}
+function rawGround(x, z, e) {
   // rolling ground at three sizes
   let h = MEADOW + 1.2 + roll(x, z, 37) * 5 + roll(x + 40, z, 16) * 2.4 + roll(x, z + 70, 6) * 0.6;
   for (const [hx, hz, top, r] of HILLS) {
@@ -740,7 +778,7 @@ const heights = new Float32Array((GRID.n + 1) * (GRID.n + 1));
 for (let j = 0; j <= GRID.n; j++) for (let i = 0; i <= GRID.n; i++) heights[j * (GRID.n + 1) + i] = shape(i * GRID.cell - GRID.half, j * GRID.cell - GRID.half);
 
 function groundAt(x, z) {
-  return world.map === 'island' ? groundHeight(x, z) : 0;
+  return world.map === 'island' ? walkHeight(x, z) : 0;
 }
 function groundHeight(x, z) {
   const u = (x + GRID.half) / GRID.cell, v = (z + GRID.half) / GRID.cell;
@@ -828,7 +866,7 @@ function seaStep(f, dt) {
   ui.hurtDir.style.transform = 'scale(0)';                   // no attacker to point at
   puff([f.pos[0], SEA.level + 0.05, f.pos[2]], 10, [0.85, 0.93, 0.97, 0.8], 1.1, 0.05, 0.5, 4);
   if (f.hp > 0) notify('The water hurts! Get back to land');
-  else { f.pos[1] = SEA.level - 0.15; knockOut(f, 'The sea got you'); }
+  else { f.pos[1] = SEA.level - 0.15; knockOut(f, 'The water got you'); }
 }
 
 // ---------------------------------------------------------------- swapping maps
@@ -838,7 +876,7 @@ function askMap(on) {
 }
 function setMap(name, low) {
   askMap(false);
-  abortLoot(); endSend(player);
+  abortLoot(); endSend(player); FLY.on = false;
   world.map = name; world.low = name === 'island' && !!low;
   if (name === 'island') loadFlora();
   setChests(name);
@@ -942,6 +980,7 @@ const seaProg = program(`layout(location=0) in vec3 aPos; uniform mat4 uViewProj
 void main() { vW = aPos; gl_Position = uViewProj * vec4(aPos, 1.0); }`, `
 in vec3 vW; out vec4 o;
 uniform float uTime;
+uniform vec2 uMouths[4];
 ${COMMON}
 ${FOG}
 float bulge(float a, float at, float wide) { float q = sin((a - at) / 2.0) / wide; return exp(-q * q); }
@@ -950,10 +989,13 @@ void main() {
   float past = length(vW.xz) - 2.0 * (105.0 + 13.0 * sin(3.0 * a + 1.1) + 9.0 * sin(5.0 * a + 2.6) + 4.0 * sin(11.0 * a) + 3.0 * sin(19.0 * a + 0.7)
     - 34.0 * bulge(a, 0.75, 0.11) + 28.0 * bulge(a, -2.3, 0.09));
   float wave = sin(vW.x * 0.9 + uTime * 1.4) * sin(vW.z * 0.7 - uTime * 1.1) + 0.5 * sin((vW.x + vW.z) * 2.1 + uTime * 2.3);
-  vec3 col = mix(vec3(0.22, 0.62, 0.66), vec3(0.04, 0.24, 0.42), smoothstep(1.0, 16.0, past)) + 0.035 * wave;
+  float mouth = 0.0;                                        // 1 where a river runs into the sea
+  for (int i = 0; i < 4; i++) mouth = max(mouth, 1.0 - smoothstep(16.0, 34.0, length(vW.xz - uMouths[i])));
+  float from = mix(1.0, -26.0, mouth), to = mix(16.0, 40.0, mouth);
+  vec3 col = mix(vec3(0.22, 0.62, 0.66), vec3(0.04, 0.24, 0.42), smoothstep(from, to, past)) + 0.035 * wave;
   float foam = 1.0 - smoothstep(0.2, 0.9, abs(past - 1.5 - 0.35 * sin(uTime * 1.6 + a * 40.0)));
-  col = mix(col, vec3(0.93, 0.97, 0.98), foam * 0.75);
-  o = vec4(fogged(col, vW), mix(0.62, 1.0, smoothstep(1.0, 12.0, past)));
+  col = mix(col, vec3(0.93, 0.97, 0.98), foam * 0.75 * (1.0 - mouth));
+  o = vec4(fogged(col, vW), mix(0.62, 1.0, smoothstep(from, mix(12.0, 30.0, mouth), past)));
 }`);
 
 const SAND = [0.80, 0.70, 0.47], GRASS = [0.31, 0.45, 0.20], LUSH = [0.17, 0.33, 0.13], DRY = [0.45, 0.46, 0.21], DIRT = [0.52, 0.40, 0.25], ROCK = [0.40, 0.36, 0.31], PEAK = [0.66, 0.63, 0.58], DEEP = [0.30, 0.34, 0.27];
@@ -1173,6 +1215,7 @@ function buildFlora(low) {
     const r = k => bump(i * 3 + k * 17, j * 5 - k * 11);
     const x = (i + r(1) - 0.5) * STEP, z = (j + r(2) - 0.5) * STEP, e = pastCoast(x, z);
     if (e > -4 || Math.hypot(x, z) < 17 || pathDistance(x, z, GORGE) < 5) continue;
+    if (riverDistance(x, z) < RIVER.bank + 1 || nearBridge(x, z, 4)) continue;
     if (Object.values(SPOTS).some(([px, pz, r]) => Math.hypot(x - px, z - pz) < r)) continue;
     const y = groundHeight(x, z), slope = Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y), s = 0.75 + r(3) * 0.6, at = [x, y - 0.15, z];
     const woods = roll(x - 50, z + 30, 31);
@@ -1212,7 +1255,7 @@ const TURF = 18, turf = new Map();                           // square patches o
 let grassNow = false;
 const grassHere = (x, z) => {
   const y = groundHeight(x, z);
-  if (y < 1.4 || y > 16 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7) return null;
+  if (y < 1.4 || y > 16 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7 || riverDistance(x, z) < RIVER.bank || nearBridge(x, z, 0.5)) return null;
   return Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y) > 0.6 ? null : y;
 };
 function growTurf(ti, tj, low) {
@@ -1288,6 +1331,7 @@ function drawFloraShadow(light, eye) {
   if (world.low) return;
   globals(staticDepth, light, light, eye);
   gl.uniformMatrix4fv(staticDepth.u.uModel, false, m4(M3.id(), [0, 0, 0]));
+  drawBridgeShadow();
   for (const p of flora) if (Math.hypot(p.x - player.pos[0], p.z - player.pos[2]) < PATCH * 0.75 + 16) drawPart(p.big);
 }
 
@@ -1308,6 +1352,7 @@ function bakeShadows() {
   gl.uniformMatrix4fv(staticDepth.u.uModel, false, m4(M3.id(), [0, 0, 0]));
   drawPart(land);
   for (const p of flora) drawPart(p.big);
+  drawBridgeShadow();
   gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fbo);
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, tex);       // it stays on unit 4
@@ -1318,7 +1363,7 @@ const seaVao = (() => {
   attrib(0, new Float32Array([-S, y, S, S, y, S, S, y, -S, -S, y, S, S, y, -S, -S, y, -S]), 3, gl.FLOAT);
   gl.bindVertexArray(null); return vao;
 })();
-const fogRange = () => world.low ? [70, 200] : [90, 330];
+const fogRange = () => FLY.on ? [280, 800] : world.low ? [70, 200] : [90, 330];
 function drawLand(vp, light, eye) {
   const k = world.low ? 1 : 0, shade = baked[k] || (baked[k] = bakeShadows());
   globals(landProg, vp, light, eye); gl.uniform3fv(landProg.u.uSky, SKY.island); gl.uniform2fv(landProg.u.uFog, fogRange());
@@ -1336,10 +1381,11 @@ function drawLand(vp, light, eye) {
   for (const p of flora) if (seen(p, PATCH * 0.75)) drawPart(p.big);
   drawGrass(eye);
   drawSign(vp, light, eye);
+  drawBridges(vp, light, eye);
 }
 // after everything solid, so legs show through the water
 function drawSea(vp, light, eye) {
-  globals(seaProg, vp, light, eye); gl.uniform3fv(seaProg.u.uSky, SKY.island); gl.uniform2fv(seaProg.u.uFog, fogRange()); gl.uniform1f(seaProg.u.uTime, game.time);
+  globals(seaProg, vp, light, eye); gl.uniform3fv(seaProg.u.uSky, SKY.island); gl.uniform2fv(seaProg.u.uFog, fogRange()); gl.uniform1f(seaProg.u.uTime, game.time); gl.uniform2fv(seaProg.u.uMouths, MOUTHS);
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   gl.bindVertexArray(seaVao); gl.drawArrays(gl.TRIANGLES, 0, 6);
   gl.disable(gl.BLEND);
@@ -1408,7 +1454,7 @@ function edgeOf(o, x, z) {
 function pushSolids(f, pad) {
   const p = f.pos;
   for (const o of solidsNear(p[0], p[2])) {
-    if (p[1] > o.y + o.h - 0.2) continue;                      // above it
+    if (p[1] > o.y + o.h - 0.2 || (o.thin && p[1] < o.y - 0.6)) continue;   // above it, or under a bridge rail
     const e = edgeOf(o, p[0], p[2]);
     if (e.d >= pad) continue;
     const dx = p[0] - e.at[0], dz = p[2] - e.at[1], len = Math.hypot(dx, dz);
@@ -1433,6 +1479,7 @@ function solidHit(origin, dir) {
   let best = Infinity;
   if (a < 1e-6) return best;
   for (const o of solids) {
+    if (o.thin) continue;
     const x = origin[0] - o.x, z = origin[2] - o.z, b = x * dir[0] + z * dir[2], disc = b * b - a * (x * x + z * z - o.r * o.r);
     if (disc < 0 || (-b + Math.sqrt(disc)) < 0) continue;
     const near = (-b - Math.sqrt(disc)) / a;
@@ -1455,16 +1502,16 @@ function reachMap() {
   const n = Math.floor(GRID.half * 2 / WALK.cell), seen = new Uint8Array(n * n), at = i => (i + 0.5) * WALK.cell - GRID.half;
   const start = Math.floor(GRID.half / WALK.cell), queue = [start * n + start];
   seen[start * n + start] = 1;
-  const clear = (x, z) => solidsNear(x, z).every(o => edgeOf(o, x, z).d > 0.2);
+  const clear = (x, z) => solidsNear(x, z).every(o => o.thin || edgeOf(o, x, z).d > 0.2);
   for (let head = 0; head < queue.length; head++) {
     const k = queue[head], i = k % n, j = (k - i) / n;
     for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const a = i + di, b = j + dj, next = b * n + a;
       if (a < 0 || b < 0 || a >= n || b >= n || seen[next]) continue;
       const x = at(a), z = at(b);
-      let y = groundHeight(at(i), at(j)), ok = true;
+      let y = walkHeight(at(i), at(j)), ok = true;
       for (let s = 1; s <= 4 && ok; s++) {                     // no climbing a sheer face on the way
-        const u = s / 4, h = groundHeight(at(i) + di * WALK.cell * u, at(j) + dj * WALK.cell * u);
+        const u = s / 4, h = walkHeight(at(i) + di * WALK.cell * u, at(j) + dj * WALK.cell * u);
         ok = h - y <= STEEP * WALK.cell / 4 && h > SEA.level;
         y = h;
       }
@@ -1488,6 +1535,7 @@ const CHEST_AREAS = [
 // level ground, room to stand in front of the lid, nothing growing through it
 function goodChestSpot(x, z, taken) {
   if (Math.hypot(x, z) < 34 || pastCoast(x, z) > -7 || !reachMap().has(x, z)) return false;
+  if (riverDistance(x, z) < RIVER.bank + 2 || nearBridge(x, z, 3)) return false;
   const y = groundHeight(x, z);
   if (y < 1.0) return false;
   for (const [dx, dz, most] of [[0.6, 0, 0.16], [-0.6, 0, 0.16], [0, 0.4, 0.16], [0, -0.4, 0.16], [0, 0.8, 0.2], [0, 1.5, 0.3]])
@@ -1526,9 +1574,9 @@ function enemySpot(avoid) {
   let pick = cells[0];
   for (let k = 0; k < 200; k++) {
     pick = cells[Math.floor(Math.random() * cells.length)];
-    if (Math.hypot(pick[0] - avoid[0], pick[1] - avoid[2]) > 50 && Math.hypot(pick[0], pick[1]) > 45 && pastCoast(pick[0], pick[1]) < -8) break;
+    if (Math.hypot(pick[0] - avoid[0], pick[1] - avoid[2]) > 50 && Math.hypot(pick[0], pick[1]) > 45 && pastCoast(pick[0], pick[1]) < -8 && riverDistance(pick[0], pick[1]) > RIVER.bank + 2) break;
   }
-  return [pick[0], groundHeight(pick[0], pick[1]), pick[1]];
+  return [pick[0], walkHeight(pick[0], pick[1]), pick[1]];
 }
 
 // ---------------------------------------------------------------- the sign in the middle
@@ -1538,10 +1586,11 @@ void main() { vec4 w = uModel * vec4(aPos, 1.0); vW = w.xyz; vN = mat3(uModel) *
 in vec3 vW; in vec3 vN; in vec2 vUv; out vec4 o;
 uniform sampler2D uTex;
 ${COMMON}
+${FOG}
 void main() {
   vec3 N = normalize(vN);
   vec3 col = texture(uTex, vUv).rgb * (0.62 + 0.55 * max(dot(N, uSun), 0.0) * shadowAt(vW + N * 0.02));
-  o = vec4(col, 1.0);
+  o = vec4(fogged(col, vW), 1.0);
 }`);
 let sign = null;
 function makeSign() {
@@ -1586,6 +1635,7 @@ function makeSign() {
 function drawSign(vp, light, eye) {
   if (!sign) sign = makeSign();
   globals(signProg, vp, light, eye); gl.uniform1i(signProg.u.uTex, 0);
+  gl.uniform3fv(signProg.u.uSky, SKY.island); gl.uniform2fv(signProg.u.uFog, fogRange());
   gl.uniformMatrix4fv(signProg.u.uModel, false, m4(M3.id(), [0, groundHeight(0, 0) - 0.05, 0]));
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, sign.tex);
   gl.bindVertexArray(sign.vao); gl.drawElements(gl.TRIANGLES, sign.count, gl.UNSIGNED_SHORT, 0);
@@ -1600,6 +1650,7 @@ function buildPlaces(T) {
   const post = (x, z, r, h) => { if (first) solids.push({ x, z, y: ground(x, z), r, h }); };
   const GREY = [0.42, 0.40, 0.37], IVORY = [0.80, 0.74, 0.60], HIDE = [0.50, 0.34, 0.20], BARK = [0.27, 0.17, 0.10];
 
+  if (first) addRails();
   // the sign in the middle is solid too
   if (first) {
     const y = ground(0, 0), a = [-1.8, y + 0.2, 0.05], b = [1.8, y + 0.2, 0.05], c = [1.8, y + 2.4, 0.05], d = [-1.8, y + 2.4, 0.05];
@@ -1690,6 +1741,176 @@ function buildPlaces(T) {
     palm(at, s, bump(k, 3) * 6.3);
     post(x, z, 0.24 * s, 2.2 * s);
   }
+}
+// ======================================================================= bridges over the rivers
+// arched wooden bridges. the deck is something you stand on (deckAt), the rails keep you from stepping off
+const DECK = { half: 2.1, rise: 2.2, plank: 0.42 };
+
+// which river (0 or 1) and how far along it, from one end to the other
+const CROSSINGS = [[0, 0.20], [0, 0.33], [0, 0.46], [0, 0.59], [0, 0.72], [1, 0.22], [1, 0.35], [1, 0.47], [1, 0.61], [1, 0.74]];
+for (const [river, along] of CROSSINGS) {
+  const path = RIVERS[river], k = Math.round(along * (path.length - 1));
+  const [x, z] = path[k], [ax, az] = path[Math.max(0, k - 2)], [bx, bz] = path[Math.min(path.length - 1, k + 2)];
+  const len = Math.hypot(bx - ax, bz - az) || 1, dx = -(bz - az) / len, dz = (bx - ax) / len;     // straight across the water
+  // walk out each way until the bank is properly dry
+  const reach = way => { let d = RIVER.wet + 2; while (d < 24 && groundHeight(x + dx * way * d, z + dz * way * d) < 0.75) d += 0.5; return d + 1.0; };
+  const back = reach(-1), front = reach(1);
+  const from = [x - dx * back, z - dz * back], span = back + front;
+  bridges.push({ from, dir: [dx, dz], span, y0: groundHeight(from[0], from[1]), y1: groundHeight(x + dx * front, z + dz * front) });
+}
+const deckHeight = (b, u) => b.y0 + (b.y1 - b.y0) * u + DECK.rise * Math.sin(Math.PI * u);
+// the height of the planks under a point, or -Infinity where there is no bridge
+function deckAt(x, z) {
+  for (const b of bridges) {
+    const rx = x - b.from[0], rz = z - b.from[1], along = rx * b.dir[0] + rz * b.dir[1], side = rz * b.dir[0] - rx * b.dir[1];
+    if (along >= 0 && along <= b.span && Math.abs(side) <= DECK.half) return deckHeight(b, along / b.span);
+  }
+  return -Infinity;
+}
+const walkHeight = (x, z) => Math.max(groundHeight(x, z), deckAt(x, z));
+const nearBridge = (x, z, pad) => bridges.some(b => {
+  const rx = x - b.from[0], rz = z - b.from[1], along = rx * b.dir[0] + rz * b.dir[1], side = rz * b.dir[0] - rx * b.dir[1];
+  return along > -pad && along < b.span + pad && Math.abs(side) < DECK.half + pad;
+});
+
+// the rails, as thin walls that only matter to someone standing on the deck
+function addRails() {
+  for (const b of bridges) {
+    const [dx, dz] = b.dir, pieces = Math.ceil(b.span / 2.5);
+    for (let k = 0; k < pieces; k++) for (const side of [-1, 1]) {
+      const at = (u, off) => [b.from[0] + dx * b.span * u - dz * side * off, b.from[1] + dz * b.span * u + dx * side * off];
+      const u0 = k / pieces, u1 = (k + 1) / pieces, corners = [at(u0, DECK.half), at(u1, DECK.half), at(u1, DECK.half + 0.2), at(u0, DECK.half + 0.2)];
+      const y = Math.min(deckHeight(b, u0), deckHeight(b, u1)), hull = outline(corners);
+      const mid = at((u0 + u1) / 2, DECK.half + 0.1);
+      solids.push({ x: mid[0], z: mid[1], y, r: b.span / pieces / 2 + 0.3, h: Math.abs(deckHeight(b, u1) - deckHeight(b, u0)) + 1.1, hull, thin: true });
+    }
+  }
+}
+
+// ---------------------------------------------------------------- the woodwork
+let woodwork = null;
+function makeBridges() {
+  const art = document.createElement('canvas'); art.width = art.height = 512;
+  const g = art.getContext('2d');
+  let seed = 7;
+  const rnd = (a, b) => { seed = seed * 16807 % 2147483647; return a + (b - a) * seed / 2147483647; };
+  g.fillStyle = '#7d5532'; g.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 900; i++) {                             // grain running along the length
+    g.fillStyle = i % 3 ? `rgba(48,27,10,${rnd(0.12, 0.45)})` : `rgba(196,150,96,${rnd(0.1, 0.35)})`;
+    g.fillRect(rnd(-80, 512), rnd(0, 512), rnd(30, 190), rnd(1, 3.5));
+  }
+  for (let i = 0; i < 16; i++) {                              // knots
+    const x = rnd(20, 490), y = rnd(20, 490);
+    for (let r = 4; r > 0; r--) { g.strokeStyle = `rgba(40,20,6,${0.18 * r})`; g.lineWidth = 2; g.beginPath(); g.ellipse(x, y, r * 5, r * 2.4, 0, 0, 7); g.stroke(); }
+  }
+  const tex = gl.createTexture(); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, art);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+
+  const v = [], idx = [];
+  // a beam from a to b: `side` and `thick` are its half sizes
+  const beam = (a, b, side, thick) => {
+    const along = V.sub(b, a), len = V.len(along), f = V.mul(along, 1 / (len || 1)), r = V.norm(V.cross(f, Math.abs(f[1]) > 0.99 ? [1, 0, 0] : [0, 1, 0])), up = V.cross(r, f);    // posts point straight up
+    const mid = V.lerp(a, b, 0.5), u0 = rnd(0, 1), v0 = rnd(0, 1);
+    const at = (i, j, k) => V.add(mid, V.add(V.mul(f, i * len / 2), V.add(V.mul(r, j * side), V.mul(up, k * thick))));
+    const face = (pts, n, wide, high) => {
+      const base = v.length / 8, uv = [[0, 0], [wide, 0], [wide, high], [0, high]];
+      pts.forEach((p, k) => v.push(...p, ...n, u0 + uv[k][0], v0 + uv[k][1]));
+      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    };
+    const L = len / 2.2, S = side * 0.9, T = thick * 0.9;
+    face([at(-1, -1, 1), at(1, -1, 1), at(1, 1, 1), at(-1, 1, 1)], up, L, S);
+    face([at(-1, -1, -1), at(1, -1, -1), at(1, 1, -1), at(-1, 1, -1)], V.mul(up, -1), L, S);
+    face([at(-1, 1, -1), at(1, 1, -1), at(1, 1, 1), at(-1, 1, 1)], r, L, T);
+    face([at(-1, -1, -1), at(1, -1, -1), at(1, -1, 1), at(-1, -1, 1)], V.mul(r, -1), L, T);
+    face([at(1, -1, -1), at(1, 1, -1), at(1, 1, 1), at(1, -1, 1)], f, S, T);
+    face([at(-1, -1, -1), at(-1, 1, -1), at(-1, 1, 1), at(-1, -1, 1)], V.mul(f, -1), S, T);
+  };
+  for (const b of bridges) {
+    const [dx, dz] = b.dir;
+    const at = (u, side, lift) => [b.from[0] + dx * b.span * u - dz * side, deckHeight(b, u) + lift, b.from[1] + dz * b.span * u + dx * side];
+    // planks across, each a touch different
+    const planks = Math.round(b.span / DECK.plank);
+    for (let k = 0; k < planks; k++) {
+      const u = (k + 0.5) / planks, wide = DECK.half + rnd(0.02, 0.14), slope = (deckHeight(b, u + 0.01) - deckHeight(b, u - 0.01)) / (0.02 * b.span);
+      const a = at(u, -wide, -0.06), c = at(u, wide, -0.06);
+      // a plank is a beam lying across: its width runs along the bridge, tipped with the arch
+      const half = b.span / planks / 2 - 0.02, base = v.length / 8;
+      beam(a, c, half, 0.055);
+      for (let n = base; n < v.length / 8; n++) {
+        const along = (v[n * 8] - a[0]) * dx + (v[n * 8 + 2] - a[2]) * dz;
+        v[n * 8 + 1] += along * slope;
+      }
+    }
+    const steps = Math.ceil(b.span / 1.9);
+    for (const side of [-1, 1]) {
+      for (let k = 0; k < steps; k++) {
+        const u0 = k / steps, u1 = (k + 1) / steps;
+        beam(at(u0, side * (DECK.half - 0.25), -0.3), at(u1, side * (DECK.half - 0.25), -0.3), 0.14, 0.19);   // the arched beam under the deck
+        beam(at(u0, side * (DECK.half + 0.06), 1.02), at(u1, side * (DECK.half + 0.06), 1.02), 0.09, 0.065);  // handrail
+        beam(at(u0, side * (DECK.half + 0.06), 0.56), at(u1, side * (DECK.half + 0.06), 0.56), 0.04, 0.045);  // lower rail
+      }
+      for (let k = 0; k <= steps; k++) {
+        const p = at(k / steps, side * (DECK.half + 0.06), 0);
+        beam([p[0], p[1] - 0.25, p[2]], [p[0], p[1] + (k === 0 || k === steps ? 1.4 : 1.1), p[2]], k === 0 || k === steps ? 0.15 : 0.08, k === 0 || k === steps ? 0.15 : 0.08);
+      }
+      // legs standing in the river
+      for (const u of [0.3, 0.7]) {
+        const p = at(u, side * (DECK.half - 0.25), -0.3);
+        beam([p[0], SEA.floor - 0.2, p[2]], p, 0.17, 0.17);
+      }
+    }
+    for (const u of [0.3, 0.7]) beam(at(u, -(DECK.half - 0.25), -0.75), at(u, DECK.half - 0.25, -0.75), 0.1, 0.12);
+  }
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  buffer(gl.ARRAY_BUFFER, new Float32Array(v));
+  attrib(0, null, 3, gl.FLOAT, false, 32, 0); attrib(1, null, 3, gl.FLOAT, false, 32, 12); attrib(2, null, 2, gl.FLOAT, false, 32, 24);
+  buffer(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(idx));
+  gl.bindVertexArray(null);
+  return { vao, count: idx.length, tex };
+}
+function loadBridges() { return woodwork || (woodwork = makeBridges()); }
+// for either shadow map
+function drawBridgeShadow() {
+  const w = loadBridges();
+  gl.bindVertexArray(w.vao); gl.drawElements(gl.TRIANGLES, w.count, gl.UNSIGNED_INT, 0);
+}
+function drawBridges(vp, light, eye) {
+  const w = loadBridges();
+  globals(signProg, vp, light, eye); gl.uniform1i(signProg.u.uTex, 0);
+  gl.uniform3fv(signProg.u.uSky, SKY.island); gl.uniform2fv(signProg.u.uFog, fogRange());
+  gl.uniformMatrix4fv(signProg.u.uModel, false, m4(M3.id(), [0, 0, 0]));
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, w.tex);
+  gl.bindVertexArray(w.vao); gl.drawElements(gl.TRIANGLES, w.count, gl.UNSIGNED_INT, 0);
+}
+
+// ======================================================================= flying (for testing the map)
+// N turns it on and off. WASD flies where you look, Space up, C down, the wheel sets the speed
+const FLY = { on: false, speed: 20, min: 3, max: 160 };
+function setFly(on) {
+  if (on === FLY.on || (on && (player.dead >= 0 || looting))) return;
+  FLY.on = on; player.drop = 0; player.air = 0; player.jump = -1; player.crouch = false; player.wet = 0;
+  notify(on ? 'Flying. Space up, C down, wheel for speed, N to land' : 'Flying off');
+}
+function flySpeed(way) {
+  FLY.speed = clamp(FLY.speed * (way > 0 ? 1.25 : 0.8), FLY.min, FLY.max);
+  notify('Flying speed ' + Math.round(FLY.speed) + ' m/s');
+}
+function flyStep(f, dt) {
+  const { fwd, right } = camVectors();
+  const held = (...codes) => codes.some(c => keys.has(c)) ? 1 : 0;
+  const ahead = held('KeyW', 'ArrowUp') - held('KeyS', 'ArrowDown'), side = held('KeyD', 'ArrowRight') - held('KeyA', 'ArrowLeft'), up = held('Space') - held('KeyC');
+  let move = V.add(V.mul(fwd, ahead), V.add(V.mul(right, side), [0, up, 0]));
+  if (V.len(move) > 1) move = V.norm(move);
+  f.pos = V.mad(f.pos, move, FLY.speed * dt);
+  const most = GRID.half - 5;
+  f.pos[0] = clamp(f.pos[0], -most, most); f.pos[2] = clamp(f.pos[2], -most, most);
+  f.pos[1] = clamp(f.pos[1], floorAt(f.pos[0], f.pos[2]), 250);
+  f.yaw += wrap(cam.yaw + Math.PI - f.yaw) * Math.min(1, dt * 18);
+  f.speed = 0; f.legYaw = 0; f.ads = 0; f.sprintW = 0; f.time += dt;
+  for (const n of CLIP_NAMES) f.weights[n] = n === 'Idle' ? 1 : 0;
+  f.target = V.mad(cameraEye().eye, fwd, 40);
 }
 
 // ======================================================================= fighters
@@ -2003,7 +2224,7 @@ function jitter(dir, spread) {
   return V.norm(V.add(dir, V.add(V.mul(x, Math.cos(a) * r), V.mul(y, Math.sin(a) * r))));
 }
 function damage(victim, amount, from, head) {
-  if (victim.dead >= 0 || (victim.isPlayer && game.godMode)) return;
+  if (victim.dead >= 0 || (victim.isPlayer && (game.godMode || FLY.on))) return;
   victim.hp -= amount; victim.hurt = 0.22;
   if (victim.isPlayer) {
     Sound.play('hurt', 0.8); hudDirty = true;
@@ -2099,7 +2320,9 @@ addEventListener('mouseup', e => { if (e.button === 0) mouse.fire = false; if (e
 addEventListener('contextmenu', e => e.preventDefault());
 addEventListener('blur', () => { keys.clear(); mouse.fire = mouse.aim = false; });
 addEventListener('wheel', e => {
-  if (!game.running || !player.inv.length) return;
+  if (!game.running) return;
+  if (FLY.on) { e.preventDefault(); if (e.deltaY) flySpeed(-e.deltaY); return; }   // up is faster
+  if (!player.inv.length) return;
   e.preventDefault();
   if (looting) return;
   const i = player.inv.indexOf(player.weapon);
@@ -2119,7 +2342,7 @@ addEventListener('keydown', e => {
   if (e.repeat) return;
   if (looting && !['Escape', 'KeyF', 'KeyP', 'KeyM'].includes(e.code)) return;
   if (e.code === 'Escape') setRunning(false);
-  else if (e.code === 'Space') startJump(player);
+  else if (e.code === 'Space') { if (!FLY.on) startJump(player); }
   else if (e.code === 'KeyR') startReload(player);
   else if (world.asking && ['Digit1', 'Digit2', 'Numpad1', 'Numpad2'].includes(e.code)) setMap('island', e.code.endsWith('2'));
   else if (e.code === 'Digit1') equip(player, 'ak');
@@ -2131,6 +2354,7 @@ addEventListener('keydown', e => {
   else if (e.code === 'KeyT') { if (world.map === 'island') setMap('plate'); else askMap(!world.asking); }   // temporary, while the map is being made
   else if (e.code === 'KeyQ') game.aimToggle = !game.aimToggle;
   else if (e.code === 'KeyF') fullscreen();
+  else if (e.code === 'KeyN') setFly(!FLY.on);                // developer testing
   else if (e.code === 'KeyP') { game.enemiesShoot = !game.enemiesShoot; ui.shootback.checked = game.enemiesShoot; notify(game.enemiesShoot ? 'Enemies shoot back' : 'Enemies hold fire'); }
   else if (e.code === 'KeyM') notify(Sound.toggle() ? 'Sound off' : 'Sound on');
 });
@@ -3377,6 +3601,7 @@ function locomotion(f, mx, my, sprint, dt) {
   f.pos[2] += Math.cos(dir) * pace * dt;
   confine(f);
   cliffs(f, x0, z0);
+  if (!f.isPlayer && inSea(f.pos) && !inSea([x0, 0, z0])) { f.pos[0] = x0; f.pos[2] = z0; }   // enemies stay out of the water
   if (f.dead < 0) {
     const floor = groundAt(f.pos[0], f.pos[2]);
     if (f.pos[1] - floor > 0.3) {                             // stepped off a ledge: fall
@@ -3438,7 +3663,7 @@ function cameraEye() {
   if (world.map === 'island') at[1] = Math.max(at[1], floorAt(at[0], at[2]) + 0.4);     // beside a steep bank
   let dist = cam.dist;
   if (fwd[1] > 0) dist = Math.min(dist, (at[1] - 0.18) / fwd[1]);
-  if (world.map === 'island') dist = cameraRoom(at, fwd, cam.dist);
+  if (world.map === 'island' && !FLY.on) dist = cameraRoom(at, fwd, cam.dist);
   return { eye: V.mad(at, fwd, -dist), at, fwd, dist };
 }
 function respawnPlayer() {
@@ -3455,6 +3680,7 @@ function playerStep(dt) {
     const before = f.dead; f.dead += dt; deathCues(f, before);
     locomotion(f, 0, 0, false, dt); weaponStep(f, dt); return;
   }
+  if (FLY.on) { flyStep(f, dt); weaponStep(f, dt); mouse.pressed = false; return; }
   if (lootStep(dt)) { mouse.pressed = false; return; }
   const mx = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
   const my = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
@@ -3514,7 +3740,7 @@ function botStep(b, i, dt) {
   }
   const to = V.sub(player.pos, b.pos), dist = Math.hypot(to[0], to[2]);
   // they leave you alone until you arm yourself or hit them
-  const hostile = game.enemiesShoot && player.dead < 0 && (player.weapon !== null || b.ai.seen);
+  const hostile = game.enemiesShoot && !FLY.on && player.dead < 0 && (player.weapon !== null || b.ai.seen);
   let mx = 0, my = 0;
   if (hostile) {
     b.yaw += wrap(Math.atan2(to[0], to[2]) - b.yaw) * Math.min(1, dt * 6);
@@ -3743,7 +3969,7 @@ function render() {
   const eye = V.add(view.eye, [rand(-sh, sh), rand(-sh, sh), rand(-sh, sh)]);
   if (world.map === 'island') eye[1] = Math.max(eye[1], floorAt(eye[0], eye[2]) + 0.18);   // never inside a hill
   const fov = cam.fov + (0.17 - cam.fov) * smooth(0.45, 1, sc);
-  const proj = perspective(fov, w / Math.max(1, h), 0.08, world.map !== 'island' ? 160 : world.low ? 300 : 600);
+  const proj = perspective(fov, w / Math.max(1, h), 0.08, world.map !== 'island' ? 160 : FLY.on ? 1200 : world.low ? 300 : 600);
   const vp = mul4(proj, lookAt(eye, V.add(eye, view.fwd)));
   lastView = { vp, w: canvas.clientWidth, h: canvas.clientHeight };
 
@@ -3858,7 +4084,7 @@ window.__game = {
   ready: true, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
-  resume() { manual = false; }, give, equip, startReload, damage, props,
+  resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges,
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },
   gunInfo() { const f = player; if (!f.gun) return null; const g = f.gun.g, hr = bonePos(f, 'hand_R'), hl = bonePos(f, 'hand_L'); const at = q => V.add(f.gun.p, M3.vec(f.gun.S, q)); return { rightErr: V.len(V.sub(hr, at(g.right.at))), leftErr: V.len(V.sub(hl, at(g.left.at))), muzzle: at(g.muzzle), forward: M3.vec(f.gun.R, [0, 0, 1]), target: f.target }; },

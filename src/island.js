@@ -21,6 +21,33 @@ const HILLS = [[112, 82, 11, 30], [104, -42, 9, 26], [-72, -104, 8, 24], [-16, 1
   [62, -190, 10, 32], [-150, 108, 9, 28], [112, 170, 7, 24], [-46, -186, 11, 34], [196, 70, 8, 26], [-190, 40, 6, 22], [44, 62, 5, 18], [-52, 38, 4, 16]];
 const PEAK_AT = [25, -125], TWIN_AT = [-112, -118], MESA_AT = [-124, 30];
 const GORGE = [[-92, 94], [-48, 80], [-2, 106], [46, 90], [84, 70]];   // a winding pass with rock walls
+// two rivers from coast to coast. the bed is below sea level, so the same water fills them
+const RIVER = { wet: 6, bank: 10, valley: 30 };
+const smoothPath = knots => {
+  const out = [];
+  for (let k = 0; k + 1 < knots.length; k++) {
+    const p0 = knots[Math.max(0, k - 1)], p1 = knots[k], p2 = knots[k + 1], p3 = knots[Math.min(knots.length - 1, k + 2)];
+    for (let s = 0; s < 6; s++) {
+      const t = s / 6, at = i => 0.5 * (2 * p1[i] + (p2[i] - p0[i]) * t + (2 * p0[i] - 5 * p1[i] + 4 * p2[i] - p3[i]) * t * t + (3 * p1[i] - p0[i] - 3 * p2[i] + p3[i]) * t * t * t);
+      out.push([at(0), at(1)]);
+    }
+  }
+  out.push(knots[knots.length - 1]);
+  return out;
+};
+const RIVERS = [
+  [[-40, -290], [-52, -200], [-55, -135], [-34, -82], [-30, -40], [-48, 2], [-74, 42], [-112, 78], [-140, 132], [-146, 205], [-170, 290]],
+  [[160, -285], [108, -192], [96, -122], [80, -62], [52, -22], [46, 20], [62, 54], [102, 60], [152, 72], [204, 112], [275, 150]]
+].map(smoothPath);
+const riverDistance = (x, z) => Math.min(pathDistance(x, z, RIVERS[0]), pathDistance(x, z, RIVERS[1]));
+const bridges = [];                                          // filled in by bridges.js
+const MOUTHS = [];                                           // x, z of each place a river meets the coast
+for (const path of RIVERS) for (let k = 0; k + 1 < path.length; k++) {
+  const a = path[k], b = path[k + 1], ea = pastCoast(a[0], a[1]), eb = pastCoast(b[0], b[1]);
+  if ((ea < 0) === (eb < 0)) continue;
+  const u = ea / (ea - eb);
+  MOUTHS.push(a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u);
+}
 const bump = (i, j) => { const n = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return n - Math.floor(n); };
 function roll(x, z, size) {
   const u = x / size, v = z / size, i = Math.floor(u), j = Math.floor(v), a = smooth(0, 1, u - i), b = smooth(0, 1, v - j);
@@ -36,7 +63,17 @@ function pathDistance(x, z, path) {
 }
 function shape(x, z) {
   const e = pastCoast(x, z);
-  if (e >= 0) return SEA.floor * clamp(e / SEA.wade, 0, 1);
+  return carveRivers(x, z, e >= 0 ? SEA.floor * clamp(e / SEA.wade, 0, 1) : rawGround(x, z, e), e);
+}
+// a sandy bank beside the water, then the ground eases back up to what it was
+function carveRivers(x, z, h, e) {
+  const d = riverDistance(x, z) + roll(x, z, 13) * 2.4 - 5 * smooth(-38, 0, e);   // a wider mouth at the coast
+  if (d >= RIVER.valley) return h;
+  const bed = d < RIVER.bank ? SEA.floor + (1.1 - SEA.floor) * smooth(RIVER.wet - 2.5, RIVER.bank, d) : 1.1;
+  const back = smooth(RIVER.bank, RIVER.valley, d);
+  return Math.min(h, bed + (Math.max(h, bed) - bed) * back);
+}
+function rawGround(x, z, e) {
   // rolling ground at three sizes
   let h = MEADOW + 1.2 + roll(x, z, 37) * 5 + roll(x + 40, z, 16) * 2.4 + roll(x, z + 70, 6) * 0.6;
   for (const [hx, hz, top, r] of HILLS) {
@@ -85,7 +122,7 @@ const heights = new Float32Array((GRID.n + 1) * (GRID.n + 1));
 for (let j = 0; j <= GRID.n; j++) for (let i = 0; i <= GRID.n; i++) heights[j * (GRID.n + 1) + i] = shape(i * GRID.cell - GRID.half, j * GRID.cell - GRID.half);
 
 function groundAt(x, z) {
-  return world.map === 'island' ? groundHeight(x, z) : 0;
+  return world.map === 'island' ? walkHeight(x, z) : 0;
 }
 function groundHeight(x, z) {
   const u = (x + GRID.half) / GRID.cell, v = (z + GRID.half) / GRID.cell;
@@ -173,7 +210,7 @@ function seaStep(f, dt) {
   ui.hurtDir.style.transform = 'scale(0)';                   // no attacker to point at
   puff([f.pos[0], SEA.level + 0.05, f.pos[2]], 10, [0.85, 0.93, 0.97, 0.8], 1.1, 0.05, 0.5, 4);
   if (f.hp > 0) notify('The water hurts! Get back to land');
-  else { f.pos[1] = SEA.level - 0.15; knockOut(f, 'The sea got you'); }
+  else { f.pos[1] = SEA.level - 0.15; knockOut(f, 'The water got you'); }
 }
 
 // ---------------------------------------------------------------- swapping maps
@@ -183,7 +220,7 @@ function askMap(on) {
 }
 function setMap(name, low) {
   askMap(false);
-  abortLoot(); endSend(player);
+  abortLoot(); endSend(player); FLY.on = false;
   world.map = name; world.low = name === 'island' && !!low;
   if (name === 'island') loadFlora();
   setChests(name);
@@ -287,6 +324,7 @@ const seaProg = program(`layout(location=0) in vec3 aPos; uniform mat4 uViewProj
 void main() { vW = aPos; gl_Position = uViewProj * vec4(aPos, 1.0); }`, `
 in vec3 vW; out vec4 o;
 uniform float uTime;
+uniform vec2 uMouths[4];
 ${COMMON}
 ${FOG}
 float bulge(float a, float at, float wide) { float q = sin((a - at) / 2.0) / wide; return exp(-q * q); }
@@ -295,10 +333,13 @@ void main() {
   float past = length(vW.xz) - 2.0 * (105.0 + 13.0 * sin(3.0 * a + 1.1) + 9.0 * sin(5.0 * a + 2.6) + 4.0 * sin(11.0 * a) + 3.0 * sin(19.0 * a + 0.7)
     - 34.0 * bulge(a, 0.75, 0.11) + 28.0 * bulge(a, -2.3, 0.09));
   float wave = sin(vW.x * 0.9 + uTime * 1.4) * sin(vW.z * 0.7 - uTime * 1.1) + 0.5 * sin((vW.x + vW.z) * 2.1 + uTime * 2.3);
-  vec3 col = mix(vec3(0.22, 0.62, 0.66), vec3(0.04, 0.24, 0.42), smoothstep(1.0, 16.0, past)) + 0.035 * wave;
+  float mouth = 0.0;                                        // 1 where a river runs into the sea
+  for (int i = 0; i < 4; i++) mouth = max(mouth, 1.0 - smoothstep(16.0, 34.0, length(vW.xz - uMouths[i])));
+  float from = mix(1.0, -26.0, mouth), to = mix(16.0, 40.0, mouth);
+  vec3 col = mix(vec3(0.22, 0.62, 0.66), vec3(0.04, 0.24, 0.42), smoothstep(from, to, past)) + 0.035 * wave;
   float foam = 1.0 - smoothstep(0.2, 0.9, abs(past - 1.5 - 0.35 * sin(uTime * 1.6 + a * 40.0)));
-  col = mix(col, vec3(0.93, 0.97, 0.98), foam * 0.75);
-  o = vec4(fogged(col, vW), mix(0.62, 1.0, smoothstep(1.0, 12.0, past)));
+  col = mix(col, vec3(0.93, 0.97, 0.98), foam * 0.75 * (1.0 - mouth));
+  o = vec4(fogged(col, vW), mix(0.62, 1.0, smoothstep(from, mix(12.0, 30.0, mouth), past)));
 }`);
 
 const SAND = [0.80, 0.70, 0.47], GRASS = [0.31, 0.45, 0.20], LUSH = [0.17, 0.33, 0.13], DRY = [0.45, 0.46, 0.21], DIRT = [0.52, 0.40, 0.25], ROCK = [0.40, 0.36, 0.31], PEAK = [0.66, 0.63, 0.58], DEEP = [0.30, 0.34, 0.27];
@@ -518,6 +559,7 @@ function buildFlora(low) {
     const r = k => bump(i * 3 + k * 17, j * 5 - k * 11);
     const x = (i + r(1) - 0.5) * STEP, z = (j + r(2) - 0.5) * STEP, e = pastCoast(x, z);
     if (e > -4 || Math.hypot(x, z) < 17 || pathDistance(x, z, GORGE) < 5) continue;
+    if (riverDistance(x, z) < RIVER.bank + 1 || nearBridge(x, z, 4)) continue;
     if (Object.values(SPOTS).some(([px, pz, r]) => Math.hypot(x - px, z - pz) < r)) continue;
     const y = groundHeight(x, z), slope = Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y), s = 0.75 + r(3) * 0.6, at = [x, y - 0.15, z];
     const woods = roll(x - 50, z + 30, 31);
@@ -557,7 +599,7 @@ const TURF = 18, turf = new Map();                           // square patches o
 let grassNow = false;
 const grassHere = (x, z) => {
   const y = groundHeight(x, z);
-  if (y < 1.4 || y > 16 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7) return null;
+  if (y < 1.4 || y > 16 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7 || riverDistance(x, z) < RIVER.bank || nearBridge(x, z, 0.5)) return null;
   return Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y) > 0.6 ? null : y;
 };
 function growTurf(ti, tj, low) {
@@ -633,6 +675,7 @@ function drawFloraShadow(light, eye) {
   if (world.low) return;
   globals(staticDepth, light, light, eye);
   gl.uniformMatrix4fv(staticDepth.u.uModel, false, m4(M3.id(), [0, 0, 0]));
+  drawBridgeShadow();
   for (const p of flora) if (Math.hypot(p.x - player.pos[0], p.z - player.pos[2]) < PATCH * 0.75 + 16) drawPart(p.big);
 }
 
@@ -653,6 +696,7 @@ function bakeShadows() {
   gl.uniformMatrix4fv(staticDepth.u.uModel, false, m4(M3.id(), [0, 0, 0]));
   drawPart(land);
   for (const p of flora) drawPart(p.big);
+  drawBridgeShadow();
   gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fbo);
   gl.viewport(0, 0, canvas.width, canvas.height);
   gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, tex);       // it stays on unit 4
@@ -663,7 +707,7 @@ const seaVao = (() => {
   attrib(0, new Float32Array([-S, y, S, S, y, S, S, y, -S, -S, y, S, S, y, -S, -S, y, -S]), 3, gl.FLOAT);
   gl.bindVertexArray(null); return vao;
 })();
-const fogRange = () => world.low ? [70, 200] : [90, 330];
+const fogRange = () => FLY.on ? [280, 800] : world.low ? [70, 200] : [90, 330];
 function drawLand(vp, light, eye) {
   const k = world.low ? 1 : 0, shade = baked[k] || (baked[k] = bakeShadows());
   globals(landProg, vp, light, eye); gl.uniform3fv(landProg.u.uSky, SKY.island); gl.uniform2fv(landProg.u.uFog, fogRange());
@@ -681,10 +725,11 @@ function drawLand(vp, light, eye) {
   for (const p of flora) if (seen(p, PATCH * 0.75)) drawPart(p.big);
   drawGrass(eye);
   drawSign(vp, light, eye);
+  drawBridges(vp, light, eye);
 }
 // after everything solid, so legs show through the water
 function drawSea(vp, light, eye) {
-  globals(seaProg, vp, light, eye); gl.uniform3fv(seaProg.u.uSky, SKY.island); gl.uniform2fv(seaProg.u.uFog, fogRange()); gl.uniform1f(seaProg.u.uTime, game.time);
+  globals(seaProg, vp, light, eye); gl.uniform3fv(seaProg.u.uSky, SKY.island); gl.uniform2fv(seaProg.u.uFog, fogRange()); gl.uniform1f(seaProg.u.uTime, game.time); gl.uniform2fv(seaProg.u.uMouths, MOUTHS);
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   gl.bindVertexArray(seaVao); gl.drawArrays(gl.TRIANGLES, 0, 6);
   gl.disable(gl.BLEND);

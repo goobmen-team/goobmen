@@ -61,7 +61,7 @@ function edgeOf(o, x, z) {
 function pushSolids(f, pad) {
   const p = f.pos;
   for (const o of solidsNear(p[0], p[2])) {
-    if (p[1] > o.y + o.h - 0.2) continue;                      // above it
+    if (p[1] > o.y + o.h - 0.2 || (o.thin && p[1] < o.y - 0.6)) continue;   // above it, or under a bridge rail
     const e = edgeOf(o, p[0], p[2]);
     if (e.d >= pad) continue;
     const dx = p[0] - e.at[0], dz = p[2] - e.at[1], len = Math.hypot(dx, dz);
@@ -86,6 +86,7 @@ function solidHit(origin, dir) {
   let best = Infinity;
   if (a < 1e-6) return best;
   for (const o of solids) {
+    if (o.thin) continue;
     const x = origin[0] - o.x, z = origin[2] - o.z, b = x * dir[0] + z * dir[2], disc = b * b - a * (x * x + z * z - o.r * o.r);
     if (disc < 0 || (-b + Math.sqrt(disc)) < 0) continue;
     const near = (-b - Math.sqrt(disc)) / a;
@@ -108,16 +109,16 @@ function reachMap() {
   const n = Math.floor(GRID.half * 2 / WALK.cell), seen = new Uint8Array(n * n), at = i => (i + 0.5) * WALK.cell - GRID.half;
   const start = Math.floor(GRID.half / WALK.cell), queue = [start * n + start];
   seen[start * n + start] = 1;
-  const clear = (x, z) => solidsNear(x, z).every(o => edgeOf(o, x, z).d > 0.2);
+  const clear = (x, z) => solidsNear(x, z).every(o => o.thin || edgeOf(o, x, z).d > 0.2);
   for (let head = 0; head < queue.length; head++) {
     const k = queue[head], i = k % n, j = (k - i) / n;
     for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const a = i + di, b = j + dj, next = b * n + a;
       if (a < 0 || b < 0 || a >= n || b >= n || seen[next]) continue;
       const x = at(a), z = at(b);
-      let y = groundHeight(at(i), at(j)), ok = true;
+      let y = walkHeight(at(i), at(j)), ok = true;
       for (let s = 1; s <= 4 && ok; s++) {                     // no climbing a sheer face on the way
-        const u = s / 4, h = groundHeight(at(i) + di * WALK.cell * u, at(j) + dj * WALK.cell * u);
+        const u = s / 4, h = walkHeight(at(i) + di * WALK.cell * u, at(j) + dj * WALK.cell * u);
         ok = h - y <= STEEP * WALK.cell / 4 && h > SEA.level;
         y = h;
       }
@@ -141,6 +142,7 @@ const CHEST_AREAS = [
 // level ground, room to stand in front of the lid, nothing growing through it
 function goodChestSpot(x, z, taken) {
   if (Math.hypot(x, z) < 34 || pastCoast(x, z) > -7 || !reachMap().has(x, z)) return false;
+  if (riverDistance(x, z) < RIVER.bank + 2 || nearBridge(x, z, 3)) return false;
   const y = groundHeight(x, z);
   if (y < 1.0) return false;
   for (const [dx, dz, most] of [[0.6, 0, 0.16], [-0.6, 0, 0.16], [0, 0.4, 0.16], [0, -0.4, 0.16], [0, 0.8, 0.2], [0, 1.5, 0.3]])
@@ -179,9 +181,9 @@ function enemySpot(avoid) {
   let pick = cells[0];
   for (let k = 0; k < 200; k++) {
     pick = cells[Math.floor(Math.random() * cells.length)];
-    if (Math.hypot(pick[0] - avoid[0], pick[1] - avoid[2]) > 50 && Math.hypot(pick[0], pick[1]) > 45 && pastCoast(pick[0], pick[1]) < -8) break;
+    if (Math.hypot(pick[0] - avoid[0], pick[1] - avoid[2]) > 50 && Math.hypot(pick[0], pick[1]) > 45 && pastCoast(pick[0], pick[1]) < -8 && riverDistance(pick[0], pick[1]) > RIVER.bank + 2) break;
   }
-  return [pick[0], groundHeight(pick[0], pick[1]), pick[1]];
+  return [pick[0], walkHeight(pick[0], pick[1]), pick[1]];
 }
 
 // ---------------------------------------------------------------- the sign in the middle
@@ -191,10 +193,11 @@ void main() { vec4 w = uModel * vec4(aPos, 1.0); vW = w.xyz; vN = mat3(uModel) *
 in vec3 vW; in vec3 vN; in vec2 vUv; out vec4 o;
 uniform sampler2D uTex;
 ${COMMON}
+${FOG}
 void main() {
   vec3 N = normalize(vN);
   vec3 col = texture(uTex, vUv).rgb * (0.62 + 0.55 * max(dot(N, uSun), 0.0) * shadowAt(vW + N * 0.02));
-  o = vec4(col, 1.0);
+  o = vec4(fogged(col, vW), 1.0);
 }`);
 let sign = null;
 function makeSign() {
@@ -239,6 +242,7 @@ function makeSign() {
 function drawSign(vp, light, eye) {
   if (!sign) sign = makeSign();
   globals(signProg, vp, light, eye); gl.uniform1i(signProg.u.uTex, 0);
+  gl.uniform3fv(signProg.u.uSky, SKY.island); gl.uniform2fv(signProg.u.uFog, fogRange());
   gl.uniformMatrix4fv(signProg.u.uModel, false, m4(M3.id(), [0, groundHeight(0, 0) - 0.05, 0]));
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, sign.tex);
   gl.bindVertexArray(sign.vao); gl.drawElements(gl.TRIANGLES, sign.count, gl.UNSIGNED_SHORT, 0);
@@ -253,6 +257,7 @@ function buildPlaces(T) {
   const post = (x, z, r, h) => { if (first) solids.push({ x, z, y: ground(x, z), r, h }); };
   const GREY = [0.42, 0.40, 0.37], IVORY = [0.80, 0.74, 0.60], HIDE = [0.50, 0.34, 0.20], BARK = [0.27, 0.17, 0.10];
 
+  if (first) addRails();
   // the sign in the middle is solid too
   if (first) {
     const y = ground(0, 0), a = [-1.8, y + 0.2, 0.05], b = [1.8, y + 0.2, 0.05], c = [1.8, y + 2.4, 0.05], d = [-1.8, y + 2.4, 0.05];
