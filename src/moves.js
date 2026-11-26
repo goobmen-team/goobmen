@@ -1,7 +1,8 @@
 // ======================================================================= jumping
-// a big cartoon caveman jump: squat with the arms swung back, spring up with both arms flung over his head, knees
-// tucked up high at the top, arms out wide on the way down, and a wide, knees-out landing. Running, it is a big striding leap.
-const JUMP = { speed: 3.9, gravity: 12.5, pre: 0.13, preMoving: 0.05, land: 0.3, landMoving: 0.17 };
+// A natural jump: a quick dip with the arms swinging back, a push off with the arms swinging forward and up to chest
+// height, the knees drawn up a little at the top, legs reaching for the ground, and a soft knees-bent landing.
+// Running, it is a stride: lead knee up, back leg trailing, arms swinging the other way.
+const JUMP = { speed: 3.9, gravity: 12.5, pre: 0.12, preMoving: 0.05, land: 0.3, landMoving: 0.18 };
 JUMP.air = 2 * JUMP.speed / JUMP.gravity;
 function startJump(f) {
   if (f.jump >= 0 || f.dead >= 0) return;
@@ -23,58 +24,49 @@ function jumpStep(f, dt) {
   if (crossed(T.down)) {
     Sound.play('land', mine ? 0.8 : 0.2); puff([f.pos[0], f.pos[1] + 0.04, f.pos[2]], 12, [0.52, 0.50, 0.46, 0.65], 1.0, 0.065, 0.45, 1);
     f.riseV -= 2.2;                                            // the gun dips with the landing
-    if (mine) cam.shake = Math.max(cam.shake, 0.4);
+    if (mine) cam.shake = Math.max(cam.shake, 0.3);
   }
   if (f.jump >= T.end) f.jump = -1;
 }
 // how the body is shaped this frame: null when not jumping
 function jumpShape(f) {
   if (f.jump < 0 || f.dead >= 0) return null;
-  const T = jumpTimes(f), t = f.jump, A = JUMP.air, P = T.pre, D = T.down, u = clamp((t - P) / A, 0, 1);
-  const air = t >= P && t < D, moving = f.jumpMoving, way = f.jumpBack ? -1 : 1;
-  // how low he is: the squat before, the stretch as he leaves, the squash when he lands
-  const squat = t < P ? smooth(0, P, t) : 0;
-  const stretch = air ? 1 - smooth(0.0, 0.28, u) : 0;
-  const land = t >= D ? track([[D, 0], [D + 0.06, 1], [D + T.land * 0.6, 0.35], [T.end, 0]], t) : 0;
-  const tuck = air ? smooth(0.12, 0.42, u) * (1 - smooth(0.62, 0.92, u)) : 0;
-  const reach = air ? smooth(0.6, 0.95, u) : 0;                      // legs stretch down for the ground
-  const w = smooth(0, 0.04, t) * (1 - smooth(T.end - 0.1, T.end, t));
-  const low = moving ? 0.5 : 1;
+  const T = jumpTimes(f), t = f.jump, A = JUMP.air, P = T.pre, D = T.down, E = T.end, moving = f.jumpMoving, way = f.jumpBack ? -1 : 1;
+  const w = smooth(0, 0.04, t) * (1 - smooth(E - 0.08, E, t));
+  const at = k => P + A * k;                                       // a moment in the air, 0 to 1
   const shape = {
-    w, drop: (-0.2 * squat - 0.2 * land) * low + 0.03 * stretch,
-    bend: (0.45 * squat + 0.35 * land) * low - 0.18 * stretch + (moving ? 0.25 : 0.12) * tuck,
-    head: (-0.1 * squat - 0.1 * land) * low + 0.25 * stretch,
+    w,
+    drop: flow([[0, 0], [P, moving ? -0.05 : -0.12], [at(0.12), 0.02], [at(0.85), 0.01], [D, 0], [D + 0.07, moving ? -0.07 : -0.13], [E, 0]], t),
+    bend: flow([[0, 0], [P, moving ? 0.15 : 0.3], [at(0.15), 0.02], [at(0.5), 0.1], [D, 0.05], [D + 0.07, moving ? 0.2 : 0.32], [E, 0]], t),
+    head: flow([[0, 0], [P, -0.08], [at(0.2), 0.06], [at(0.8), -0.04], [D + 0.07, -0.1], [E, 0]], t),
     legs: {}, arms: {}
   };
-  const wig = Math.sin(t * 34) * tuck;                                // a little flail at the top
   for (const [s, x] of [['R', -1], ['L', 1]]) {
     const rest = Rig.rest[IDX['foot_' + s]], lead = s === 'L';
-    let ankle, foot, pole = [x * 0.45, 0, 1];
-    if (moving) {                                                   // the leap: lead knee up and forward, the other leg trailing behind
-      const fwd = lead ? 0.34 : -0.36, up = lead ? 0.3 : 0.26;
-      ankle = V.add(rest, [0, up * tuck + 0.03 * reach, way * fwd * Math.max(tuck, 0.4 * reach) - 0.05 * stretch]);
-      foot = M3.rx(0.6 * stretch + (lead ? -0.1 : 0.9) * tuck);
-      pole = [x * 0.2, 0, 1];
-    } else {                                                        // the cannonball: both knees right up, feet under his bum
-      ankle = V.add(rest, [x * (0.05 * tuck + 0.09 * land + 0.03 * squat), 0.34 * tuck - 0.02 * stretch, 0.1 * tuck - 0.05 * stretch]);
-      foot = M3.rx(0.7 * stretch + 0.25 * tuck);
+    let up, fwd, toe;
+    if (moving) {                                                  // stride
+      up = flow([[P, 0], [at(0.3), lead ? 0.26 : 0.18], [at(0.6), lead ? 0.24 : 0.2], [at(0.95), lead ? 0.06 : 0.1], [D, 0]], t);
+      fwd = way * flow([[P, 0], [at(0.3), lead ? 0.28 : -0.3], [at(0.7), lead ? 0.24 : -0.22], [D, lead ? 0.08 : -0.06], [E, 0]], t);
+      toe = flow([[P, 0.5], [at(0.3), lead ? -0.1 : 0.9], [at(0.8), 0.1], [D, 0], [E, 0]], t);
+    } else {                                                       // knees drawn up a little, one more than the other
+      up = flow([[P, 0], [at(0.12), -0.02], [at(0.45), lead ? 0.2 : 0.15], [at(0.62), lead ? 0.18 : 0.14], [at(0.92), 0.02], [D, 0]], t);
+      fwd = flow([[P, 0], [at(0.45), lead ? 0.08 : 0.03], [at(0.9), 0.02], [D, 0]], t);
+      toe = flow([[0, 0], [P, 0], [at(0.12), 0.7], [at(0.45), 0.25], [at(0.85), 0.25], [D, 0]], t);
     }
-    shape.legs[s] = { ankle, foot, pole };
-    // the arms (only when his hands are free)
+    const spread = flow([[0, 0], [D, 0], [D + 0.07, 0.04], [E, 0]], t);
+    shape.legs[s] = { ankle: V.add(rest, [x * spread, up, fwd]), foot: M3.rx(toe), pole: [x * 0.3, 0, 1] };
+    // arms: back on the dip, forward and up to chest height as he goes, out a little at the top, forward for the landing
     let keys;
     if (moving) {
-      const fore = (lead ? -1 : 1) * way;                           // arms swing opposite the legs
-      keys = [[0, [x * 0.44, 0.68, 0.03]], [P, [x * 0.44, 0.7, 0.03]], [P + A * 0.25, [x * 0.34, 1.62, 0.36 * fore - 0.05]], [P + A * 0.7, [x * 0.62, 1.45, 0.2 * fore]],
-        [D, [x * 0.7, 1.15, 0.1]], [D + 0.07, [x * 0.5, 0.78, 0.2]], [T.end, [x * 0.44, 0.68, 0.03]]];
+      const o = (lead ? -1 : 1) * way;                                // the arm opposite the lead leg goes forward
+      keys = [[0, [x * 0.44, 0.68, 0.03]], [P, [x * 0.44, 0.7, 0.0]], [at(0.3), [x * 0.42, 1.05 + 0.15 * Math.max(0, o), 0.3 * o]], [at(0.7), [x * 0.5, 1.0, 0.18 * o]], [D, [x * 0.5, 0.9, 0.1]], [D + 0.08, [x * 0.46, 0.8, 0.2]], [E, [x * 0.44, 0.68, 0.03]]];
     } else {
-      keys = [[0, [x * 0.44, 0.68, 0.03]], [P, [x * 0.36, 0.66, -0.34]], [P + A * 0.18, [x * 0.24, 2.02, 0.1]], [P + A * 0.5, [x * 0.46, 1.98, 0.02]],
-        [P + A * 0.82, [x * 0.8, 1.38, 0.08]], [D + 0.06, [x * 0.42, 0.8, 0.34]], [T.end, [x * 0.44, 0.68, 0.03]]];
+      keys = [[0, [x * 0.44, 0.68, 0.03]], [P, [x * 0.4, 0.72, -0.24]], [at(0.22), [x * 0.36, 1.2, 0.34]], [at(0.55), [x * 0.52, 1.18, 0.2]], [at(0.9), [x * 0.54, 1.02, 0.18]], [D + 0.08, [x * 0.42, 0.84, 0.3]], [E, [x * 0.44, 0.68, 0.03]]];
     }
-    const wrist = V.add(track(keys, t), [0, 0.05 * wig * x, 0.04 * wig]);
-    const upness = clamp((wrist[1] - 1.0) / 0.7, 0, 1);
-    const along = V.sub(wrist, [x * 0.22, 1.42, -0.02]);              // the hand carries on the line of the arm
-    const dir = V.len(along) > 0.15 ? V.norm(along) : V.norm(V.lerp([x * 0.35, -0.9, 0.2], [x * 0.25, 1, 0.05], upness));
-    shape.arms[s] = { wrist, dir, palm: V.norm(V.lerp([-x, 0, 0.2], [0, 0, 1], upness)), pole: [x, -0.3, -0.6], curl: [0.25 + 0.3 * tuck, 0.25 + 0.3 * tuck] };
+    const wrist = flow(keys, t);
+    const along = V.sub(wrist, [x * 0.22, 1.42, -0.02]);
+    const dir = V.len(along) > 0.12 ? V.norm(V.add(along, [0, -0.15, 0])) : [x * 0.3, -0.9, 0.2];
+    shape.arms[s] = { wrist, dir, palm: V.orth([-x, -0.6, 0.2], dir), pole: [x, -0.4, -0.6], curl: [0.75, 0.8] };   // loose fists
   }
   return shape;
 }

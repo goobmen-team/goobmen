@@ -519,6 +519,8 @@ const Sound = (() => {
     shellin: v => { burst(0.04, 1500, 0.6 * v, 'bandpass', 0, 5); burst(0.03, 3000, 0.35 * v, 'bandpass', 0.05, 6); },
     vest: v => { burst(0.16, 900, 0.5 * v, 'bandpass', 0, 1.5); burst(0.1, 2400, 0.35 * v, 'bandpass', 0.14, 3); tone(300, 600, 0.12, 0.2 * v, 0.28, 'triangle'); },
     thwack: v => { tone(260, 90, 0.1, 0.7 * v, 0, 'triangle'); burst(0.07, 1400, 0.6 * v, 'bandpass', 0, 2); },
+    hmph: v => { tone(150, 105, 0.17, 0.32 * v, 0, 'sawtooth'); burst(0.13, 480, 0.22 * v, 'bandpass', 0, 1.6); },     // a short satisfied grunt
+    creak: v => { tone(340, 250, 0.42, 0.06 * v, 0, 'sawtooth'); tone(352, 262, 0.42, 0.05 * v, 0.01, 'sawtooth'); burst(0.4, 1100, 0.1 * v, 'bandpass', 0, 6); },   // an old lid
     knock: v => { tone(210, 150, 0.07, 0.55 * v, 0, 'triangle'); burst(0.05, 700, 0.45 * v, 'bandpass', 0, 2.5); },   // knuckles on wood
     sniff: v => {                                     // snf snf: two quick breathy pulls through the nose
       for (const at of [0, 0.15]) { swell(0.05, 0.11, 3800, 0.22 * v, at); burst(0.08, 2400, 0.12 * v, 'bandpass', at + 0.01, 1.4); }

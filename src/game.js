@@ -204,13 +204,13 @@ function gunTransform(f, g, chestPos) {
   const rl = f.reload >= 0 ? smooth(0, 0.14, f.reload / g.reload) * (1 - smooth(0.84, 1, f.reload / g.reload)) : 0;
   R = M3.mul(R, M3.ry(0.62 * sp));                            // sprint: muzzle across the body
   R = M3.mul(R, M3.rx(0.38 * sp + 1.15 * down - 0.22 * rl - f.rise));
-  R = M3.mul(R, M3.rz(0.55 * rl + f.roll));
+  R = M3.mul(R, M3.mul(M3.ry(0.3 * rl), M3.rz(0.45 * rl + f.roll)));   // reloading: muzzle a little across, tipped towards him
   R = M3.mul(R, M3.mul(M3.rz(0.30 * work - 0.9 * down * (g.draw ? 1 : 0)), M3.rx(0.05 * bp.back)));
   R = M3.mul(R, M3.mul(M3.ry(0.75 * look1 - 0.35 * look2), M3.mul(M3.rx(-0.25 * look1 - 0.45 * look2), M3.rz(-1.0 * look1 + 1.15 * look2))));
   const peer = peerAmount(f);                                 // the gun sags while he stares into the magazine
   R = M3.mul(R, M3.rx(0.34 * peer));
   p = V.add(p, [-0.03 * peer, -0.09 * peer, -0.03 * peer]);
-  p = V.add(p, [0.03 * sp + 0.03 * rl, -0.07 * sp - 0.25 * down + 0.015 * rl, -0.05 * rl]);
+  p = V.add(p, [0.03 * sp + 0.2 * rl, -0.07 * sp - 0.25 * down - 0.03 * rl, -0.03 * rl]);   // and brought in to the middle of his chest, where both hands reach
   p = V.mad(p, aim, -f.kick);
   p = V.add(p, [0.03 * (look1 + look2), 0.05 * (look1 + look2) + 0.012 * work, -0.04 * work]);
   return { R, p, aim, pitch, k: g.scale };
@@ -845,6 +845,7 @@ function update(dt) {
     const to = c.t >= 0 || c.forced ? 1 : 0;
     c.openV += ((to - c.open) * 140 - c.openV * (to ? 11 : 20)) * dt; c.open += c.openV * dt;
     if (c.open < 0) { c.open = 0; c.openV = 0; }
+    if (c.held !== undefined && c.held !== null) { c.open = c.held; c.openV = 0; }   // someone's hands are on the lid
     c.wobble *= Math.exp(-dt * 6);
   }
   effectsStep(dt);
