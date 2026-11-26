@@ -3,7 +3,7 @@
 // a cheers, a rock, and waking up on the beach beside the burning wreck. Space skips it
 const CINE_WORDS = false;
 const CINE = {
-  driver: 5.5, you: 10.0, boom: 14.5, cheers: 18.5, chug: 24.0, point: 27.0, huh: 28.2, rock: 29.0, hit: 31.0, black: 33.2, eyes: 36.0, up: 41.0, end: 49.5
+  driver: 5.5, you: 10.0, boom: 14.5, cheers: 18.5, chug: 24.0, point: 27.0, huh: 28.2, rock: 29.0, hit: 31.0, black: 33.2, eyes: 36.0, up: 41.0, end: 53.4
 };
 // where it happens: in over the palm cove. D points out to sea from the middle of the island
 const TRIP = (() => {
@@ -224,7 +224,7 @@ function drawWreck(prog, w, t) {
 
 // ---------------------------------------------------------------- the two of them
 const mate = makeFighter(false, [1, 1, 1]), skip = makeFighter(false, [0.82, 0.72, 0.70]);
-mate.shades = true; skip.hat = true;
+skip.hat = true;
 const SEAT = { mate: [-0.34, 0.30 + FLOOR, -1.55], skip: [0, 0.34 + FLOOR, 0.30] };
 
 const HIP = 0.43;                                            // hips above the boat floor, sitting
@@ -343,22 +343,60 @@ const STAND = () => ({
   L: Leg([0.2, 0.095, 0.03], [0.1, 0, 1]), R: Leg([-0.2, 0.095, 0.03], [-0.1, 0, 1]),
   armL: Arm([0.42, 0.72, 0.02], [0.1, -1, 0.1], [-1, 0, 0], [1, 0, -1], 0.35), armR: Arm([-0.42, 0.72, 0.02], [-0.1, -1, 0.1], [1, 0, 0], [-1, 0, -1], 0.35)
 });
+// when each bit of getting rid of the shades happens (seconds into the third person shots)
+const DROP = { reach: 5.55, grab: 6.15, release: 7.38, land: 7.74, settle: 7.98 };
 // waking up (u: seconds since the third person shot began)
 function wakePose(u) {
-  const rise = smooth(1.3, 2.7, u), stand = smooth(5.6, 6.9, u);
+  const rise = smooth(1.3, 2.7, u), stand = smooth(4.2, 5.5, u);
   let P = mixRide([[LIE(), 1 - rise], [SIT(), rise]]);
   P.lie = LIE().lie * (1 - rise);
-  const rub = window_(u, 2.7, 4.0, 0.35), fix = window_(u, 3.9, 5.6, 0.45);
+  const rub = window_(u, 2.7, 4.3, 0.35);
   if (rub > 0) { P.armR = mixArm(P.armR, Arm([-0.17 + 0.05 * Math.sin(u * 15), 0.88, 0.10], [1, 0.5, 0], [0.1, -1, 0], [-1, 0, 0.1], 0.5), rub); P.head = [0.28 * rub, 0.1 * Math.sin(u * 7) * rub, 0.18 * rub]; }
-  if (fix > 0) {                                             // a finger and thumb on the arm of his shades
-    const h = mate.wp[IDX.head] || [0, 0.9, 0];
-    P.armR = mixArm(P.armR, Arm(V.add(h, [-0.29, 0.03, 0.06]), [0.8, 0.45, 0.4], [0.7, 0, -0.7], [-1, -0.9, 0.1], 0.9), fix);
-    P.head = [-0.08 * smooth(4.7, 5.0, u) * fix, 0, 0];
-  }
   if (stand > 0) P = mixRide([[P, 1 - stand], [STAND(), stand]]);
   P.hips = V.add(P.hips, [0, 0.1 * Math.sin(Math.PI * stand), 0]);
-  if (u > 6.9) P.head = [-0.02, -0.25 * window_(u, 7.0, 8.6, 0.5), 0];
+  if (u > DROP.reach) {
+    // grab the arm of the shades, pull them off, have a look, wind up and fling them at the sand
+    const rest = P.armR, h = mate.wp[IDX.head] || [0, 1.4, 0];
+    const hinge = V.add(h, M3.vec(mate.wr[IDX.head] || M3.id(), V.sub([-0.118, 1.565, 0.12], Rig.rest[IDX.head])));
+    const face = Arm(V.add(hinge, [-0.09, -0.04, -0.03]), [0.75, 0.35, 0.45], [0.45, -0.2, -0.87], [-1, -0.9, 0.1], 1.0);
+    const look = Arm([-0.24, 1.17, 0.42], [0.55, 0.25, 0.8], [0.82, 0, -0.57], [-1, -0.8, -0.2], 1.0);
+    const wind = Arm([-0.60, 1.47, -0.04], [-0.1, 0.75, 0.65], [0.3, -0.3, 0.9], [-1, -0.5, -0.4], 1.0);
+    const flung = Arm([-0.34, 0.86, 0.52], [0.05, -0.65, 0.76], [0.2, -0.75, -0.63], [-1, -0.2, -0.4], 0.15);
+    const keys = [[DROP.reach, rest], [DROP.grab, face], [6.55, look], [6.9, look], [7.2, wind], [7.46, flung], [8.0, flung], [8.8, rest]];
+    for (let i = 1; i < keys.length; i++) if (u < keys[i][0]) { P.armR = mixArm(keys[i - 1][1], keys[i][1], smooth(keys[i - 1][0], keys[i][0], u)); break; }
+    const eyeing = window_(u, 6.2, 7.15, 0.3), after = window_(u, 7.35, 8.1, 0.2), shake = window_(u, 8.1, 9.2, 0.25);
+    P.head = [0.30 * eyeing + 0.22 * after, -0.22 * eyeing - 0.12 * after + 0.28 * Math.sin((u - 8.1) * 11) * shake, 0];
+    P.bend += 0.2 * window_(u, 7.3, 8.1, 0.22) - 0.1 * window_(u, 6.95, 7.38, 0.2);
+  }
   return P;
+}
+// the shades once they are off his face. They are placed by a point between the lens bottoms and the ear tips
+const PIV = [0, 1.507, 0.04];
+const shadesSpot = () => { const p = TRIP.at(-5.8, -0.55); p[1] = groundAt(p[0], p[2], 99) + 0.006; return p; };
+const shadesLie = () => M3.mul(M3.ry(TRIP.a - 0.6), M3.rz(0.05));
+const looseM = new Float32Array(16);
+function drawLooseShades(prog, R, p) { drawParts(prog, SHADES, m4(R, V.sub(p, M3.vec(R, PIV)), looseM)); }
+// where they are while he gets rid of them; null while he is still wearing them
+function looseShades(u, arm) {
+  if (u < DROP.grab) return null;
+  const S = shadesSpot(), down = shadesLie();
+  if (u < DROP.release) {                                    // in his hand
+    const headR = M3.mul(mate.R, mate.wr[IDX.head]);
+    const onHead = toWorld(mate, V.add(mate.wp[IDX.head], M3.vec(mate.wr[IDX.head], V.sub(PIV, Rig.rest[IDX.head]))));
+    const k = smooth(DROP.grab, DROP.grab + 0.35, u), R = M3.mix(headR, M3.mul(M3.ry(TRIP.a - 0.35), M3.rz(0.2)), k);
+    const grip = toWorld(mate, V.add(mate.wp[IDX.hand_R], V.add(V.mul(V.norm(arm.dir), 0.095), V.mul(V.norm(arm.palm), 0.025))));
+    const held = V.sub(grip, M3.vec(R, V.sub([-0.118, 1.565, 0.12], PIV)));
+    cine.rel = { R, p: V.lerp(onHead, held, smooth(DROP.grab, DROP.grab + 0.25, u)) };
+    return cine.rel;
+  }
+  const from = cine.rel || { R: down, p: S };
+  if (u < DROP.land) {                                       // spinning through the air
+    const k = (u - DROP.release) / (DROP.land - DROP.release);
+    const p = V.add(V.lerp(from.p, S, k), [0, 0.16 * Math.sin(Math.PI * k), 0]);
+    return { R: M3.mix(M3.mul(M3.axis([1, 0.3, 0.4], 5.2 * k), from.R), down, smooth(0.55, 1, k)), p };
+  }
+  const k = clamp((u - DROP.land) / (DROP.settle - DROP.land), 0, 1);             // one little hop
+  return { R: M3.mul(down, M3.rz(0.3 * Math.sin(Math.PI * k))), p: V.add(S, [0, 0.07 * Math.sin(Math.PI * k), 0]) };
 }
 function act(f, P, R, p, dt) {
   f.time += dt; f.speed = 0; f.weapon = null; f.dead = -1; f.jump = -1; f.legYaw = 0; f.air = 0;
@@ -400,7 +438,7 @@ function cineStart() {
   world.cine = true;
   const w = TRIP.at(-7, 0); player.pos = [w[0], groundAt(w[0], w[2], 99), w[2]];        // where you will end up
   keys.clear(); mouse.fire = mouse.pressed = mouse.aim = false;
-  mate.crooked = 0;
+  mate.crooked = 0; cine.loose = cine.rel = null;
   SKY.island.splice(0, 3, 0.93, 0.86, 0.80);                    // the haze turns warm
   cineEl('cine').hidden = false; ui.hud.hidden = true;
   cineFade(1, '#000');
@@ -542,19 +580,22 @@ function cineStep(dt) {
     cine.fires = wreck.fires;
     const W = TRIP.at(-7, 0); W[1] = groundAt(W[0], W[2], 99);
     const u = t - CINE.up;
-    act(mate, wakePose(Math.max(0, u)), M3.ry(TRIP.a), W, dt);
-    mate.crooked = 1 - smooth(4.55, 4.95, Math.max(0, u));
+    const wake = wakePose(Math.max(0, u));
+    mate.crooked = 1 - smooth(DROP.reach + 0.2, DROP.grab, u);
+    act(mate, wake, M3.ry(TRIP.a), W, dt);
+    cine.loose = looseShades(u, wake.armR);
+    cineCue(CINE.up + DROP.grab, 'off', () => Sound.play('click', 0.4));
+    cineCue(CINE.up + DROP.release - 0.08, 'fling', () => { Sound.play('whoosh', 0.7); Sound.play('hmph', 0.8); });
+    cineCue(CINE.up + DROP.land, 'drop', () => { Sound.play('tick', 0.9); Sound.play('click', 0.5); puff(shadesSpot(), 14, [0.86, 0.74, 0.50, 0.85], 0.55, 0.028, 0.5, 3); });
     const s = TRIP.at(-5.6, 2.9); s[1] = groundAt(s[0], s[2], 99);
     const snooze = LIE(); snooze.bend += 0.05 * Math.sin(t * 2.2);
     act(skip, snooze, M3.ry(TRIP.a + 1.1), s, dt);
     Sound.loop('surf', 0.5 * smooth(CINE.black + 0.4, CINE.black + 2, t)); Sound.loop('fire', 0.55 * smooth(CINE.eyes - 0.5, CINE.eyes + 2.5, t));
     cineCue(CINE.eyes + 0.9, 'ugh', () => Sound.play('ugh', 0.8));
     cineCue(CINE.up + 3.0, 'ow', () => cineSay(() => V.add(W, [0, 1.5, 0]), 'owww...', 1.2));
-    cineCue(CINE.up + 5.0, 'ting', () => { Sound.play('ting', 0.8); cine.glint = 1; });
     cineCue(CINE.up + 2.2, 'snore1', () => { Sound.play('snore', 0.8); cineSay(() => V.add(s, [0, 0.9, 0]), 'Zzz', 2.0); });
-    cineCue(CINE.up + 6.0, 'snore2', () => { Sound.play('snore', 0.8); cineSay(() => V.add(s, [0, 0.9, 0]), 'Zzz...', 2.2); });
+    cineCue(CINE.up + 9.5, 'snore2', () => { Sound.play('snore', 0.8); cineSay(() => V.add(s, [0, 0.9, 0]), 'Zzz...', 2.2); });
   }
-  cine.glint = Math.max(0, (cine.glint || 0) - dt * 1.6);
   fireStep(dt, cine.fires);
   effectsStep(dt);
   cineOverlay(dt);
@@ -571,7 +612,7 @@ function cineOverlay(dt) {
   else if (t > CINE.end - 0.35) fade = smooth(CINE.end - 0.35, CINE.end, t) * 0.6;
   cineFade(fade, colour);
   cineEl('cinecaption').textContent = t > 1.2 && t < 5.0 ? 'Somewhere off Goob Island...' : t > CINE.black + 0.5 && t < CINE.eyes - 0.1 ? 'Later...' : '';
-  cineEl('cinetitle').style.opacity = window_(t, CINE.up + 6.0, CINE.end - 0.3, 0.7);
+  cineEl('cinetitle').style.opacity = window_(t, CINE.up + 9.2, CINE.end - 0.3, 0.7);
   // eyelids: opening, falling shut again, opening for good
   const lids = cineEl('eyelids');
   if (t >= CINE.eyes && t < CINE.up) {
@@ -622,18 +663,23 @@ function cineCamera() {
     const sky = near(0.25, 0.15, 2.4), look = V.add(near(5.8, 0.6, 0.9), [0, 0, 0]);
     return { eye, at: L(sky, look, turn), fov: 1.05 };
   }
-  const u = t - CINE.up;
-  const crane = smooth(4.6, 7.9, u);
-  const eye = L(L(near(2.3, -1.5, 0.55), near(1.9, -1.1, 1.05), smooth(0.8, 3.4, u)), near(-3.3, -1.7, 2.35), crane);
-  const at = L(L(near(-0.5, 0, 0.35), near(-0.1, 0, 1.0), smooth(1.2, 3.0, u)), near(3.4, 0.2, 0.75), crane);
-  if (u > 6.9) {                                               // settle into where the game's own camera will be
-    const k = smooth(6.9, CINE.end - CINE.up, u);
-    const right = [-Math.cos(TRIP.a), 0, Math.sin(TRIP.a)];
-    const pivot = V.add(W, [right[0] * 0.92, 1.7, right[2] * 0.92]), f = [Math.sin(TRIP.a) * Math.cos(0.12), -Math.sin(0.12), Math.cos(TRIP.a) * Math.cos(0.12)];
-    const g = V.mad(pivot, f, -2.25);
-    return { eye: L(eye, g, k), at: L(at, V.mad(g, f, 6), k), fov: 0.72 + 0.23 * k };
+  const u = t - CINE.up, back = smooth(4.4, 5.7, u);
+  if (u < 7.86) {                                              // in front of him: waking, standing, the throw
+    const eye = L(L(near(2.3, -1.5, 0.55), near(1.9, -1.1, 1.05), smooth(0.8, 3.4, u)), near(3.4, -1.9, 1.25), back);
+    const at = L(L(near(-0.5, 0, 0.35), near(-0.1, 0, 1.0), smooth(1.2, 3.0, u)), near(0.6, -0.3, 0.60), back);
+    return shot(eye, at, 0.72 + 0.05 * back);                  // wide enough to see them hit the sand
   }
-  return shot(eye, at, 0.72);
+  if (u < 9.15) {                                              // down in the sand with the shades, his feet behind
+    const S = shadesSpot(), k = smooth(7.86, 9.15, u);
+    const off = (out, side, up) => V.add(S, [sea[0] * out + L2[0] * side, up, sea[2] * out + L2[2] * side]);
+    return shot(off(0.64 - 0.12 * k, -0.34 + 0.05 * k, 0.27 - 0.03 * k), off(-0.05, 0.02, 0.09), 0.66);
+  }
+  // from behind him, settling into where the game's own camera will be
+  const k = smooth(9.15, CINE.end - CINE.up, u);
+  const right = [-Math.cos(TRIP.a), 0, Math.sin(TRIP.a)];
+  const pivot = V.add(W, [right[0] * 0.92, 1.7, right[2] * 0.92]), f = [Math.sin(TRIP.a) * Math.cos(0.12), -Math.sin(0.12), Math.cos(TRIP.a) * Math.cos(0.12)];
+  const g = V.mad(pivot, f, -2.25);
+  return { eye: L(near(-3.3, -1.7, 2.35), g, k), at: L(near(3.4, 0.2, 0.75), V.mad(g, f, 6), k), fov: 0.72 + 0.23 * k };
 }
 
 // ---------------------------------------------------------------- drawing
@@ -673,7 +719,7 @@ function drawCineThings(prog) {
     if (q.parts === 'boombox') drawBoombox(prog, R, q.p, 0, 0, 0);
     else drawParts(prog, q.parts, placed(M3.mul(R, [1, 0, 0, 0, 1, 0, 0, 0, q.parts === PLANK ? q.s : 1]), q.p));
   }
-  if (!yourEyes()) drawShadesOn(prog, mate);
+  if (!yourEyes()) { if (cine.t >= CINE.up && cine.loose) drawLooseShades(prog, cine.loose.R, cine.loose.p); else drawShadesOn(prog, mate); }
   drawParts(prog, HAT, headMatrix(skip, wornM));
 }
 function cineRender() {
@@ -751,7 +797,7 @@ function cineRender() {
   drawEffects(vp, eye, fwd);
   if (cine.fires.length) drawFires(vp, eye, fwd, cine.fires, t);
   // the shades catching the sun
-  const glint = Math.max(cine.glint || 0, window_(t, 13.6, 14.4, 0.3));
+  const glint = window_(t, 13.6, 14.4, 0.3);
   if (glint > 0.01) {
     const m = headMatrix(mate, wornM), q = [-0.095, 1.57, 0.19];
     const p = [0, 1, 2].map(i => m[i] * q[0] + m[4 + i] * q[1] + m[8 + i] * q[2] + m[12 + i]);
@@ -796,6 +842,7 @@ function wreckLight() {
 function drawBeachThings(prog) {
   if (!wreckNear()) return;
   drawWreck(prog, wreck, game.time);
+  drawLooseShades(prog, shadesLie(), shadesSpot());                // where you threw them
   drawParts(prog, HAT, headMatrix(skip, wornM));
 }
 function drawBeachSkipper(prog) { if (wreckNear()) drawActors(prog, [skip]); }

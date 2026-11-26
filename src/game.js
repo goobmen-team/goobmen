@@ -128,7 +128,6 @@ function makeFighter(isPlayer, tint) {
   };
 }
 const player = makeFighter(true, [1, 1, 1]);
-player.shades = true;                                        // drip
 const bots = [[0.78, 0.95, 0.72], [1.0, 0.72, 0.66], [0.72, 0.82, 1.05]].map(t => makeFighter(false, t));
 const fighters = [player, ...bots];
 function give(f, id, spare) {
@@ -986,10 +985,6 @@ function drawFighters(prog, textured, hideSelf) {
     if (textured) drawWornVest(prog, f);
   }
 }
-// things worn on the head
-function drawWorn(prog, hideSelf) {
-  for (const f of fighters) if (f.shades && !f.gone && !(hideSelf && f.isPlayer)) drawShadesOn(prog, f);
-}
 const modelM = new Float32Array(16);
 function drawMesh(prog, mesh, R, p) {
   if (!mesh) return;                                        // not every gun has every moving part
@@ -1128,7 +1123,7 @@ function render() {
   for (const f of fighters.concat(helpers)) poseFighter(f);
   const sc = scopeAmount();
   let view = deathCamera(lootCamera(scopedView(cameraEye(), sc)));
-  if (!game.started) view = menuView();                     // behind the menu: him from the front, shades and all
+  if (!game.started) view = menuView();                     // behind the menu: him from the front
   if (testView) view = { eye: testView.eye, fwd: V.norm(V.sub(testView.at, testView.eye)), at: testView.at, dist: 1 };   // automated checks only
   const hideSelf = sc > 0.55 || (inCave(player.pos) && V.len(V.sub(view.eye, V.add(player.pos, [0, 1.5, 0]))) < 0.75);
   const sh = cam.shake * cam.shake * 0.012;
@@ -1161,7 +1156,7 @@ function render() {
   gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, null);
   gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFbo); gl.viewport(0, 0, SHADOW, SHADOW); gl.clear(gl.DEPTH_BUFFER_BIT);
   globals(skinDepth, light, light, eye); drawFighters(skinDepth, false);
-  globals(staticDepth, light, light, eye); drawStatics(staticDepth, false); drawWorn(staticDepth, false);
+  globals(staticDepth, light, light, eye); drawStatics(staticDepth, false);
   if (world.map === 'island') drawFloraShadow(light, eye);
   globals(skinDepth, light, light, eye); drawBeachSkipper(skinDepth);
   globals(staticDepth, light, light, eye); drawBeachThings(staticDepth);
@@ -1174,7 +1169,7 @@ function render() {
   globals(skinProg, vp, light, eye); gl.uniform1i(skinProg.u.uTex, 0); gl.uniform1i(skinProg.u.uNormalMap, 1); drawFighters(skinProg, true, hideSelf);
   globals(pbrProg, vp, light, eye); gl.uniform1i(pbrProg.u.uTex, 0); gl.uniform1i(pbrProg.u.uNormalMap, 1); gl.uniform1i(pbrProg.u.uOrm, 2); drawStatics(pbrProg, true, hideSelf);
   globals(skinProg, vp, light, eye); drawBeachSkipper(skinProg);
-  globals(propProg, vp, light, eye); gl.uniform1i(propProg.u.uTex, 0); gl.uniform1f(propProg.u.uTime, game.time); drawWorn(propProg, hideSelf); drawBeachThings(propProg);
+  globals(propProg, vp, light, eye); gl.uniform1i(propProg.u.uTex, 0); gl.uniform1f(propProg.u.uTime, game.time); drawBeachThings(propProg);
   if (world.map === 'island') drawSea(vp, light, eye);
   drawEffects(vp, eye, view.fwd);
   if (wreckNear()) drawFires(vp, eye, view.fwd, wreck.fires, game.time);

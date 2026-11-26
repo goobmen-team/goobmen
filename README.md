@@ -4,7 +4,7 @@ A third-person caveman fighting game with real guns. Loot chests, fight other ca
 
 **To play:** download `index.html` and open it in Chrome. The whole game is in that one file.
 
-On the menu pick **Baseplate** or **Island**. The island starts with a boat trip: you in your gold shades, your mate at the wheel, a boombox and a few cans, and then a rock. You wake up on the beach with the boat still burning. Space skips it, and there is a box on the menu to skip it every time.
+On the menu pick **Baseplate** or **Island**. The island starts with a boat trip: you in your gold shades, your mate at the wheel, a boombox and a few cans, and then a rock. You wake up on the beach with the boat still burning, get up, and throw the shades in the sand. Space skips it, and there is a box on the menu to skip it every time.
 
 The boombox plays the game's own tune. "Use my MP3" on the menu plays a song from your own computer instead; it stays in your browser and is never part of the game.
 
