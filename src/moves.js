@@ -95,7 +95,8 @@ function deathCues(f, prev) {
 }
 
 // ======================================================================= the balloon send-off
-const LOOT_WINDOW = 8;                       // seconds a body waits to be looted before he turns up
+const LOOT_WINDOW = 60;                      // seconds a body waits to be looted; after that he turns up with a bomb instead
+const FUSE = 10, FUSE_AT = 3.4;              // the bomb's timer, and when in the visit it gets lit
 const sends = [], helpers = [];
 const BALLOONS = [
   { bone: 'hand_L', color: [0.85, 0.02, 0.02], out: [0.34, 0.0], len: 0.78 },
@@ -120,7 +121,7 @@ function party() {
   });
 }
 
-function startSend(f, delay) {
+function startSend(f, delay, bomb) {
   const back = [-Math.sin(f.yaw), 0, -Math.cos(f.yaw)], hips = V.mad(f.pos, back, 0.72);
   const perp = [Math.cos(f.yaw), 0, -Math.sin(f.yaw)];
   // he works on the far side of the body, so the camera can see
@@ -134,7 +135,7 @@ function startSend(f, delay) {
   const helper = makeFighter(false, [1.2, 1.1, 0.35]);
   helper.pos = from.slice(); helper.gone = true;
   const s = { f, helper, t: -(delay || 0), prev: -(delay || 0) - 1, spot, from, hips, out, away, face: Math.atan2(-out[0], -out[2]), inflate: 0, inflateV: 0, strokes: 0, tied: 0, rise: [0, 0, 0], sparkle: null,
-    end: f.isPlayer ? 7.9 : 10.2 };
+    bomb: !!bomb, end: bomb ? FUSE_AT + FUSE + 1.3 : f.isPlayer ? 7.9 : 10.2 };
   f.send = s; sends.push(s); helpers.push(helper);
   return s;
 }
@@ -146,6 +147,7 @@ function endSend(f) {
 }
 
 function sendStep(s, dt) {
+  if (s.bomb) return bombStep(s, dt);
   const f = s.f, h = s.helper;
   s.prev = s.t; s.t += dt;
   const t = s.t;
@@ -241,6 +243,107 @@ function sendStep(s, dt) {
     f.gone = true;
   }
 }
+
+// ---------------------------------------------------------------- the bomb visit
+// a caveman who has never seen a bomb, planting one
+const bombSpot = s => V.add(bonePos(s.f, 'chest'), [0, 0.2, 0]);
+function bombStep(s, dt) {
+  const f = s.f, h = s.helper;
+  s.prev = s.t; s.t += dt;
+  const t = s.t;
+  if (t < 0) return;
+  h.time += dt;
+  const crossed = at => s.prev < at && t >= at;
+  const near = clamp(1.5 - V.len(V.sub(s.spot, player.pos)) / 30, 0.25, 1);
+  const wrong = V.mad(s.spot, s.away, -3.2);                   // he runs the wrong way first
+  h.gone = false; h.script = null; h.scriptW = 0; h.tilt = 0;
+  let gait = 'Idle';
+  const runTo = (a, b, u) => { h.pos = V.lerp(a, b, u); h.yaw = Math.atan2(b[0] - a[0], b[2] - a[2]); gait = 'Run'; h.phase = (h.phase + dt * 5.5) % 1; h.tilt = 0.38; };
+  const dust = () => puff([h.pos[0], 0.07, h.pos[2]], 3, [0.55, 0.53, 0.49, 0.6], 0.5, 0.1, 0.5, -0.2);
+  const arm = (x, wrist, dir, palm, curl) => ({ wrist, dir: dir || [0, -0.3, 1], palm: palm || [-x, 0, 0], pole: [x, -0.4, -0.5], curl: [curl === undefined ? 0.7 : curl, curl === undefined ? 0.7 : curl] });
+  const hips0 = Rig.rest[IDX.hips];
+  const script = (S, w) => { h.script = S; h.scriptW = w === undefined ? 1 : w; };
+  s.bonk = 0;
+
+  if (t < 0.72) {                                              // here he comes, hugging a big black ball
+    runTo(s.from, s.spot, 1 - Math.pow(1 - u01(t / 0.72), 1.35)); dust();
+  } else if (t < 1.0) {                                        // brakes, a bit too late
+    h.pos = s.spot.slice();
+    const dirIn = Math.atan2(s.spot[0] - s.from[0], s.spot[2] - s.from[2]), turn = smooth(0.82, 1.0, t);
+    h.yaw = dirIn + wrap(s.face - dirIn) * turn; h.tilt = -0.42 * (1 - turn); dust();
+  } else if (t < 2.2) {                                         // puts the bomb down, then pats it. twice. good bomb.
+    h.pos = s.spot.slice(); h.yaw = s.face;
+    const pat = Math.max(0, Math.sin((t - 1.5) * 13)) * smooth(1.45, 1.6, t) * (1 - smooth(2.0, 2.15, t));
+    const S = { hips: V.add(hips0, [0, -0.30, -0.12]), bend: 1.0, head: M3.rx(-0.3), arms: {} };
+    for (const [side, x] of [['R', -1], ['L', 1]]) S.arms[side] = arm(x, [x * 0.2, 0.52 + pat * 0.1, 0.5], [0, -0.5, 1], [0, -1, 0], 0.4);
+    script(S, smooth(1.0, 1.15, t) * (1 - smooth(2.05, 2.2, t)));
+  } else if (t < FUSE_AT) {                                     // bangs two rocks to make a spark... and bonks himself
+    h.pos = s.spot.slice(); h.yaw = s.face;
+    const swing = t < 2.85 ? Math.abs(Math.sin((t - 2.2) * 9)) : 0;     // clack clack clack
+    const self = smooth(2.85, 2.95, t) * (1 - smooth(3.05, 3.3, t));    // the last one goes into his own forehead
+    const gap = 0.25 * (1 - swing) * (1 - self);
+    const S = { bend: -0.1, head: M3.mul(M3.rx(-0.2 - 0.5 * self), M3.rz(0.4 * self)), arms: {} };
+    const hit = V.lerp([0, 1.15, 0.42], [0, 1.78, 0.2], self);
+    for (const [side, x] of [['R', -1], ['L', 1]]) S.arms[side] = arm(x, V.add(hit, [x * (0.04 + gap), 0, 0]), [-x * 0.6, 0.1, 1], [0, -1, 0], 1.0);
+    script(S, smooth(2.2, 2.35, t) * (1 - smooth(3.2, FUSE_AT, t)));
+    if (self > 0.5) s.bonk = self;
+  } else if (t < 4.7) {                                         // proud
+    h.pos = s.spot.slice(); h.yaw = s.face + wrap(Math.atan2(s.away[0], s.away[2]) - s.face) * smooth(4.3, 4.7, t) * 0.4;
+    const bounce = Math.abs(Math.sin(t * 9)) * 0.06, wag = Math.sin(t * 14);
+    const S = { hips: V.add(hips0, [0, bounce, 0]), bend: -0.12, head: M3.rx(-0.4), arms: {
+      R: arm(-1, [-0.5, 1.5 + bounce, 0.25], [-0.2, 1, 0.2], [0, 0, 1], 0.2),             // thumbs up
+      L: arm(1, [0.5 + wag * 0.06, 1.5 + bounce, 0.25], [0.2, 1, 0.2], [0, 0, 1], 0.2) } };
+    script(S, smooth(FUSE_AT, FUSE_AT + 0.2, t) * (1 - smooth(4.55, 4.7, t)));
+  } else if (t < 5.4) {                                         // runs, confidently, the wrong way
+    runTo(s.spot, wrong, smooth(4.7, 5.4, t)); dust();
+  } else if (t < 6.2) {                                         // stops. thinks. scratches head
+    h.pos = wrong.slice(); h.yaw = Math.atan2(s.spot[0] - wrong[0], s.spot[2] - wrong[2]) + Math.sin(t * 5) * 0.6;
+    script({ bend: 0.05, head: M3.mul(M3.rz(Math.sin(t * 6) * 0.25), M3.rx(-0.15)), arms: { R: scratchArm(-1, t) } }, smooth(5.4, 5.55, t) * (1 - smooth(6.05, 6.2, t)));
+  } else if (t < 7.1) {                                         // the penny drops. gone
+    runTo(wrong, s.from, Math.pow((t - 6.2) / 0.9, 1.8)); dust();
+  } else h.gone = true;
+  for (const n of CLIP_NAMES) h.weights[n] = n === gait ? 1 : 0;
+
+  // ---------- the cues
+  if (crossed(0.001)) { Sound.play('zoom', near); popWord(V.add(V.lerp(s.from, s.spot, 0.75), [0, 2.0, 0]), 'NYOOOM!', 0.8); }
+  if (crossed(0.74)) { Sound.play('screech', near); popWord(V.add(s.spot, [0, 2.05, 0]), 'SKRRT', 0.5); puff(s.spot.slice(), 20, [0.55, 0.53, 0.49, 0.75], 1.7, 0.09, 0.6, 0.8); }
+  if (crossed(1.2)) { Sound.play('thud', near); popWord(V.add(s.spot, [0, 1.9, 0]), 'OOK.', 0.7); }
+  for (const at of [1.55, 1.9]) if (crossed(at)) Sound.play('click', near);
+  for (let k = 0; k < 4; k++) if (crossed(2.2 + k * 0.7 + 0.31) && 2.2 + k * 0.7 < 2.85) { Sound.play('bonk', near * 0.6); puff(V.add(s.spot, M3.vec(M3.ry(s.face), [0, 1.2, 0.42])), 4, [1, 0.8, 0.3, 1], 1.4, 0.03, 0.3, 4); }
+  if (crossed(2.9)) { Sound.play('bonk', near); popWord(V.add(s.spot, [0, 2.1, 0]), 'OUCH!!', 0.9); }
+  if (crossed(FUSE_AT)) { Sound.play('pop', near); Sound.play('slideup', near * 0.4); popWord(V.add(s.spot, [0, 1.6, 0]), 'TSSSSS', 0.8); s.lit = true; }
+  if (crossed(4.0)) popWord(V.add(s.spot, [0, 2.2, 0]), 'OOGA BOOGA!', 1.0);
+  if (crossed(5.4)) { Sound.play('huh', near); popWord(V.add(wrong, [0, 2.1, 0]), 'HUH?', 1.0); }
+  if (crossed(6.1)) { Sound.play('ooga', near * 0.8); popWord(V.add(wrong, [0, 2.1, 0]), 'OH NO!', 0.8); }
+  if (crossed(6.2)) Sound.play('zoom', near * 0.8);
+
+  // ---------- the fuse
+  if (s.lit && !s.boom) {
+    const left = FUSE - (t - FUSE_AT);
+    const c = bombSpot(s);
+    if (Math.random() < dt * 40) puff(V.add(c, [0.03, 0.2, 0]), 1, [1, 0.7, 0.15, 1], 1.1, 0.025, 0.35, 3);
+    for (let n = FUSE; n >= 1; n--) if (s.prev - FUSE_AT < FUSE - n && t - FUSE_AT >= FUSE - n) {
+      Sound.play('click', near); if (n <= 3) Sound.play('pop', near * 0.5);
+      popWord(V.add(c, [0, 0.9, 0]), String(n), 0.9);
+    }
+    if (left <= 0) {                                             // KABOOM
+      s.boom = true; s.boomAt = t;
+      Sound.play('awp', 1); Sound.play('thud', 1); cam.shake = 1;
+      puff(c, 45, [1, 0.55, 0.1, 0.9], 5, 0.3, 0.7, -1);
+      puff(c, 30, [0.18, 0.18, 0.18, 0.8], 3.5, 0.4, 1.5, -0.4);
+      puff(c, 25, [1, 0.9, 0.3, 1], 9, 0.12, 0.6, 3);
+      popWord(V.add(c, [0, 1.4, 0]), 'KABOOM!!', 1.6);
+      f.gone = true;
+      for (const v of [player, ...bots]) {
+        const d = Math.hypot(v.pos[0] - c[0], v.pos[2] - c[2]);
+        if (v !== f && v.dead < 0 && d < 6) damage(v, Math.round(25 + 75 * (1 - d / 6)), { pos: c });
+      }
+    }
+  }
+  if (s.boom && t - s.boomAt > 0.2 && !s.sparkle) { s.sparkle = { p: V.add(c0(s), [0, 1, 0]), t }; Sound.play('ting', near); }
+}
+const u01 = x => clamp(x, 0, 1);
+const c0 = s => V.add(s.hips, [0, 0.3, 0]);
 function sendsStep(dt) {
   for (const s of sends.slice()) {
     if (!sends.includes(s)) continue;        // your own respawn just cleared everyone's
@@ -268,14 +371,33 @@ function drawSends(prog) {
   for (const s of sends) {
     const f = s.f, h = s.helper, t = s.t;
     if (t < 0) continue;
-    if (!h.gone) {                                            // party hat
+    if (!h.gone) {                                            // party hat (he wears it to the bomb job too)
       const top = M3.mul(h.R, h.wr[IDX.head]), at = V.add(bonePos(h, 'head'), M3.vec(top, [0, 0.285, 0.035]));
       const R = M3.mul(top, M3.rz(-0.18));
       flat(prog, [0.85, 0.03, 0.28], 0.35, 0.2); drawMesh(prog, P.cone, scaled(R, 0.095, 0.25, 0.095), at);
       flat(prog, [0.95, 0.72, 0.02], 0.4, 0.2); drawMesh(prog, P.pom, scaled(R, 0.04, 0.04, 0.04), V.add(at, M3.vec(R, [0, 0.255, 0])));
     }
     const chest = !f.gone ? bonePos(f, 'chest') : null;
-    if (t >= 1.98 && t < 5.7) {                               // the pump stays until he leaves
+
+    if (s.bomb && !(s.boom)) {                                // the bomb, and the poor helper's sore head
+      let at, r = 0.23;
+      if (t < 1.05) at = V.add(bonePos(h, 'hand_R'), [0, 0.1, 0.12]), r = 0.22; else at = bombSpot(s);
+      if (t < 1.4 && t >= 1.0) at = V.lerp(V.add(bonePos(h, 'hand_R'), [0, 0.1, 0.12]), bombSpot(s), smooth(1.0, 1.4, t));
+      flat(prog, [0.04, 0.04, 0.05], 0.3, 0.6); drawMesh(prog, P.balloon, scaled(I, r, r, r), at);
+      flat(prog, [0.4, 0.28, 0.12], 0.7, 0.0); rod(prog, V.add(at, [0, r * 0.9, 0]), V.add(at, [0.06, r * 1.55, 0]), 0.018);
+      if (s.lit) {
+        const blink = Math.sin(t * (6 + (t - FUSE_AT) * 2.2)) > 0;
+        flat(prog, blink ? [1, 0.1, 0.05] : [0.35, 0.05, 0.04], 0.3, 0.0); drawMesh(prog, P.pom, scaled(I, 0.045, 0.045, 0.045), V.add(at, [0, r * 0.2, r * 0.9]));
+        flat(prog, [1, 0.75, 0.1], 0.2, 0.0); drawMesh(prog, P.pom, scaled(I, 0.035, 0.035, 0.035), V.add(at, [0.06, r * 1.62, 0]));
+      }
+      if (s.bonk > 0 && !h.gone) {                            // seeing stars
+        const head = V.add(bonePos(h, 'head'), [0, 0.38, 0]);
+        flat(prog, [0.95, 0.65, 0.02], 0.3, 0.7);
+        for (let i = 0; i < 3; i++) { const a = t * 9 + i * 2.1; drawMesh(prog, starMesh, M3.mul(M3.ry(a * 0.5), M3.rz(a)).map(x => x * 1.3), V.add(head, [Math.cos(a) * 0.2, Math.sin(a * 2) * 0.03, Math.sin(a) * 0.2])); }
+      }
+    }
+    if (s.bomb && s.boom) { const u = (t - s.boomAt) / 0.5; if (u < 1) { flat(prog, [1, 0.6, 0.1], 0.3, 0.0); drawMesh(prog, P.pom, scaled(I, 1, 1, 1).map(x => x * (0.5 + 5 * Math.sqrt(u)) * (1 - u * 0.6)), c0(s)); } }
+    if (!s.bomb && t >= 1.98 && t < 5.7) {                               // the pump stays until he leaves
       const R = M3.ry(s.face), at = q => V.add(s.spot, M3.vec(R, q));
       const top = t < 4.0 && s.handle ? s.handle : 0.98;
       flat(prog, [0.05, 0.05, 0.06], 0.4, 0.6); drawMesh(prog, meshes.shell, scaled(R, 0.30, 0.04, 0.16), at([0, 0.02, 0.40]));
@@ -288,7 +410,7 @@ function drawSends(prog) {
         for (let k = 1; k <= 8; k++) { const u = k / 8, p = V.lerp(V.lerp(a, mid, u), V.lerp(mid, b, u), u); p[1] = Math.max(p[1], 0.02); rod(prog, last, p, 0.022); last = p; }
       }
     }
-    if (!f.gone) for (let k = 0; k < s.tied; k++) {           // balloons
+    if (!s.bomb && !f.gone) for (let k = 0; k < s.tied; k++) {           // balloons
       const b = BALLOONS[k], anchor = bonePos(f, b.bone), fill = Math.max(0, s.inflate);
       const radius = 0.045 + 0.19 * fill, tall = radius * (0.3 + 0.92 * Math.min(1, fill * 1.4));
       const len = 0.05 + b.len * smooth(0.1, 0.9, fill);
