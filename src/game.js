@@ -541,7 +541,7 @@ const game = { running: false, locked: false, lockWorked: false, aimToggle: fals
 const ui = {};
 for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'shootback', 'msg', 'reloadbar', 'boomflash', 'minimap', 'killcount']) ui[id] = document.getElementById(id);
 let hudDirty = true;
-function notify(text) { ui.note.textContent = text; ui.note.style.opacity = 1; game.note = 2.4; }
+function notify(text) { }                                    // the messages in the middle of the screen are switched off
 
 function setRunning(on) {
   game.running = on;
