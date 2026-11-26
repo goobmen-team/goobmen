@@ -1,40 +1,57 @@
 // ======================================================================= the minimap
-// Top right, square, turning with your view so straight ahead is always up. The island's land is drawn once into a
-// picture; on top goes your planted C4 and you. Enemies and chests are not shown.
+// Top right, square, in a wooden frame, turning with your view so straight ahead is always up. The island is painted
+// once like an old map: parchment land with hill shading, an inked coastline, muted water, forests, rocks, houses and
+// bridges. On top go your planted C4 and you. Enemies and chests are not shown.
 const MINI = { size: 180, range: 85 };                          // pixels across, metres from the middle to the edge
+const INK = 'rgb(58,40,24)';
 let miniLand = null;                                            // { img, half, px } for the island, made the first time it's needed
 function miniIsland() {
   if (miniLand) return miniLand;
-  const half = GRID.half, n = 900, img = document.createElement('canvas');
+  const half = GRID.half, n = 1200, px = n / (2 * half), img = document.createElement('canvas');
   img.width = img.height = n;
   const g = img.getContext('2d'), data = g.createImageData(n, n), d = data.data;
+  const H = new Float32Array(n * n);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) H[j * n + i] = groundAt((i + 0.5) / px - half, (j + 0.5) / px - half);
+  const wet = (i, j) => H[clamp(j, 0, n - 1) * n + clamp(i, 0, n - 1)] < SEA.level;
+  let seed = 7; const grain = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647 - 0.5; };
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
-    const x = (i + 0.5) / n * 2 * half - half, z = (j + 0.5) / n * 2 * half - half, h = groundAt(x, z), k = (j * n + i) * 4;
+    const k = (j * n + i) * 4, h = H[j * n + i];
     let c;
-    if (h < SEA.level) { const deep = clamp((SEA.level - h) / 3, 0, 1); c = [40 - 20 * deep, 110 - 45 * deep, 150 - 30 * deep]; }
-    else if (h < SEA.level + 0.7) c = [205, 190, 140];                                            // sand
-    else if (h < 9) { const u = clamp(h / 9, 0, 1); c = [86 - 20 * u, 128 - 25 * u, 62 - 10 * u]; }   // grass, darker as it climbs
-    else if (h < 24) { const u = clamp((h - 9) / 15, 0, 1); c = [110 + 20 * u, 104 + 18 * u, 92 + 18 * u]; }   // rock
-    else c = [225, 228, 232];                                                                     // snow on the top
-    d[k] = c[0]; d[k + 1] = c[1]; d[k + 2] = c[2]; d[k + 3] = 255;
+    if (h < SEA.level) {
+      // water: muted teal, a little lighter in the shallows next to the land
+      const deep = clamp((SEA.level - h) / 4, 0, 1);
+      c = [150 - 45 * deep, 176 - 40 * deep, 168 - 28 * deep];
+    } else {
+      // land: parchment, browner up the hills, pale at the very top; shaded as if lit from the top left
+      const up = clamp(h / 22, 0, 1), top = clamp((h - 24) / 8, 0, 1);
+      c = [226 - 30 * up + 18 * top, 207 - 40 * up + 25 * top, 162 - 42 * up + 40 * top];
+      const hx = H[j * n + Math.min(n - 1, i + 1)] - H[j * n + Math.max(0, i - 1)], hz = H[Math.min(n - 1, j + 1) * n + i] - H[Math.max(0, j - 1) * n + i];
+      const shade = clamp(1 - (hx + hz) * 0.45 * px, 0.72, 1.12);
+      c = c.map(v => v * shade);
+      if (wet(i + 1, j) || wet(i - 1, j) || wet(i, j + 1) || wet(i, j - 1)) c = [86, 62, 40];   // the coastline, in ink
+    }
+    const gr = grain() * 10;                                    // a bit of paper grain
+    d[k] = clamp(c[0] + gr, 0, 255); d[k + 1] = clamp(c[1] + gr, 0, 255); d[k + 2] = clamp(c[2] + gr, 0, 255); d[k + 3] = 255;
   }
   g.putImageData(data, 0, 0);
-  return (miniLand = { img, half, px: n / (2 * half) });
-}
-// what stands on the island, worked out once: tree tops, palms, rocks, house roofs, bridges, cave walls
-let miniThings = null;
-function miniFeatures() {
-  if (miniThings) return miniThings;
-  const round = [], shapes = [];
-  for (const l of leaves) round.push({ x: l[0], z: l[2], r: Math.max(1.2, l[3] * 1.05), c: '#2c5626', e: '#1c3a18' });   // tree tops
+  // then what stands on the island, inked on top
+  const at = (x, z) => [(x + half) * px, (z + half) * px];
+  g.fillStyle = 'rgba(78,104,58,0.5)';                          // forests: soft overlapping blobs, no outlines
+  for (const l of leaves) { const [x, y] = at(l[0], l[2]); g.beginPath(); g.arc(x, y, Math.max(1.6, l[3] * 1.2 * px), 0, Math.PI * 2); g.fill(); }
+  g.fillStyle = 'rgba(96,124,62,0.55)';                         // palms
+  for (const o of solids) if (!o.hull && o.h > 1.5 && o.h / o.r < 10) { const [x, y] = at(o.x, o.z); g.beginPath(); g.arc(x, y, Math.max(1.3, o.r / 0.24 * 1.1 * px), 0, Math.PI * 2); g.fill(); }
+  const poly = (hull, fill, line, w) => {
+    g.beginPath(); hull.forEach((q, i) => { const [x, y] = at(q[0], q[1]); if (i) g.lineTo(x, y); else g.moveTo(x, y); }); g.closePath();
+    g.fillStyle = fill; g.fill(); if (line) { g.strokeStyle = line; g.lineWidth = w || 1; g.stroke(); }
+  };
   for (const o of solids) {
-    if (!o.hull) { if (o.h > 1.5 && o.h / o.r < 10) round.push({ x: o.x, z: o.z, r: o.r / 0.24 * 1.25, c: '#557f36', e: '#33521f' }); continue; }   // palms (trees come from their tops)
-    if (o.h === HOUSE_TALL && o.tris && o.tris.length === 2) continue;   // a house wall: the house is drawn whole below
-    shapes.push({ hull: o.hull, c: o.thin ? '#8a6a40' : o.wall ? '#4b4a48' : '#8b8a84', e: o.thin ? '#4d3a20' : '#2e2d2b' });
+    if (!o.hull || (o.h === HOUSE_TALL && o.tris && o.tris.length === 2)) continue;   // house walls: drawn as whole houses below
+    if (o.thin) poly(o.hull, 'rgb(120,86,50)', INK, 0.8);                                // bridges
+    else if (o.wall) poly(o.hull, 'rgb(96,88,78)', INK, 0.8);                            // cave walls
+    else poly(o.hull, 'rgb(150,138,118)', 'rgba(58,40,24,0.8)', 0.8);                    // rocks
   }
-  if (typeof HOUSES !== 'undefined') for (const q of HOUSES) shapes.push({ hull: [[-3.8, -3.2], [3.8, -3.2], [3.8, 3.2], [-3.8, 3.2]].map(([a, b]) => houseWorld(q, a, b)), c: '#8a4b33', e: '#3d1f14' });
-  for (const t of shapes) { let x = 0, z = 0; for (const q of t.hull) { x += q[0]; z += q[1]; } t.x = x / t.hull.length; t.z = z / t.hull.length; }
-  return (miniThings = { round, shapes });
+  for (const q of HOUSES) poly([[-3.8, -3.2], [3.8, -3.2], [3.8, 3.2], [-3.8, 3.2]].map(([a, b]) => houseWorld(q, a, b)), 'rgb(140,72,46)', INK, 1.2);
+  return (miniLand = { img, half, px });
 }
 function drawMinimap() {
   const cv = ui.minimap; if (!cv) return;
@@ -44,42 +61,25 @@ function drawMinimap() {
   const toMap = p => { const dx = p[0] - me[0], dz = p[2] - me[2], c = Math.cos(theta), s = Math.sin(theta); return [r + (dx * c - dz * s) * scale, r + (dx * s + dz * c) * scale]; };
   g.clearRect(0, 0, S, S);
   g.save();
-  g.beginPath(); g.rect(0, 0, S, S); g.clip();
   g.translate(r, r); g.rotate(theta);
+  g.imageSmoothingEnabled = true;
   if (world.map === 'island') {
     const L = miniIsland(), k = scale / L.px;
-    g.fillStyle = 'rgb(20,65,120)'; g.fillRect(-S, -S, 2 * S, 2 * S);
+    g.fillStyle = 'rgb(105,136,128)'; g.fillRect(-S, -S, 2 * S, 2 * S);
     g.drawImage(L.img, (-me[0] - L.half) * scale, (-me[2] - L.half) * scale, L.img.width * k, L.img.height * k);
-    const F = miniFeatures(), far = MINI.range * 1.5, at = (x, z) => [(x - me[0]) * scale, (z - me[2]) * scale];
-    g.lineWidth = 1;
-    for (const t of F.shapes) {
-      if (Math.abs(t.x - me[0]) > far || Math.abs(t.z - me[2]) > far) continue;
-      g.beginPath(); t.hull.forEach((q, i) => { const [x, y] = at(q[0], q[1]); if (i) g.lineTo(x, y); else g.moveTo(x, y); }); g.closePath();
-      g.fillStyle = t.c; g.fill(); g.strokeStyle = t.e; g.stroke();
-    }
-    for (const t of F.round) {
-      if (Math.abs(t.x - me[0]) > far || Math.abs(t.z - me[2]) > far) continue;
-      const [x, y] = at(t.x, t.z);
-      g.beginPath(); g.arc(x, y, Math.max(1.4, t.r * scale), 0, Math.PI * 2); g.fillStyle = t.c; g.fill(); g.strokeStyle = t.e; g.stroke();
-    }
-  } else {                                                      // the training plate: a grey square with a grid
-    g.fillStyle = '#2b2d31'; g.fillRect(-S, -S, 2 * S, 2 * S);
-    g.fillStyle = '#8b8e94'; g.fillRect((-HALF - me[0]) * scale, (-HALF - me[2]) * scale, 2 * HALF * scale, 2 * HALF * scale);
-    g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = 1;
-    for (let v = -HALF; v <= HALF; v += 5) {
-      g.beginPath(); g.moveTo((v - me[0]) * scale, (-HALF - me[2]) * scale); g.lineTo((v - me[0]) * scale, (HALF - me[2]) * scale); g.stroke();
-      g.beginPath(); g.moveTo((-HALF - me[0]) * scale, (v - me[2]) * scale); g.lineTo((HALF - me[0]) * scale, (v - me[2]) * scale); g.stroke();
-    }
+  } else {                                                      // the training plate: a stone slab on parchment
+    g.fillStyle = 'rgb(214,196,156)'; g.fillRect(-S, -S, 2 * S, 2 * S);
+    g.fillStyle = 'rgb(160,150,132)'; g.strokeStyle = INK; g.lineWidth = 1.5;
+    g.fillRect((-HALF - me[0]) * scale, (-HALF - me[2]) * scale, 2 * HALF * scale, 2 * HALF * scale);
+    g.strokeRect((-HALF - me[0]) * scale, (-HALF - me[2]) * scale, 2 * HALF * scale, 2 * HALF * scale);
   }
   g.restore();
-  // markers (drawn upright); anything off the edge sits on the rim so you know which way it is
-  const pin = p => { const [x, y] = toMap(p); return x < 4 || y < 4 || x > S - 4 || y > S - 4 ? null : [x, y]; };
-  for (const b of planted) {
+  for (const b of planted) {                                    // your armed C4, blinking
     if (!b.armed || Math.sin(game.time * 14) < 0) continue;
-    const q = pin(b.p); if (!q) continue;
-    g.fillStyle = '#ff3b2f'; g.beginPath(); g.arc(q[0], q[1], 4, 0, Math.PI * 2); g.fill();
+    const [x, y] = toMap(b.p); if (x < 4 || y < 4 || x > S - 4 || y > S - 4) continue;
+    g.fillStyle = 'rgb(190,30,20)'; g.strokeStyle = INK; g.lineWidth = 1.2; g.beginPath(); g.arc(x, y, 3.5, 0, Math.PI * 2); g.fill(); g.stroke();
   }
-  // you: an arrow pointing up, the way you're looking
-  g.fillStyle = '#fff'; g.strokeStyle = '#111'; g.lineWidth = 1.5;
-  g.beginPath(); g.moveTo(r, r - 8); g.lineTo(r + 6, r + 6); g.lineTo(r, r + 2); g.lineTo(r - 6, r + 6); g.closePath(); g.fill(); g.stroke();
+  // you: an inked arrow pointing up, the way you're looking
+  g.fillStyle = 'rgb(160,32,24)'; g.strokeStyle = 'rgb(245,233,205)'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(r, r - 8); g.lineTo(r + 6, r + 6); g.lineTo(r, r + 2.5); g.lineTo(r - 6, r + 6); g.closePath(); g.stroke(); g.fill();
 }
