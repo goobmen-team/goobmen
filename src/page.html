@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caveman Fight</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: #dbdbdb; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #fff; user-select: none; }
+canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
+[hidden] { display: none !important; }
+#hud, #hud > * { pointer-events: none; }
+.panel { background: rgba(20,22,26,.62); border-radius: 8px; padding: 8px 14px; }
+#status { position: fixed; left: 18px; bottom: 18px; width: 220px; }
+#hpbar { height: 10px; background: rgba(255,255,255,.2); border-radius: 5px; overflow: hidden; margin-top: 4px; }
+#hpfill { height: 100%; background: #58d66a; }
+#gunbox { position: fixed; right: 18px; bottom: 18px; text-align: right; min-width: 170px; }
+#ammo { font-size: 22px; } #ammo b { font-size: 36px; } #ammo b.low { color: #ff6b5e; }
+#slots { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 6px; white-space: nowrap; }
+#slots span { background: rgba(20,22,26,.55); border: 2px solid transparent; border-radius: 7px; padding: 4px 10px; }
+#slots span.on { border-color: #fff; background: rgba(20,22,26,.8); } #slots span.none { opacity: .45; }
+#score { position: fixed; left: 18px; top: 14px; }
+#cross { --gap: 6px; position: fixed; left: 50%; top: 50%; }
+#cross i { position: absolute; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
+#cross i:nth-child(1) { width: 2px; height: 9px; left: -1px; bottom: var(--gap); }
+#cross i:nth-child(2) { width: 2px; height: 9px; left: -1px; top: var(--gap); }
+#cross i:nth-child(3) { height: 2px; width: 9px; top: -1px; right: var(--gap); }
+#cross i:nth-child(4) { height: 2px; width: 9px; top: -1px; left: var(--gap); }
+#cross i:nth-child(5) { width: 3px; height: 3px; left: -1.5px; top: -1.5px; border-radius: 2px; }
+#cross.dot i:nth-child(-n+4) { display: none; }
+#marker { position: fixed; left: 50%; top: 50%; opacity: 0; }
+#marker i { position: absolute; width: 12px; height: 2px; left: -6px; top: -1px; background: #fff; box-shadow: 0 0 2px #000; }
+#marker i:nth-child(1) { transform: rotate(45deg) translateX(-13px); } #marker i:nth-child(2) { transform: rotate(135deg) translateX(-13px); }
+#marker i:nth-child(3) { transform: rotate(225deg) translateX(-13px); } #marker i:nth-child(4) { transform: rotate(315deg) translateX(-13px); }
+#marker.head i { background: #ff4a3d; }
+#prompt { position: fixed; left: 50%; top: 66%; transform: translateX(-50%); display: none; align-items: center; gap: 10px; white-space: nowrap; }
+#prompt.holding { top: 83%; }
+#ring { --p: 0%; width: 30px; height: 30px; border-radius: 50%; background: conic-gradient(#ffd23f var(--p), rgba(255,255,255,.22) 0); display: flex; align-items: center; justify-content: center; font-style: normal; }
+#ring::after { content: "E"; width: 22px; height: 22px; border-radius: 50%; background: #202227; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.pop { position: fixed; font-weight: 900; font-size: 30px; letter-spacing: .02em; color: #ffd23f; -webkit-text-stroke: 5px #221708; paint-order: stroke fill; white-space: nowrap; }
+#scope { position: fixed; inset: 0; opacity: 0; background: radial-gradient(circle at center, transparent 0 41vmin, rgba(0,0,0,.65) 42vmin, #000 43.5vmin); }
+#scope i { position: absolute; background: #000; }
+#scope i:nth-child(1) { left: 50%; margin-left: -.5px; width: 1px; top: calc(50% - 42vmin); height: 84vmin; }
+#scope i:nth-child(2) { top: 50%; margin-top: -.5px; height: 1px; left: calc(50% - 42vmin); width: 84vmin; }
+#scope i:nth-child(3) { left: calc(50% - 42vmin); width: 24vmin; top: 50%; height: 4px; margin-top: -2px; }
+#scope i:nth-child(4) { left: calc(50% + 18vmin); width: 24vmin; top: 50%; height: 4px; margin-top: -2px; }
+#scope i:nth-child(5) { top: calc(50% + 18vmin); height: 24vmin; left: 50%; width: 4px; margin-left: -2px; }
+#scope i:nth-child(6) { left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; border-radius: 2px; background: #e0201a; }
+#note { position: fixed; left: 50%; top: 20%; transform: translateX(-50%); font-size: 19px; font-weight: 600; text-shadow: 0 1px 4px #000; opacity: 0; transition: opacity .25s; white-space: nowrap; }
+#vignette { position: fixed; inset: 0; opacity: 0; background: radial-gradient(ellipse at center, transparent 45%, rgba(170,0,0,.62) 100%); }
+#hurtDir { position: fixed; left: 50%; top: 50%; width: 0; height: 0; opacity: 0; }
+#hurtDir::after { content: ""; position: absolute; left: -34px; top: -112px; width: 68px; height: 14px; border-top: 6px solid #ff3b30; border-radius: 50% 50% 0 0; }
+#reloadbar { position: fixed; left: 50%; top: 57%; width: 120px; height: 6px; margin-left: -60px; background: rgba(0,0,0,.45); border-radius: 3px; display: none; }
+#reloadbar i { display: block; height: 100%; background: #fff; border-radius: 3px; }
+.bar { position: fixed; width: 54px; height: 6px; margin-left: -27px; background: rgba(0,0,0,.55); border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: #ff5a4d; }
+.bar.loot { width: 0; height: 0; margin-left: -10px; background: none; border-radius: 0; border: 10px solid transparent; border-top: 14px solid #ffd23f; border-bottom: 0; filter: drop-shadow(0 0 2px #000); overflow: visible; }
+.bar.loot i { display: none; }
+.bar.soon { animation: soon .45s steps(2, start) infinite; border-top-color: #ff7a2f; }
+@keyframes soon { to { visibility: hidden; } }
+#menu { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(18,20,24,.45); overflow: auto; padding: 16px; }
+#card { background: rgba(24,26,31,.94); border-radius: 14px; padding: 16px 26px; width: 440px; max-width: 100%; margin: auto; }
+h1 { font-size: 26px; letter-spacing: .02em; margin-bottom: 2px; }
+#card p { opacity: .8; margin-bottom: 10px; }
+button { font: inherit; font-size: 20px; font-weight: 700; width: 100%; padding: 9px; border: 0; border-radius: 10px; background: #ffd23f; color: #17181b; cursor: pointer; }
+button:disabled { opacity: .5; }
+label { display: block; margin: 8px 0; cursor: pointer; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 1.3; } td { padding: 1px 0; } td:first-child { font-weight: 700; padding-right: 12px; white-space: nowrap; }
+.small { font-size: 11px; opacity: .65; margin-top: 8px; }
+#msg { margin-bottom: 10px; color: #ffd23f; } #msg:empty { display: none; }
+</style>
+</head>
+<body>
+<canvas id="c" tabindex="0"></canvas>
+<div id="hud" hidden>
+  <div id="scope"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div id="vignette"></div><div id="hurtDir"></div>
+  <div id="pops"></div>
+  <div id="bars"></div>
+  <div id="cross"><i></i><i></i><i></i><i></i><i></i></div>
+  <div id="marker"><i></i><i></i><i></i><i></i></div>
+  <div id="reloadbar"><i></i></div>
+  <div id="prompt" class="panel"><i id="ring"></i><span id="prompttext"></span></div>
+  <div id="note"></div>
+  <div id="score" class="panel"></div>
+  <div id="status" class="panel">Health <b id="hp">100</b><div id="hpbar"><div id="hpfill"></div></div></div>
+  <div id="slots"></div>
+  <div id="gunbox" class="panel"><div id="weapon"></div><div id="ammo"></div></div>
+</div>
+<div id="menu">
+  <div id="card">
+    <h1>Caveman Fight</h1>
+    <p>Loot the three chests in front of you for guns, then take on the other cavemen. Knock one out and loot him before the balloon man comes.</p>
+    <div id="msg">Loading…</div>
+    <button id="play" disabled>Play</button>
+    <label><input type="checkbox" id="shootback" checked> Enemies shoot back</label>
+    <table>
+      <tr><td>Mouse</td><td>look around</td></tr>
+      <tr><td>Left click</td><td>shoot (punch with fists)</td></tr>
+      <tr><td>Right click or Q</td><td>aim / scope (Q toggles)</td></tr>
+      <tr><td>WASD / Shift</td><td>move / sprint</td></tr>
+      <tr><td>Space / Ctrl</td><td>jump / crouch (tap Ctrl)</td></tr>
+      <tr><td>Hold E</td><td>loot a chest or a knocked-out caveman</td></tr>
+      <tr><td>R / V</td><td>reload / show off your gun</td></tr>
+      <tr><td>1, 2, 3, 4 or wheel</td><td>AK-74, Glock 17, AWP, fists</td></tr>
+      <tr><td>F</td><td>fullscreen</td></tr>
+      <tr><td>P / M / Esc</td><td>enemy fire / sound / pause</td></tr>
+    </table>
+    <div class="small">Tip: press F for fullscreen. In a normal tab, Ctrl and W pressed together close the page. A mouse works much better than a trackpad.<br>AWP model by Rifeor (sketchfab.com/Rifeor), licence CC BY 4.0, adapted for this game.</div>
+  </div>
+</div>
+<!--SCRIPTS-->
+</body>
+</html>
