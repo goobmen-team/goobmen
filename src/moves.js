@@ -247,7 +247,42 @@ function sendStep(s, dt) {
 
 // ---------------------------------------------------------------- the bomb visit
 // a caveman who has never seen a bomb, planting one
-const bombSpot = s => V.add(bonePos(s.f, 'chest'), [0, 0.2, 0]);
+const bombSpot = s => V.add(bonePos(s.f, 'chest'), [0, 0.17, 0]);
+let blast = null;
+const fx = (p, v, life, size, color, grav, grow, add) => particles.push({ p: p.slice(), v, life, max: life, size, color, grav, grow, add });
+const ball = r => [rand(-1, 1) * r, rand(-0.3, 1) * r, rand(-1, 1) * r];
+// a proper explosion: flash, fireball, sparks, a ring of dust, a column of black smoke, scorching and flying junk
+function explode(c) {
+  const d = Math.hypot(c[0] - player.pos[0], c[2] - player.pos[2]);
+  Sound.play('explode', clamp(1.7 - d / 40, 0.35, 1));
+  if (d < 14) Sound.play('ring', 1 - d / 14);
+  cam.shake = Math.max(cam.shake, clamp(1.7 - d / 22, 0, 1));
+  blast = { p: c.slice(), t: game.time };
+  for (let i = 0; i < 10; i++) fx(V.add(c, ball(0.3)), ball(1.5), rand(0.12, 0.22), rand(1.0, 1.7), [1, 0.95, 0.8, 1], 0, 2, true);
+  for (let i = 0; i < 90; i++) { const v = ball(rand(2, 8)); v[1] = Math.abs(v[1]) * 0.9 + 1.5; fx(V.add(c, ball(0.4)), v, rand(0.5, 1.2), rand(0.3, 0.6), i % 3 ? [1, 0.5, 0.1, 0.9] : [1, 0.8, 0.3, 0.9], -1.2, 0.9, true); }
+  for (let i = 0; i < 90; i++) { const v = ball(rand(6, 17)); v[1] = Math.abs(v[1]) * 0.8 + 2; fx(c, v, rand(0.9, 1.9), 0.022, [1, 0.8, 0.35, 1], 9, 0, true); }
+  for (let i = 0; i < 60; i++) { const a = i / 60 * Math.PI * 2, sp = rand(8, 11); fx(V.add(c, [0, 0.15, 0]), [Math.cos(a) * sp, rand(0, 0.6), Math.sin(a) * sp], rand(0.9, 1.4), rand(0.4, 0.6), [0.55, 0.49, 0.4, 0.55], 0, 0.9); }
+  for (let i = 0; i < 70; i++) { const v = ball(rand(1, 3)); v[1] = rand(2, 6); fx(V.add(c, ball(0.5)), v, rand(2.5, 4.5), rand(0.5, 0.9), [0.11, 0.11, 0.12, 0.8], -1, 0.55); }
+  for (let i = 0; i < 28; i++) { const a = rand(0, 6.3), r = Math.sqrt(Math.random()) * 1.5, x = c[0] + Math.cos(a) * r, z = c[2] + Math.sin(a) * r; marks.push([x, floorAt(x, z), z]); }
+  while (marks.length > 90) marks.shift();
+  for (let i = 0; i < 12; i++) { const a = rand(0, 6.3), sp = rand(3, 8); spawnProp(['rock', 'bone', 'fish', 'meat', 'rock'][i % 5], V.add(c, [0, 0.3, 0]), [Math.cos(a) * sp, rand(5, 11), Math.sin(a) * sp], { life: 6, floor: floorAt(c[0], c[2]) + 0.06 }); }
+  for (const v of [player, ...bots]) {
+    const dd = Math.hypot(v.pos[0] - c[0], v.pos[2] - c[2]);
+    if (v.dead < 0 && dd < 7) damage(v, Math.round(25 + 75 * (1 - dd / 7)), { pos: c });
+  }
+}
+// the C4: two bricks and a tape strip, a detonator with a blinking light
+function drawC4(prog, at, R, t, left, lit) {
+  const P = party(), I = M3.id(), q = o => V.add(at, M3.vec(R, o));
+  flat(prog, [0.76, 0.72, 0.6], 0.85, 0.0); drawMesh(prog, meshes.shell, scaled(R, 0.34, 0.1, 0.19), at);
+  flat(prog, [0.06, 0.06, 0.06], 0.6, 0.1); drawMesh(prog, meshes.shell, scaled(R, 0.035, 0.104, 0.195), at);
+  flat(prog, [0.08, 0.08, 0.1], 0.35, 0.5); drawMesh(prog, meshes.shell, scaled(R, 0.13, 0.04, 0.09), q([0.07, 0.07, 0]));
+  const on = lit && (left < 1 ? true : Math.sin(t * (left > 3 ? 6.3 : 20)) > 0);
+  flat(prog, [0.02, 0.18, 0.04], 0.3, 0.0); drawMesh(prog, meshes.shell, scaled(R, 0.075, 0.012, 0.045), q([0.075, 0.095, 0.01]));
+  flat(prog, on ? [1, 0.08, 0.04] : [0.3, 0.04, 0.03], 0.3, 0.0); drawMesh(prog, P.pom, scaled(R, 0.024, 0.024, 0.024), q([-0.05, 0.1, -0.025]));
+  flat(prog, [0.75, 0.1, 0.06], 0.5, 0.0); rod(prog, q([0.0, 0.09, 0.0]), q([-0.16, 0.12, 0.07]), 0.008); rod(prog, q([-0.16, 0.12, 0.07]), q([-0.2, 0.05, 0.075]), 0.008);
+  flat(prog, [0.1, 0.1, 0.65], 0.5, 0.0); rod(prog, q([0.0, 0.09, -0.02]), q([-0.12, 0.14, -0.09]), 0.008);
+}
 function bombStep(s, dt) {
   const f = s.f, h = s.helper;
   s.prev = s.t; s.t += dt;
@@ -313,36 +348,29 @@ function bombStep(s, dt) {
   for (const at of [1.55, 1.9]) if (crossed(at)) Sound.play('click', near);
   for (let k = 0; k < 4; k++) if (crossed(2.2 + k * 0.7 + 0.31) && 2.2 + k * 0.7 < 2.85) { Sound.play('bonk', near * 0.6); puff(V.add(s.spot, M3.vec(M3.ry(s.face), [0, 1.2, 0.42])), 4, [1, 0.8, 0.3, 1], 1.4, 0.03, 0.3, 4); }
   if (crossed(2.9)) { Sound.play('bonk', near); popWord(V.add(s.spot, [0, 2.1, 0]), 'OUCH!!', 0.9); }
-  if (crossed(FUSE_AT)) { Sound.play('pop', near); Sound.play('slideup', near * 0.4); popWord(V.add(s.spot, [0, 1.6, 0]), 'TSSSSS', 0.8); s.lit = true; }
+  if (crossed(FUSE_AT)) { Sound.play('beep', near); popWord(V.add(s.spot, [0, 1.6, 0]), 'BEEP BEEP', 0.8); s.lit = true; }
   if (crossed(4.0)) popWord(V.add(s.spot, [0, 2.2, 0]), 'OOGA BOOGA!', 1.0);
   if (crossed(5.4)) { Sound.play('huh', near); popWord(V.add(wrong, [0, 2.1, 0]), 'HUH?', 1.0); }
   if (crossed(6.1)) { Sound.play('ooga', near * 0.8); popWord(V.add(wrong, [0, 2.1, 0]), 'OH NO!', 0.8); }
   if (crossed(6.2)) Sound.play('zoom', near * 0.8);
 
-  // ---------- the fuse
+  // ---------- the countdown
   if (s.lit && !s.boom) {
-    const left = FUSE - (t - FUSE_AT);
-    const c = bombSpot(s);
-    if (Math.random() < dt * 40) puff(V.add(c, [0.03, 0.2, 0]), 1, [1, 0.7, 0.15, 1], 1.1, 0.025, 0.35, 3);
-    for (let n = FUSE; n >= 1; n--) if (s.prev - FUSE_AT < FUSE - n && t - FUSE_AT >= FUSE - n) {
-      Sound.play('click', near); if (n <= 3) Sound.play('pop', near * 0.5);
-      popWord(V.add(c, [0, 0.9, 0]), String(n), 0.9);
-    }
+    const left = FUSE - (t - FUSE_AT), c = bombSpot(s);
+    if (s.nextBeep === undefined) s.nextBeep = FUSE;
+    if (left <= s.nextBeep) { Sound.play('beep', near); s.nextBeep = left > 3.5 ? Math.floor(left - 0.01) : left > 1.5 ? left - 0.5 : left - 0.2; }
+    for (let n = FUSE; n >= 1; n--) if (s.prev - FUSE_AT < FUSE - n && t - FUSE_AT >= FUSE - n) popWord(V.add(c, [0, 0.9, 0]), String(n), 0.9);
     if (left <= 0) {                                             // KABOOM
-      s.boom = true; s.boomAt = t;
-      Sound.play('awp', 1); Sound.play('thud', 1); cam.shake = 1;
-      puff(c, 45, [1, 0.55, 0.1, 0.9], 5, 0.3, 0.7, -1);
-      puff(c, 30, [0.18, 0.18, 0.18, 0.8], 3.5, 0.4, 1.5, -0.4);
-      puff(c, 25, [1, 0.9, 0.3, 1], 9, 0.12, 0.6, 3);
-      popWord(V.add(c, [0, 1.4, 0]), 'KABOOM!!', 1.6);
-      f.gone = true;
-      for (const v of [player, ...bots]) {
-        const d = Math.hypot(v.pos[0] - c[0], v.pos[2] - c[2]);
-        if (v !== f && v.dead < 0 && d < 6) damage(v, Math.round(25 + 75 * (1 - d / 6)), { pos: c });
-      }
+      s.boom = true; s.boomAt = t; f.gone = true;
+      explode(c);
+      popWord(V.add(c, [0, 1.6, 0]), 'KABOOM!!', 1.6);
     }
   }
-  if (s.boom && t - s.boomAt > 0.2 && !s.sparkle) { s.sparkle = { p: V.add(c0(s), [0, 1, 0]), t }; Sound.play('ting', near); }
+  if (s.boom && t - s.boomAt < 3.5 && Math.random() < dt * 30) {  // it keeps burning a while
+    const c = c0(s), v = ball(0.5); v[1] = rand(0.6, 2);
+    fx(V.add(c, ball(0.6)), v, rand(0.4, 0.9), rand(0.25, 0.45), [1, 0.45, 0.08, 0.8], -1.5, 0.5, true);
+    if (Math.random() < 0.5) fx(V.add(c, [0, 0.5, 0]), [rand(-0.3, 0.3), rand(1.2, 2.2), rand(-0.3, 0.3)], rand(2, 3.5), 0.5, [0.12, 0.12, 0.13, 0.55], -0.6, 0.5);
+  }
 }
 const u01 = x => clamp(x, 0, 1);
 const c0 = s => V.add(s.hips, [0, 0.3, 0]);
@@ -382,23 +410,15 @@ function drawSends(prog) {
     const chest = !f.gone ? bonePos(f, 'chest') : null;
 
     if (s.bomb && !(s.boom)) {                                // the bomb, and the poor helper's sore head
-      let at, r = 0.23;
-      if (t < 1.05) at = V.add(bonePos(h, 'hand_R'), [0, 0.1, 0.12]), r = 0.22; else at = bombSpot(s);
-      if (t < 1.4 && t >= 1.0) at = V.lerp(V.add(bonePos(h, 'hand_R'), [0, 0.1, 0.12]), bombSpot(s), smooth(1.0, 1.4, t));
-      flat(prog, [0.04, 0.04, 0.05], 0.3, 0.6); drawMesh(prog, P.balloon, scaled(I, r, r, r), at);
-      flat(prog, [0.4, 0.28, 0.12], 0.7, 0.0); rod(prog, V.add(at, [0, r * 0.9, 0]), V.add(at, [0.06, r * 1.55, 0]), 0.018);
-      if (s.lit) {
-        const blink = Math.sin(t * (6 + (t - FUSE_AT) * 2.2)) > 0;
-        flat(prog, blink ? [1, 0.1, 0.05] : [0.35, 0.05, 0.04], 0.3, 0.0); drawMesh(prog, P.pom, scaled(I, 0.045, 0.045, 0.045), V.add(at, [0, r * 0.2, r * 0.9]));
-        flat(prog, [1, 0.75, 0.1], 0.2, 0.0); drawMesh(prog, P.pom, scaled(I, 0.035, 0.035, 0.035), V.add(at, [0.06, r * 1.62, 0]));
-      }
+      const hand = V.add(bonePos(h, 'hand_R'), [0, 0.12, 0.1]), left = FUSE - (t - FUSE_AT);
+      let at = t < 1.0 ? hand : t < 1.4 ? V.lerp(hand, bombSpot(s), smooth(1.0, 1.4, t)) : bombSpot(s);
+      drawC4(prog, at, t < 1.4 ? M3.ry(h.yaw + 0.4) : M3.ry(f.yaw + 0.3), t, left, !!s.lit);
       if (s.bonk > 0 && !h.gone) {                            // seeing stars
         const head = V.add(bonePos(h, 'head'), [0, 0.38, 0]);
         flat(prog, [0.95, 0.65, 0.02], 0.3, 0.7);
         for (let i = 0; i < 3; i++) { const a = t * 9 + i * 2.1; drawMesh(prog, starMesh, M3.mul(M3.ry(a * 0.5), M3.rz(a)).map(x => x * 1.3), V.add(head, [Math.cos(a) * 0.2, Math.sin(a * 2) * 0.03, Math.sin(a) * 0.2])); }
       }
     }
-    if (s.bomb && s.boom) { const u = (t - s.boomAt) / 0.5; if (u < 1) { flat(prog, [1, 0.6, 0.1], 0.3, 0.0); drawMesh(prog, P.pom, scaled(I, 1, 1, 1).map(x => x * (0.5 + 5 * Math.sqrt(u)) * (1 - u * 0.6)), c0(s)); } }
     if (!s.bomb && t >= 1.98 && t < 5.7) {                               // the pump stays until he leaves
       const R = M3.ry(s.face), at = q => V.add(s.spot, M3.vec(R, q));
       const top = t < 4.0 && s.handle ? s.handle : 0.98;
