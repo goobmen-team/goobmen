@@ -422,9 +422,7 @@ float noise(vec2 p) {
 float bakedShadow(vec3 w) {
   vec4 q = uBakedLight * vec4(w, 1.0); vec3 p = q.xyz / q.w * 0.5 + 0.5;
   if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0 || p.z > 1.0) return 1.0;
-  float sum = 0.0; vec2 t = 1.0 / vec2(textureSize(uBaked, 0));
-  for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) sum += texture(uBaked, vec3(p.xy + vec2(x, y) * t * 1.2, p.z - 0.0008));
-  return sum / 9.0;
+  return softShadow(uBaked, p, 1.2, 0.0008 * clamp(4096.0 / float(textureSize(uBaked, 0).x), 1.0, 3.0));
 }
 void main() {
   if (uCut == 1 && doorway(vW)) discard;
@@ -885,7 +883,7 @@ function drawFloraShadow(light, eye) {
   globals(staticDepth, light, light, eye);
   gl.uniformMatrix4fv(staticDepth.u.uModel, false, m4(M3.id(), [0, 0, 0]));
   drawCaveShadow();                                          // in both versions: it keeps the sun out
-  if (world.low) return;
+  if (world.low || !shadowSet().scenery) return;
   drawBridgeShadow();
   drawHouseShadow(player.pos, 30);
   for (const p of flora) if (Math.hypot(p.x - player.pos[0], p.z - player.pos[2]) < PATCH * 0.75 + 16) { const m = meshOf(p, 0); if (m) drawPart(m); }
@@ -897,7 +895,7 @@ const baked = [];
 const REACH = 190;
 function bakeShadows(shade, at) {
   if (!shade) {
-    const SIZE = Math.min(world.low ? 2048 : 4096, gl.getParameter(gl.MAX_TEXTURE_SIZE));
+    const SIZE = Math.min(world.low ? 2048 : 8192, shadowSet().baked, gl.getParameter(gl.MAX_TEXTURE_SIZE));
     const tex = gl.createTexture(); gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, SIZE, SIZE, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
     for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE], [gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
@@ -934,7 +932,8 @@ const seaVao = (() => {
   attrib(0, new Float32Array([-S, y, S, S, y, S, S, y, -S, -S, y, S, S, y, -S, -S, y, -S]), 3, gl.FLOAT);
   gl.bindVertexArray(null); return vao;
 })();
-const fogRange = () => world.cine ? [120, 480] : FLY.on ? [450, 1400] : world.low ? [70, 200] : [90, 330];
+// the cutscene is a film and keeps its own; otherwise your render distance, once you have chosen one
+const fogRange = () => world.cine ? [120, 480] : settings.chunks ? [settings.chunks * CHUNK * 0.27, settings.chunks * CHUNK] : FLY.on ? [450, 1400] : world.low ? [70, 200] : [90, 330];
 let doorwayList = null;
 const doorways = () => doorwayList || (doorwayList = new Float32Array(Array.from({ length: 12 }, (_, k) => {
   const c = CAVES[k];

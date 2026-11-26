@@ -85,13 +85,22 @@ function program(vs, fs) {
 }
 const COMMON = `
 uniform highp sampler2DShadow uShadow; uniform mat4 uLight; uniform vec3 uSun, uEye, uFlashPos, uFlashCol;
+uniform int uTaps;                                           // shadow quality: 1, 4, 9 or 25 samples
+float softShadow(highp sampler2DShadow map, vec3 p, float spread, float bias) {
+  if (uTaps <= 1) return texture(map, vec3(p.xy, p.z - bias));
+  int n = uTaps >= 25 ? 5 : uTaps >= 9 ? 3 : 2;
+  float s = 0.0, mid = float(n - 1) * 0.5; vec2 t = spread / vec2(textureSize(map, 0));
+  for (int x = 0; x < n; x++) for (int y = 0; y < n; y++) s += texture(map, vec3(p.xy + (vec2(x, y) - mid) * t, p.z - bias));
+  return s / float(n * n);
+}
 float shadowAt(vec3 w) {
   vec4 q = uLight * vec4(w, 1.0); vec3 p = q.xyz / q.w * 0.5 + 0.5;
   if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0 || p.z > 1.0) return 1.0;
-  float s = 0.0; vec2 t = 1.0 / vec2(textureSize(uShadow, 0));
-  for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) s += texture(uShadow, vec3(p.xy + vec2(x, y) * t * 1.4, p.z - 0.0012));
-  return s / 9.0;
+  return softShadow(uShadow, p, 1.4, 0.0012 * clamp(2048.0 / float(textureSize(uShadow, 0).x), 1.0, 2.5));
 }
+// things near the edge of the render distance fade into the sky
+uniform vec2 uHaze; uniform vec3 uHazeCol;
+vec3 hazed(vec3 col, vec3 w) { return mix(col, uHazeCol, smoothstep(uHaze.x, uHaze.y, length(w - uEye))); }
 vec3 flashLight(vec3 w, vec3 N) {
   vec3 d = uFlashPos - w; float r2 = dot(d, d);
   return uFlashCol * (0.35 + 0.65 * max(dot(N, d * inversesqrt(r2 + 1e-5)), 0.0)) / (1.0 + r2 * 5.0);
@@ -135,7 +144,7 @@ void main() {
   vec3 light = hemi + vec3(1.22, 1.17, 1.10) * ndl * sh + vec3(0.40, 0.39, 0.38) * max(dot(N, V), 0.0) * (1.0 - 0.8 * ndl * sh) + flashLight(vW, N);
   float spec = pow(max(dot(N, normalize(uSun + V)), 0.0), mix(180.0, 8.0, uRough)) * (1.0 - uRough) * 0.3 * sh * step(0.0, ndl) * clamp(dot(base, vec3(0.3, 0.6, 0.1)) * 5.0 - 0.1, 0.05, 1.0);
   vec3 col = base * light + vec3(spec) + vec3(0.8, 0.05, 0.02) * uHurt;
-  o = vec4(pow(clamp(col, 0.0, 1.0), vec3(1.0 / 2.2)), 1.0);
+  o = vec4(hazed(pow(clamp(col, 0.0, 1.0), vec3(1.0 / 2.2)), vW), 1.0);
 }`);
 const skinDepth = program(`${SKINVS}\nuniform mat4 uViewProj; void main() { gl_Position = uViewProj * skin() * vec4(aPos, 1.0); }`, 'void main() {}');
 const STATICVS = `layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec2 aUv; uniform mat4 uModel, uViewProj;`;
@@ -171,12 +180,13 @@ void main() {
   col += env(reflect(-V, N), rough) * Fv * ao * 1.35 + flashLight(vW, N) * F0 * 0.5;
   col += vec3(0.07, 0.08, 0.10) * pow(1.0 - ndv, 3.0);
   col = col * (2.51 * col + 0.03) / (col * (2.43 * col + 0.59) + 0.14);
-  o = vec4(pow(clamp(col, 0.0, 1.0), vec3(1.0 / 2.2)), 1.0);
+  o = vec4(hazed(pow(clamp(col, 0.0, 1.0), vec3(1.0 / 2.2)), vW), 1.0);
 }`);
 const staticDepth = program(`${STATICVS} void main() { gl_Position = uViewProj * uModel * vec4(aPos, 1.0); }`, 'void main() {}');
 const plateProg = program(`layout(location=0) in vec3 aPos; uniform mat4 uViewProj; out vec3 vW;
 void main() { vW = aPos; gl_Position = uViewProj * vec4(aPos, 1.0); }`, `
 in vec3 vW; out vec4 o;
+uniform vec2 uPlateFog;
 ${COMMON}
 float grid(vec2 p, float cell, float width) {
   vec2 q = p / cell, d = max(fwidth(q), vec2(1e-4)), g = abs(fract(q - 0.5) - 0.5);
@@ -187,7 +197,7 @@ void main() {
   vec3 col = vec3(0.586, 0.594, 0.608) * (1.0 - 0.13 * grid(vW.xz, 1.0, 0.016) - 0.07 * grid(vW.xz, 4.0, 0.045));
   col *= mix(0.56, 1.0, shadowAt(vW));
   col += flashLight(vW, vec3(0.0, 1.0, 0.0)) * 0.35;
-  col = mix(col, vec3(219.0 / 255.0), smoothstep(16.0, 55.0, length(vW - uEye)));
+  col = mix(col, vec3(219.0 / 255.0), smoothstep(uPlateFog.x, uPlateFog.y, length(vW - uEye)));
   o = vec4(col, 1.0);
 }`);
 const fxProg = program(`layout(location=0) in vec3 aPos; layout(location=1) in vec2 aUv; layout(location=2) in vec4 aCol;

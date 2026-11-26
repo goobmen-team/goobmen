@@ -8,6 +8,8 @@ On the menu pick **Baseplate** or **Island**. The island starts with a boat trip
 
 The boombox plays the game's own tune.
 
+The **Settings** tab on the menu (also there when you pause with Esc) has shadow quality (very low, low, normal, high) and a render distance slider, 2 to 32 chunks of 16 m. Your choices are remembered in your browser. The boat trip keeps its own view distance.
+
 ## Controls
 
 | Key | Does |

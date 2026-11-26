@@ -104,9 +104,31 @@ const meshes = {
   chest: mergeMesh([boxData(0.9, 0.05, 0.56, 0, 0.025, 0), boxData(0.9, 0.44, 0.05, 0, 0.22, 0.255), boxData(0.9, 0.44, 0.05, 0, 0.22, -0.255), boxData(0.05, 0.44, 0.46, 0.425, 0.22, 0), boxData(0.05, 0.44, 0.46, -0.425, 0.22, 0)]), lid: boxMesh(0.94, 0.14, 0.60, 0, 0.07, 0.30), band: boxMesh(0.07, 0.47, 0.59, 0, 0.225, 0),
   lidband: boxMesh(0.07, 0.165, 0.62, 0, 0.07, 0.30), strap: boxMesh(0.07, 0.45, 0.035, 0, 0.225, 0), lock: boxMesh(0.11, 0.13, 0.03, 0, 0.34, 0.29), shell: boxMesh(1, 1, 1)
 };
-const SHADOW = 2048;
+// ---- settings: shadow quality and render distance, remembered in this browser
+// size: the moving shadows round you. baked: the island's long ones. area: how far round you the moving ones reach
+const SHADOWS = [
+  { size: 256, baked: 512, taps: 1, area: 9, items: false, scenery: false },    // very low: only cavemen cast moving shadows
+  { size: 768, baked: 2048, taps: 4, area: 9, items: true, scenery: false },    // low
+  { size: 2048, baked: 4096, taps: 9, area: 9, items: true, scenery: true },     // normal
+  { size: 4096, baked: 6144, taps: 25, area: 13, items: true, scenery: true }    // high
+];
+const CHUNK = 16;                                            // metres, as in Minecraft
+const settings = { shadows: 2, chunks: null };               // chunks null: not chosen, each map keeps its own distance
+try {
+  const s = JSON.parse(localStorage.getItem('goobmen-settings'));
+  if (SHADOWS[s.shadows]) settings.shadows = s.shadows;
+  if (s.chunks >= 2 && s.chunks <= 32) settings.chunks = Math.round(s.chunks);
+} catch (e) { /* nothing saved, or storage is blocked */ }
+const saveSettings = () => { try { localStorage.setItem('goobmen-settings', JSON.stringify(settings)); } catch (e) { /* only for this visit then */ } };
+const shadowSet = () => SHADOWS[settings.shadows];
+// the baseplate is only 60 m across, so the same slider covers a much shorter stretch there
+const plateRange = () => { const c = settings.chunks; return !c ? 55 : c <= 21 ? 14 + (c - 2) / 19 * 41 : 55 + (c - 21) / 11 * 65; };
+// how far you can see where you are now (Infinity until a distance has been chosen)
+const viewRange = () => !settings.chunks || world.cine ? Infinity : world.map === 'island' ? settings.chunks * CHUNK : plateRange();
+let SHADOW = shadowSet().size;
 const shadowTex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, shadowTex);
-gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, SHADOW, SHADOW, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+const sizeShadowMap = () => gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, SHADOW, SHADOW, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+sizeShadowMap();
 for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE], [gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
 const shadowFbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFbo);
 gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, shadowTex, 0); gl.drawBuffers([gl.NONE]); gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -539,7 +561,7 @@ const keys = new Set();
 const mouse = { fire: false, pressed: false, aim: false, drag: null };
 const game = { running: false, locked: false, lockWorked: false, aimToggle: false, enemiesShoot: true, godMode: false, kills: 0, deaths: 0, marker: 0, hurtFade: 0, note: 0, time: 0 };
 const ui = {};
-for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'msg', 'reloadbar', 'boomflash', 'minimap', 'killcount']) ui[id] = document.getElementById(id);
+for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'msg', 'tabplay', 'tabsettings', 'panelplay', 'panelsettings', 'shadowpick', 'dist', 'distlabel', 'reloadbar', 'boomflash', 'minimap', 'killcount']) ui[id] = document.getElementById(id);
 let hudDirty = true;
 function notify(text) { }                                    // the messages in the middle of the screen are switched off
 
@@ -574,6 +596,32 @@ function menuTiles() {
 }
 ui.play.addEventListener('click', () => pickMap('plate'));
 ui.island.addEventListener('click', () => pickMap('island'));
+
+// ---- the two tabs on the menu, and what is on the settings one
+function menuTab(settingsOpen) {
+  ui.panelplay.hidden = settingsOpen; ui.panelsettings.hidden = !settingsOpen;
+  ui.tabplay.classList.toggle('on', !settingsOpen); ui.tabsettings.classList.toggle('on', settingsOpen);
+}
+function showSettings() {
+  [...ui.shadowpick.children].forEach((b, i) => { b.classList.toggle('on', i === settings.shadows); b.setAttribute('aria-pressed', i === settings.shadows); });
+  const chunks = settings.chunks || (ui.lowend.checked ? 13 : 21);      // what the island uses until you choose
+  ui.dist.value = chunks; ui.distlabel.textContent = chunks + ' chunks';
+}
+function setShadows(level) {
+  if (!SHADOWS[level] || level === settings.shadows) return;
+  settings.shadows = level; SHADOW = shadowSet().size;
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, shadowTex); sizeShadowMap();
+  for (const s of baked) if (s) { gl.deleteTexture(s.tex); gl.deleteFramebuffer(s.fbo); }
+  baked.length = 0;                                          // drawn again at the new size when next needed
+  saveSettings(); showSettings();
+}
+function setDistance(chunks) { settings.chunks = clamp(Math.round(chunks), 2, 32); saveSettings(); showSettings(); }
+ui.tabplay.addEventListener('click', () => menuTab(false));
+ui.tabsettings.addEventListener('click', () => menuTab(true));
+[...ui.shadowpick.children].forEach((b, i) => b.addEventListener('click', () => setShadows(i)));
+ui.dist.addEventListener('input', () => setDistance(+ui.dist.value));
+ui.lowend.addEventListener('change', showSettings);
+showSettings();
 
 document.addEventListener('pointerlockchange', () => {
   game.locked = document.pointerLockElement === canvas;
@@ -932,6 +980,9 @@ function globals(prog, vp, light, eye) {
   if (prog.u.uSun) gl.uniform3fv(prog.u.uSun, SUN);
   if (prog.u.uEye) gl.uniform3fv(prog.u.uEye, eye);
   if (prog.u.uFlashPos) { gl.uniform3fv(prog.u.uFlashPos, flashPos); gl.uniform3fv(prog.u.uFlashCol, flashCol); }
+  if (prog.u.uTaps) gl.uniform1i(prog.u.uTaps, shadowSet().taps);
+  if (prog.u.uHaze) { const far = Math.min(viewRange(), 1e5); gl.uniform2f(prog.u.uHaze, far * 0.7, far); gl.uniform3fv(prog.u.uHazeCol, SKY[world.map]); }
+  if (prog.u.uPlateFog) { const far = plateRange(); gl.uniform2f(prog.u.uPlateFog, far * 0.29, far); }
 }
 function drawFighters(prog, textured, hideSelf) {
   for (const f of fighters.concat(helpers)) {
@@ -1099,12 +1150,12 @@ function render() {
   const eye = V.add(view.eye, [rand(-sh, sh), rand(-sh, sh), rand(-sh, sh)]);
   if (world.map === 'island') eye[1] = Math.max(eye[1], floorAt(eye[0], eye[2], eye[1]) + 0.18);   // never inside a hill
   const fov = cam.fov + (0.17 - cam.fov) * smooth(0.45, 1, sc);
-  const proj = perspective(fov, w / Math.max(1, h), 0.08, world.map !== 'island' ? 160 : FLY.on ? 2200 : world.low ? 300 : 600);
+  const proj = perspective(fov, w / Math.max(1, h), 0.08, settings.chunks ? viewRange() + 8 : world.map !== 'island' ? 160 : FLY.on ? 2200 : world.low ? 300 : 600);
   const vp = mul4(proj, lookAt(eye, V.add(eye, view.fwd)));
   lastView = { vp, w: canvas.clientWidth, h: canvas.clientHeight };
 
   const centre = V.add(player.pos, [view.fwd[0] * 5, 0.5, view.fwd[2] * 5]);
-  const light = mul4(ortho(9, 9, 1, 30), lookAt(V.mad(centre, SUN, 14), centre));
+  const area = shadowSet().area, light = mul4(ortho(area, area, 1, 30), lookAt(V.mad(centre, SUN, 14), centre));
 
   flashCol[0] = flashCol[1] = flashCol[2] = 0;
   const fl = flashes.find(f => f.f.isPlayer) || flashes[0];
@@ -1125,10 +1176,10 @@ function render() {
   gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, null);
   gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFbo); gl.viewport(0, 0, SHADOW, SHADOW); gl.clear(gl.DEPTH_BUFFER_BIT);
   globals(skinDepth, light, light, eye); drawFighters(skinDepth, false);
-  globals(staticDepth, light, light, eye); drawStatics(staticDepth, false);
+  globals(staticDepth, light, light, eye); if (shadowSet().items) drawStatics(staticDepth, false);
   if (world.map === 'island') drawFloraShadow(light, eye);
   globals(skinDepth, light, light, eye); drawBeachSkipper(skinDepth);
-  globals(staticDepth, light, light, eye); drawBeachThings(staticDepth);
+  globals(staticDepth, light, light, eye); if (shadowSet().items) drawBeachThings(staticDepth);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
   gl.viewport(0, 0, w, h); gl.clearColor(...SKY[world.map], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -1189,7 +1240,7 @@ function hud(dt) {
     // health bar over the living, an arrow over bodies that still have loot
     const body = b.dead >= 1.2 && !b.looted && !looting && !b.send, alive = b.dead < 0;
     const at = alive ? V.add(b.pos, [0, b.crouch ? 1.6 : 1.92, 0]) : [b.pos[0] - Math.sin(b.yaw) * 0.8, b.pos[1] + 0.75 + Math.sin(game.time * 5) * 0.08, b.pos[2] - Math.cos(b.yaw) * 0.8];
-    const el = barEls[i], p = (alive || body) && Math.hypot(at[0] - player.pos[0], at[2] - player.pos[2]) < 60 && lastView && scopeAmount() < 0.5 && !behindHill(cameraEye().eye, at) ? project(at) : null;
+    const el = barEls[i], p = (alive || body) && Math.hypot(at[0] - player.pos[0], at[2] - player.pos[2]) < Math.min(60, viewRange()) && lastView && scopeAmount() < 0.5 && !behindHill(cameraEye().eye, at) ? project(at) : null;
     el.style.display = p ? 'block' : 'none';
     el.classList.toggle('loot', body);
     el.classList.toggle('soon', body && b.dead > LOOT_WINDOW - 3);
@@ -1231,7 +1282,7 @@ window.__game = {
   draw() { manual = true; render(); hud(0); },
   resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE, bikes, HOUSES, houseWorld,
   look(eye, at) { testView = eye ? { eye, at } : null; },
-  cine, CINE, TRIP, Sound, cineStart, get wreck() { return wreck; },
+  cine, CINE, TRIP, Sound, cineStart, settings, setShadows, setDistance, get wreck() { return wreck; },
   watch(t) { manual = true; if (!cine.on || t < cine.t) { cineStart(); render(); } while (cine.on && cine.t < t - 1e-6) cineStep(Math.min(1 / 20, t - cine.t)); render(); if (cine.on) cineOverlay(0); },
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },
