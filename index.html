@@ -562,29 +562,59 @@ const world = { map: 'plate' };
 const SEA = { level: -0.2, floor: -1.0, wade: 5, swim: 22, grace: 0.6, every: 0.5, bite: 8 };
 const SKY = { plate: [219 / 255, 219 / 255, 219 / 255], island: [0.66, 0.80, 0.91] };
 // how far the coast is from the middle, in each direction (the same formula is in the water shader)
-const coast = a => 105 + 13 * Math.sin(3 * a + 1.1) + 9 * Math.sin(5 * a + 2.6) + 4 * Math.sin(11 * a);
+const bulge = (a, at, wide) => Math.exp(-((Math.sin((a - at) / 2) / wide) ** 2));
+const coast = a => 105 + 13 * Math.sin(3 * a + 1.1) + 9 * Math.sin(5 * a + 2.6) + 4 * Math.sin(11 * a) + 3 * Math.sin(19 * a + 0.7)
+  - 34 * bulge(a, 0.75, 0.11) + 28 * bulge(a, -2.3, 0.09);      // a deep bay and a long headland
 const pastCoast = (x, z) => Math.hypot(x, z) - coast(Math.atan2(x, z));
 const MEADOW = 2.0;                                          // the flat clearing you start in
-// x, z, height, radius. keep height / radius under 0.5 so every slope can be walked up
-const HILLS = [[12, -62, 24, 50], [-65, 20, 14, 38], [58, 42, 11, 32], [-18, 72, 8, 28], [55, -22, 7, 25], [-45, -55, 9, 27]];
+// x, z, height, radius of the smaller hills
+const HILLS = [[58, 42, 9, 24], [55, -22, 8, 22], [-45, -55, 10, 24], [-8, 88, 6, 18], [82, -48, 7, 20], [-88, -22, 6, 18]];
+const PEAK_AT = [12, -66], MESA_AT = [-62, 14];
+const GORGE = [[-52, 50], [-22, 40], [6, 56], [34, 47], [62, 62]];   // a winding pass with rock walls
 const bump = (i, j) => { const n = Math.sin(i * 127.1 + j * 311.7) * 43758.5453; return n - Math.floor(n); };
 function roll(x, z, size) {
   const u = x / size, v = z / size, i = Math.floor(u), j = Math.floor(v), a = smooth(0, 1, u - i), b = smooth(0, 1, v - j);
   return (bump(i, j) * (1 - a) + bump(i + 1, j) * a) * (1 - b) + (bump(i, j + 1) * (1 - a) + bump(i + 1, j + 1) * a) * b - 0.5;
 }
+function pathDistance(x, z, path) {
+  let best = 1e9;
+  for (let k = 0; k + 1 < path.length; k++) {
+    const [ax, az] = path[k], dx = path[k + 1][0] - ax, dz = path[k + 1][1] - az, u = clamp(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz), 0, 1);
+    best = Math.min(best, Math.hypot(x - ax - dx * u, z - az - dz * u));
+  }
+  return best;
+}
 function shape(x, z) {
   const e = pastCoast(x, z);
   if (e >= 0) return SEA.floor * clamp(e / SEA.wade, 0, 1);
-  let h = MEADOW + roll(x, z, 17) * 2.2 + roll(x, z, 6) * 0.5;
+  // rolling ground at three sizes
+  let h = MEADOW + 1.2 + roll(x, z, 37) * 5 + roll(x + 40, z, 16) * 2.4 + roll(x, z + 70, 6) * 0.6;
   for (const [hx, hz, top, r] of HILLS) {
     const d = ((x - hx) ** 2 + (z - hz) ** 2) / (r * r);
-    if (d < 1) h += top * (1 - d) * (1 - d) * (1 + roll(x, z, 11) * 0.25);
+    if (d < 1) h += top * (1 - d) * (1 - d) * (1 + roll(x, z, 9) * 0.5);
   }
-  h = MEADOW + (h - MEADOW) * smooth(11, 24, Math.hypot(x, z));
-  return h * smooth(0, 24, -e);
+  // the mountain: spurs and gullies running down from the summit
+  const mx = x - PEAK_AT[0], mz = z - PEAK_AT[1], m = Math.hypot(mx, mz) / 54;
+  if (m < 1) {
+    const spur = Math.abs(Math.sin(Math.atan2(mx, mz) * 3.5 + roll(x, z, 21) * 3));
+    h += 27 * (1 - m) ** 1.6 * (0.72 + 0.4 * (0.5 + (spur - 0.5) * smooth(0, 0.35, m))) + roll(x, z, 8) * 4 * (1 - m);
+  }
+  // the mesa: flat top, cliffs all round, one ramp on the side facing the start
+  const qx = x - MESA_AT[0], qz = z - MESA_AT[1], q = Math.hypot(qx, qz) + roll(x, z, 7) * 4;
+  const ramp = smooth(0.80, 0.97, qx / (Math.hypot(qx, qz) || 1));
+  const rise = smooth(25, 21.5, q) * (1 - ramp) + smooth(42, 16, q) * ramp;
+  h = h * (1 - rise) + (11.5 + roll(x, z, 9) * 0.8) * rise;
+  // the gorge: raised rock either side of a low winding floor
+  const g = pathDistance(x, z, GORGE) + roll(x, z, 8) * 3;
+  h += 7.5 * smooth(17, 9, g);
+  const floor = smooth(7, 3.5, g);
+  h = h * (1 - floor) + (1.3 + roll(x, z, 12) * 0.5) * floor;
+
+  h = MEADOW + (h - MEADOW) * smooth(12, 27, Math.hypot(x, z));
+  return Math.max(0, h) * smooth(0, 20, -e);
 }
 // heights on a grid: the drawn land and your feet read the same numbers
-const GRID = { half: 175, n: 220 };
+const GRID = { half: 175, n: 300 };
 GRID.cell = GRID.half * 2 / GRID.n;
 const heights = new Float32Array((GRID.n + 1) * (GRID.n + 1));
 for (let j = 0; j <= GRID.n; j++) for (let i = 0; i <= GRID.n; i++) heights[j * (GRID.n + 1) + i] = shape(i * GRID.cell - GRID.half, j * GRID.cell - GRID.half);
@@ -609,25 +639,57 @@ function confine(f) {
     p[0] = clamp(p[0], -HALF + 0.6, HALF - 0.6); p[2] = clamp(p[2], -HALF + 0.6, HALF - 0.6);
     return;
   }
+  for (const o of solids) if (Math.abs(p[0] - o.x) < 3 && Math.abs(p[2] - o.z) < 3) push(f, [o.x, 0, o.z], o.r + 0.28);
   const d = Math.hypot(p[0], p[2]), max = coast(Math.atan2(p[0], p[2])) + (f.isPlayer ? SEA.swim : -1.5);
   if (d > max) { p[0] *= max / d; p[2] *= max / d; }
 }
+// cliffs: a step that climbs or drops too sharply is refused, sliding along the face if it can
+const STEEP = 1.3;
+function cliffs(f, x0, z0) {
+  if (world.map !== 'island') return;
+  const sheer = (x, z) => {
+    const d = Math.hypot(x - x0, z - z0);
+    if (d < 1e-5) return false;
+    // look a little ahead, so a single frame's tiny step cannot creep up a face
+    const k = Math.max(1, 0.5 / d), y = groundAt(x0 + (x - x0) * k, z0 + (z - z0) * k);
+    return Math.abs(y - groundAt(x0, z0)) > STEEP * d * k;
+  };
+  const p = f.pos;
+  if (!sheer(p[0], p[2])) return;
+  if (!sheer(p[0], z0)) p[2] = z0;
+  else if (!sheer(x0, p[2])) p[0] = x0;
+  else { p[0] = x0; p[2] = z0; }
+}
 
-// where a ray meets the ground or the sea, or null
+// distance to the first trunk or boulder on the ray, or Infinity
+function solidHit(origin, dir) {
+  const a = dir[0] * dir[0] + dir[2] * dir[2];
+  let best = Infinity;
+  if (a < 1e-6) return best;
+  for (const o of solids) {
+    const x = origin[0] - o.x, z = origin[2] - o.z, b = x * dir[0] + z * dir[2], disc = b * b - a * (x * x + z * z - o.r * o.r);
+    if (disc < 0) continue;
+    const t = (-b - Math.sqrt(disc)) / a, y = origin[1] + dir[1] * t;
+    if (t > 0 && t < best && y > o.y - 0.3 && y < o.y + o.h) best = t;
+  }
+  return best;
+}
+// where a ray meets the ground, the sea, a tree or a rock, or null
 function surfaceHit(origin, dir) {
   if (world.map !== 'island') {
     if (dir[1] >= -1e-4) return null;
     const t = -origin[1] / dir[1], p = V.mad(origin, dir, t);
     return Math.abs(p[0]) < HALF && Math.abs(p[2]) < HALF ? { t, kind: 'ground' } : null;
   }
+  const solid = solidHit(origin, dir);
   const under = t => origin[1] + dir[1] * t < floorAt(origin[0] + dir[0] * t, origin[2] + dir[2] * t);
-  for (let last = 0, t = 0.4; t < 90; last = t, t += 0.4 + t * 0.012) {
+  for (let last = 0, t = 0.4; t < Math.min(90, solid); last = t, t += 0.4 + t * 0.012) {
     if (!under(t)) continue;
     let lo = last, hi = t;
     for (let k = 0; k < 8; k++) { const mid = (lo + hi) / 2; if (under(mid)) hi = mid; else lo = mid; }
     return { t: hi, kind: inSea(V.mad(origin, dir, hi)) ? 'water' : 'ground' };
   }
-  return null;
+  return solid < 90 ? { t: solid, kind: 'solid' } : null;
 }
 // is the ground in the way between two points? (so health bars do not show through hills)
 function behindHill(from, to) {
@@ -640,7 +702,7 @@ function cameraRoom(at, fwd, dist) {
   if (world.map !== 'island') return dist;
   for (let d = 0.2; d <= dist; d += 0.2) {
     const p = V.mad(at, fwd, -d);
-    if (p[1] < floorAt(p[0], p[2]) + 0.2) return Math.max(0.4, d - 0.2);
+    if (p[1] < floorAt(p[0], p[2]) + 0.2 || leaves.some(c => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]) < c[3])) return Math.max(0.4, d - 0.2);
   }
   return dist;
 }
@@ -700,9 +762,11 @@ in vec3 vW; out vec4 o;
 uniform float uTime;
 ${COMMON}
 ${FOG}
+float bulge(float a, float at, float wide) { float q = sin((a - at) / 2.0) / wide; return exp(-q * q); }
 void main() {
   float a = atan(vW.x, vW.z);
-  float past = length(vW.xz) - (105.0 + 13.0 * sin(3.0 * a + 1.1) + 9.0 * sin(5.0 * a + 2.6) + 4.0 * sin(11.0 * a));
+  float past = length(vW.xz) - (105.0 + 13.0 * sin(3.0 * a + 1.1) + 9.0 * sin(5.0 * a + 2.6) + 4.0 * sin(11.0 * a) + 3.0 * sin(19.0 * a + 0.7)
+    - 34.0 * bulge(a, 0.75, 0.11) + 28.0 * bulge(a, -2.3, 0.09));
   float wave = sin(vW.x * 0.9 + uTime * 1.4) * sin(vW.z * 0.7 - uTime * 1.1) + 0.5 * sin((vW.x + vW.z) * 2.1 + uTime * 2.3);
   vec3 col = mix(vec3(0.22, 0.62, 0.66), vec3(0.04, 0.24, 0.42), smoothstep(1.0, 16.0, past)) + 0.035 * wave;
   float foam = 1.0 - smoothstep(0.2, 0.9, abs(past - 1.5 - 0.35 * sin(uTime * 1.6 + a * 40.0)));
@@ -713,15 +777,19 @@ void main() {
 // the grid as a mesh, coloured by height and steepness: sand, grass, bare rock, pale summit
 const land = (() => {
   const n = GRID.n, row = n + 1, v = [], idx = [];
-  const SAND = [0.80, 0.70, 0.47], GRASS = [0.31, 0.45, 0.20], ROCK = [0.40, 0.36, 0.31], PEAK = [0.66, 0.63, 0.58], DEEP = [0.30, 0.34, 0.27];
+  const SAND = [0.80, 0.70, 0.47], GRASS = [0.31, 0.45, 0.20], LUSH = [0.17, 0.33, 0.13], DRY = [0.55, 0.52, 0.24], DIRT = [0.52, 0.40, 0.25], ROCK = [0.40, 0.36, 0.31], PEAK = [0.66, 0.63, 0.58], DEEP = [0.30, 0.34, 0.27];
   const at = (i, j) => heights[clamp(j, 0, n) * row + clamp(i, 0, n)];
   for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
     const h = at(i, j), nrm = V.norm([at(i - 1, j) - at(i + 1, j), 2 * GRID.cell, at(i, j - 1) - at(i, j + 1)]);
-    let col = V.lerp(SAND, GRASS, smooth(0.7, 1.4, h));
-    col = V.lerp(col, ROCK, Math.max(smooth(0.14, 0.24, 1 - nrm[1]), smooth(14, 18, h)));
-    col = V.lerp(col, PEAK, smooth(21, 24, h));
+    const x = i * GRID.cell - GRID.half, z = j * GRID.cell - GRID.half;
+    let col = V.lerp(GRASS, LUSH, smooth(-0.1, 0.2, roll(x, z, 29)));
+    col = V.lerp(col, DRY, smooth(0.08, 0.28, roll(x + 90, z, 23)));
+    col = V.lerp(SAND, col, smooth(0.7, 1.5, h));
+    col = V.lerp(col, DIRT, smooth(7, 4, pathDistance(x, z, GORGE)));
+    col = V.lerp(col, ROCK, Math.max(smooth(0.17, 0.30, 1 - nrm[1]), smooth(17, 21, h)));
+    col = V.lerp(col, PEAK, smooth(24, 28, h));
     col = V.lerp(col, DEEP, smooth(0, 0.8, -h));
-    v.push(i * GRID.cell - GRID.half, h, j * GRID.cell - GRID.half, ...col, ...nrm);
+    v.push(x, h, z, ...col, ...nrm);
   }
   for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const k = j * row + i; idx.push(k, k + row + 1, k + 1, k, k + row, k + row + 1); }
   const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
@@ -730,6 +798,79 @@ const land = (() => {
   gl.bindVertexArray(null);
   return { vao, count: idx.length };
 })();
+// ---------------------------------------------------------------- trees and rocks
+const solids = [], leaves = [];                              // what you bump into, what the camera avoids
+const flora = (() => {
+  const v = [], idx = [];
+  const add = (m, at, col, R) => {                           // m: pos, normal, uv from the mesh helpers
+    const base = v.length / 9;
+    for (let k = 0; k < m.v.length; k += 8) {
+      let p = [m.v[k], m.v[k + 1], m.v[k + 2]], n = [m.v[k + 3], m.v[k + 4], m.v[k + 5]];
+      if (R) { p = M3.vec(R, p); n = M3.vec(R, n); }
+      v.push(at[0] + p[0], at[1] + p[1], at[2] + p[2], ...col, ...n);
+    }
+    for (const i of m.i) idx.push(base + i);
+  };
+  const trunk = (r0, r1, h, lean) => {
+    const m = { v: [], i: [] }, n = 6;
+    for (let k = 0; k <= n; k++) {
+      const a = k / n * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+      m.v.push(c * r0, 0, s * r0, c, 0, s, 0, 0, c * r1 + lean, h, s * r1, c, 0, s, 0, 0);
+    }
+    for (let k = 0; k < n; k++) { const p = k * 2; m.i.push(p, p + 1, p + 2, p + 2, p + 1, p + 3); }
+    return m;
+  };
+  const BARK = [0.24, 0.15, 0.08], PALM = [0.45, 0.33, 0.18];
+  const palm = (at, s, turn) => {
+    const lean = 0.9 * s, R = M3.ry(turn), h = 4.6 * s;
+    add(trunk(0.22 * s, 0.13 * s, h, lean), at, PALM, R);
+    const top = V.add(at, M3.vec(R, [lean, h, 0]));
+    for (let k = 0; k < 6; k++) add(blob(0.34 * s, 0.05 * s, 1.5 * s, [0, 0, 1.35 * s], 0, 6), top, [0.13, 0.40 + (k % 2) * 0.07, 0.10], M3.mul(M3.ry(k * 1.05 + turn), M3.rx(0.38)));
+    add(blob(0.22 * s, 0.2 * s, 0.22 * s, [0, -0.15 * s, 0], 0, 6), top, BARK);
+  };
+  const pine = (at, s, shade) => {
+    add(trunk(0.26 * s, 0.16 * s, 3.4 * s, 0), at, BARK);
+    for (let k = 0; k < 3; k++) add(coneData((1.8 - k * 0.45) * s, (2.1 - k * 0.2) * s, 9), [at[0], at[1] + (3.0 + k * 1.15) * s, at[2]], [0.07 + shade * 0.04, 0.25 + shade * 0.1, 0.11]);
+  };
+  const leafy = (at, s, shade) => {
+    add(trunk(0.3 * s, 0.2 * s, 4.0 * s, 0), at, BARK);
+    for (const [x, y, z, r] of [[0, 4.8, 0, 1.6], [0.9, 4.3, 0.3, 1.0], [-0.8, 4.4, -0.5, 1.1]])
+      add(blob(r * s, r * 0.8 * s, r * s, [x * s, y * s, z * s], 0.25, 7), at, [0.16 + shade * 0.08, 0.36 + shade * 0.08, 0.08]);
+  };
+  const boulder = (at, s, shade) => add(blob(s, s * 0.75, s * 0.9, [0, s * 0.3, 0], 0.5, 7), at, [0.34 + shade * 0.1, 0.32 + shade * 0.09, 0.29 + shade * 0.08], M3.ry(shade * 20));
+
+  // one chance every few metres, nudged about; woods grow where the noise says so
+  const STEP = 5.5;
+  for (let i = -24; i <= 24; i++) for (let j = -24; j <= 24; j++) {
+    const r = k => bump(i * 3 + k * 17, j * 5 - k * 11);
+    const x = (i + r(1) - 0.5) * STEP, z = (j + r(2) - 0.5) * STEP, e = pastCoast(x, z);
+    if (e > -4 || Math.hypot(x, z) < 17 || pathDistance(x, z, GORGE) < 5) continue;
+    const y = shape(x, z), slope = Math.hypot(shape(x + 1, z) - y, shape(x, z + 1) - y), s = 0.75 + r(3) * 0.6, at = [x, y - 0.15, z];
+    const woods = roll(x - 50, z + 30, 31);
+    if (e > -22 && y < 3) {
+      if (r(4) < 0.2) { palm(at, s, r(5) * 6.3); solids.push({ x, z, y, r: 0.24 * s, h: 4.4 * s }); }
+    } else if (slope < 0.8 && y < 18 && r(4) < (woods > 0.04 ? 0.75 : 0.05)) {
+      (woods > 0.17 || y > 9 ? pine : leafy)(at, s, r(5));
+      solids.push({ x, z, y, r: 0.3 * s, h: 3.5 * s });
+      leaves.push([x, y + 4.4 * s, z, 1.9 * s]);
+    } else if (r(6) < (y > 12 || slope > 0.8 ? 0.2 : 0.07)) {
+      const size = 0.35 + r(7) ** 2 * 1.9;
+      boulder(at, size, r(5));
+      if (size > 0.6) solids.push({ x, z, y, r: size * 0.85, h: size });
+    }
+  }
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  attrib(0, new Float32Array(v), 3, gl.FLOAT, false, 36, 0); attrib(1, null, 3, gl.FLOAT, false, 36, 12); attrib(2, null, 3, gl.FLOAT, false, 36, 24);
+  buffer(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(idx));
+  gl.bindVertexArray(null);
+  return { vao, count: idx.length };
+})();
+// shadows of the trees and rocks
+function drawFloraShadow(light, eye) {
+  globals(staticDepth, light, light, eye);
+  gl.uniformMatrix4fv(staticDepth.u.uModel, false, m4(M3.id(), [0, 0, 0]));
+  gl.bindVertexArray(flora.vao); gl.drawElements(gl.TRIANGLES, flora.count, gl.UNSIGNED_INT, 0);
+}
 const seaVao = (() => {
   const vao = gl.createVertexArray(), S = 900, y = SEA.level; gl.bindVertexArray(vao);
   attrib(0, new Float32Array([-S, y, S, S, y, S, S, y, -S, -S, y, S, S, y, -S, -S, y, -S]), 3, gl.FLOAT);
@@ -738,6 +879,7 @@ const seaVao = (() => {
 function drawLand(vp, light, eye) {
   globals(landProg, vp, light, eye); gl.uniform3fv(landProg.u.uSky, SKY.island);
   gl.bindVertexArray(land.vao); gl.drawElements(gl.TRIANGLES, land.count, gl.UNSIGNED_INT, 0);
+  gl.bindVertexArray(flora.vao); gl.drawElements(gl.TRIANGLES, flora.count, gl.UNSIGNED_INT, 0);
 }
 // after everything solid, so legs show through the water
 function drawSea(vp, light, eye) {
@@ -1092,6 +1234,7 @@ function fire(f, origin, dir, spread, minT) {
     if (f.isPlayer) { Sound.play('hit', 0.8); game.marker = 0.18; ui.marker.classList.toggle('head', head || hit.f.dead >= 0); }
   } else if (hit.kind === 'ground') { puff(hit.p, 6, [0.45, 0.43, 0.40, 0.7], 0.9, 0.045, 0.5, 3); marks.push(hit.p); if (marks.length > 90) marks.shift(); }
   else if (hit.kind === 'water') puff(hit.p, 8, [0.85, 0.93, 0.97, 0.8], 1.2, 0.04, 0.45, 5);
+  else if (hit.kind === 'solid') puff(hit.p, 6, [0.50, 0.38, 0.24, 0.9], 1.2, 0.03, 0.45, 6);
   else if (hit.kind === 'chest') puff(hit.p, 6, [0.55, 0.36, 0.17, 0.9], 1.2, 0.025, 0.45, 6);
   // recoil on the gun itself
   f.kickV += g.kickBack * 22; f.riseV += g.climb * 16 * (1 - 0.35 * f.ads); f.roll += rand(-0.05, 0.05); f.bolt = 1;
@@ -2036,9 +2179,11 @@ function locomotion(f, mx, my, sprint, dt) {
   if (f.dead >= 0) f.legYaw = 0;
   const dir = f.yaw + f.moveRel;
   const pace = f.speed * (inSea(f.pos) ? 0.65 : 1);           // wading is slow
+  const x0 = f.pos[0], z0 = f.pos[2];
   f.pos[0] += Math.sin(dir) * pace * dt;
   f.pos[2] += Math.cos(dir) * pace * dt;
   confine(f);
+  cliffs(f, x0, z0);
   if (f.dead < 0) f.pos[1] = groundAt(f.pos[0], f.pos[2]);
   if (f.isPlayer && looting) return;
   for (const c of chests) push(f, c.pos, 0.72);
@@ -2091,6 +2236,7 @@ function camVectors() {
 function cameraEye() {
   const { fwd, right } = camVectors();
   const at = [player.pos[0] + right[0] * cam.side, player.pos[1] + cam.height + (player.dead < 0 ? player.air * 0.45 : 0), player.pos[2] + right[2] * cam.side];
+  if (world.map === 'island') at[1] = Math.max(at[1], floorAt(at[0], at[2]) + 0.4);     // beside a steep bank
   let dist = cam.dist;
   if (fwd[1] > 0) dist = Math.min(dist, (at[1] - 0.18) / fwd[1]);
   if (world.map === 'island') dist = cameraRoom(at, fwd, cam.dist);
@@ -2409,6 +2555,7 @@ function render() {
   gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFbo); gl.viewport(0, 0, SHADOW, SHADOW); gl.clear(gl.DEPTH_BUFFER_BIT);
   globals(skinDepth, light, light, eye); drawFighters(skinDepth, false);
   globals(staticDepth, light, light, eye); drawStatics(staticDepth, false);
+  if (world.map === 'island') drawFloraShadow(light, eye);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
   gl.viewport(0, 0, w, h); gl.clearColor(...SKY[world.map], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -2494,7 +2641,7 @@ requestAnimationFrame(frame);
 
 // hooks used by the automated checks
 window.__game = {
-  ready: true, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap,
+  ready: true, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
   resume() { manual = false; }, give, equip, startReload,

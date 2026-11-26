@@ -27,7 +27,7 @@ A third-person caveman fighting game with real guns. Loot chests, fight other ca
 - `assets/`: the caveman model and gun data
 - `build.py`: rebuilds `index.html` after you change something (`python3 build.py`)
 
-The map is being made in phases. So far: a hilly island with a mountain, in an ocean that hurts if you wade into it. Press T to go there. No caves yet.
+The map is being made in phases. So far: an island with a mountain, a mesa, a gorge, woods, palms and boulders, in an ocean that hurts if you wade into it. Press T to go there. No caves yet.
 
 ## Contributors
 

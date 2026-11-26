@@ -406,6 +406,7 @@ function fire(f, origin, dir, spread, minT) {
     if (f.isPlayer) { Sound.play('hit', 0.8); game.marker = 0.18; ui.marker.classList.toggle('head', head || hit.f.dead >= 0); }
   } else if (hit.kind === 'ground') { puff(hit.p, 6, [0.45, 0.43, 0.40, 0.7], 0.9, 0.045, 0.5, 3); marks.push(hit.p); if (marks.length > 90) marks.shift(); }
   else if (hit.kind === 'water') puff(hit.p, 8, [0.85, 0.93, 0.97, 0.8], 1.2, 0.04, 0.45, 5);
+  else if (hit.kind === 'solid') puff(hit.p, 6, [0.50, 0.38, 0.24, 0.9], 1.2, 0.03, 0.45, 6);
   else if (hit.kind === 'chest') puff(hit.p, 6, [0.55, 0.36, 0.17, 0.9], 1.2, 0.025, 0.45, 6);
   // recoil on the gun itself
   f.kickV += g.kickBack * 22; f.riseV += g.climb * 16 * (1 - 0.35 * f.ads); f.roll += rand(-0.05, 0.05); f.bolt = 1;
@@ -536,9 +537,11 @@ function locomotion(f, mx, my, sprint, dt) {
   if (f.dead >= 0) f.legYaw = 0;
   const dir = f.yaw + f.moveRel;
   const pace = f.speed * (inSea(f.pos) ? 0.65 : 1);           // wading is slow
+  const x0 = f.pos[0], z0 = f.pos[2];
   f.pos[0] += Math.sin(dir) * pace * dt;
   f.pos[2] += Math.cos(dir) * pace * dt;
   confine(f);
+  cliffs(f, x0, z0);
   if (f.dead < 0) f.pos[1] = groundAt(f.pos[0], f.pos[2]);
   if (f.isPlayer && looting) return;
   for (const c of chests) push(f, c.pos, 0.72);
@@ -591,6 +594,7 @@ function camVectors() {
 function cameraEye() {
   const { fwd, right } = camVectors();
   const at = [player.pos[0] + right[0] * cam.side, player.pos[1] + cam.height + (player.dead < 0 ? player.air * 0.45 : 0), player.pos[2] + right[2] * cam.side];
+  if (world.map === 'island') at[1] = Math.max(at[1], floorAt(at[0], at[2]) + 0.4);     // beside a steep bank
   let dist = cam.dist;
   if (fwd[1] > 0) dist = Math.min(dist, (at[1] - 0.18) / fwd[1]);
   if (world.map === 'island') dist = cameraRoom(at, fwd, cam.dist);
@@ -909,6 +913,7 @@ function render() {
   gl.bindFramebuffer(gl.FRAMEBUFFER, shadowFbo); gl.viewport(0, 0, SHADOW, SHADOW); gl.clear(gl.DEPTH_BUFFER_BIT);
   globals(skinDepth, light, light, eye); drawFighters(skinDepth, false);
   globals(staticDepth, light, light, eye); drawStatics(staticDepth, false);
+  if (world.map === 'island') drawFloraShadow(light, eye);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
   gl.viewport(0, 0, w, h); gl.clearColor(...SKY[world.map], 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -994,7 +999,7 @@ requestAnimationFrame(frame);
 
 // hooks used by the automated checks
 window.__game = {
-  ready: true, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap,
+  ready: true, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
   resume() { manual = false; }, give, equip, startReload,
