@@ -329,6 +329,15 @@ async function loadGun(def, data) {
   def.orm = await loadTexture(dataBlob(data.tex.orm), false);
 }
 
+// the abandoned house and the tiny bike (from tools/make_scenery.py)
+const packedMesh = d => staticMesh(new Float32Array(b64bytes(d.v).buffer), new Uint32Array(b64bytes(d.i).buffer));
+async function loadHouse(data) { return { mesh: packedMesh(data), tex: await loadTexture(dataBlob(data.tex), false) }; }
+async function loadBike(data) {
+  const parts = {};
+  for (const k of ['frame', 'steer', 'fwheel', 'rwheel', 'crank', 'pedal']) parts[k] = packedMesh(data[k]);
+  return { parts, at: data.at, tex: await loadTexture(dataBlob(data.tex.base), true), normal: await loadTexture(dataBlob(data.tex.normal), false), orm: await loadTexture(dataBlob(data.tex.orm), false) };
+}
+
 // ======================================================================= sound (synthesised, no files)
 const Sound = (() => {
   let ac = null, master = null, noise = null, brown = null, muffle = null, clear = null, verb = null, grit = null, muted = false;
@@ -422,6 +431,11 @@ const Sound = (() => {
     boltback: v => { burst(0.09, 1700, 0.6 * v, 'bandpass', 0, 3); tone(900, 500, 0.05, 0.12 * v, 0.06, 'square'); },
     boltfwd: v => { burst(0.07, 2100, 0.65 * v, 'bandpass', 0, 3); burst(0.03, 3600, 0.5 * v, 'bandpass', 0.08, 5); },
     scope: v => { burst(0.03, 4200, 0.25 * v, 'bandpass', 0, 6); },
+    // the bike: a rusty squeak, its bell, locked tyres and the clicking back wheel
+    squeak: v => { tone(1350, 2100, 0.09, 0.14 * v, 0, 'triangle'); tone(2050, 1500, 0.11, 0.11 * v, 0.09, 'triangle'); },
+    ding: v => { for (const at of [0, 0.14]) { tone(2093, 2093, 0.45, 0.2 * v, at, 'sine'); tone(5230, 5230, 0.25, 0.06 * v, at, 'sine'); } },
+    skid: v => { burst(0.55, 2300, 0.3 * v, 'bandpass', 0, 5); tone(1500, 1100, 0.5, 0.07 * v, 0, 'sawtooth'); },
+    tick: v => { burst(0.012, 3800, 0.3 * v, 'bandpass', 0, 6); },
     bonk: v => { tone(620, 190, 0.13, 0.8 * v, 0, 'triangle'); tone(1240, 500, 0.05, 0.25 * v, 0, 'square'); burst(0.04, 900, 0.5 * v); },
     thud: v => { tone(95, 40, 0.2, 0.9 * v); burst(0.18, 420, 0.6 * v); },
     boing: v => { tone(160, 640, 0.18, 0.35 * v, 0, 'sawtooth'); tone(640, 300, 0.25, 0.3 * v, 0.17, 'sine'); tone(300, 480, 0.2, 0.2 * v, 0.4, 'sine'); },

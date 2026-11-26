@@ -144,7 +144,7 @@ const CHEST_AREAS = [
 // level ground, room to stand in front of the lid, nothing growing through it
 function goodChestSpot(x, z, taken) {
   if (Math.hypot(x, z) < 34 || pastCoast(x, z) > -7 || !reachMap().has(x, z)) return false;
-  if (riverDistance(x, z) < RIVER.bank + 2 || nearBridge(x, z, 3) || caveAt(x, z, 2) || caveClear(x, z)) return false;
+  if (riverDistance(x, z) < RIVER.bank + 2 || nearBridge(x, z, 3) || caveAt(x, z, 2) || caveClear(x, z) || nearHouse(x, z, 9)) return false;
   const y = groundHeight(x, z);
   if (y < 1.0) return false;
   for (const [dx, dz, most] of [[0.6, 0, 0.16], [-0.6, 0, 0.16], [0, 0.4, 0.16], [0, -0.4, 0.16], [0, 0.8, 0.2], [0, 1.5, 0.3]])
@@ -193,7 +193,7 @@ function enemySpot(avoid) {
   let pick = cells[0];
   for (let k = 0; k < 200; k++) {
     pick = cells[Math.floor(Math.random() * cells.length)];
-    if (Math.hypot(pick[0] - avoid[0], pick[1] - avoid[2]) > 50 && Math.hypot(pick[0], pick[1]) > 45 && pastCoast(pick[0], pick[1]) < -8 && riverDistance(pick[0], pick[1]) > RIVER.bank + 2 && !caveAt(pick[0], pick[1], 2)) break;
+    if (Math.hypot(pick[0] - avoid[0], pick[1] - avoid[2]) > 50 && Math.hypot(pick[0], pick[1]) > 45 && pastCoast(pick[0], pick[1]) < -8 && riverDistance(pick[0], pick[1]) > RIVER.bank + 2 && !caveAt(pick[0], pick[1], 2) && !nearHouse(pick[0], pick[1], 7)) break;
   }
   return [pick[0], walkHeight(pick[0], pick[1]), pick[1]];
 }
@@ -269,7 +269,7 @@ function buildPlaces(T) {
   const post = (x, z, r, h) => { if (first) solids.push({ x, z, y: ground(x, z), r, h }); };
   const GREY = [0.42, 0.40, 0.37], IVORY = [0.80, 0.74, 0.60], HIDE = [0.50, 0.34, 0.20], BARK = [0.27, 0.17, 0.10];
 
-  if (first) { addRails(); addCaveWalls(); }
+  if (first) { addRails(); addCaveWalls(); addHouseWalls(); }
   // the sign in the middle is solid too
   if (first) {
     const y = ground(0, 0), a = [-1.8, y + 0.2, 0.05], b = [1.8, y + 0.2, 0.05], c = [1.8, y + 2.4, 0.05], d = [-1.8, y + 2.4, 0.05];

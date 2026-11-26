@@ -84,6 +84,8 @@ await loadGun(GUNS.glock, window.GUN_DATA.glock);
 for (const id of ['awp', 'mp5', 'p90', 'shotgun', 'mgl']) await loadGun(GUNS[id], window.GUN_DATA[id]);
 const C4 = { panelAt: window.C4_DATA.panelAt };        // the bomb (model from tools/make_c4.py)
 await loadGun(C4, window.C4_DATA);
+const HOUSE = await loadHouse(window.HOUSE_DATA);       // the abandoned house and the tiny bike
+const BIKE = await loadBike(window.BIKE_DATA);
 const ROLL = {};                                         // the roll of duct tape (model from tools/make_tape.py)
 await loadGun(ROLL, window.TAPE_DATA);
 // a strip of tape: a unit box textured with the plain tape from the roll's texture (x across, y thickness, z along)
@@ -435,6 +437,7 @@ function damage(victim, amount, from, head) {
     else Sound.play('thwack', victim.isPlayer ? 0.7 : 0.4);
   }
   victim.hp -= amount; victim.hurt = 0.22;
+  if (victim.ride) bikeHurt(victim, amount);                 // knocked off the bike
   if (victim.isPlayer) {
     Sound.play('hurt', 0.8); hudDirty = true;
     const to = V.sub(from.pos, victim.pos), a = Math.atan2(to[0], to[2]) - (cam.yaw + Math.PI);
@@ -569,6 +572,7 @@ addEventListener('keydown', e => {
   keys.add(e.code);
   if (e.repeat) return;
   if (looting && !['Escape', 'KeyF', 'KeyP', 'KeyM'].includes(e.code)) return;
+  if (player.ride && !['Escape', 'KeyF', 'KeyP', 'KeyM', 'KeyT'].includes(e.code) && !(world.asking && e.code.length === 6)) return;   // both hands on the bars
   if (e.code === 'Escape') setRunning(false);
   else if (e.code === 'Space') { if (!FLY.on) startJump(player); }
   else if (e.code === 'KeyR') startReload(player);
@@ -690,6 +694,7 @@ function cameraEye() {
   const { fwd, right } = camVectors();
   const at = [player.pos[0] + right[0] * cam.side, player.pos[1] + cam.height + (player.dead < 0 ? player.air * 0.45 : 0), player.pos[2] + right[2] * cam.side];
   if (world.map === 'island') at[1] = Math.max(at[1], floorAt(at[0], at[2], at[1]) + 0.4);     // beside a steep bank
+  if (world.map === 'island' && !FLY.on && houseBlocks(at)) { at[0] = player.pos[0]; at[2] = player.pos[2]; }   // not through a wall
   if (world.map === 'island' && !FLY.on) caveShoulder(at);
   let dist = cam.dist;
   if (fwd[1] > 0) dist = Math.min(dist, (at[1] - 0.18) / fwd[1]);
@@ -697,7 +702,7 @@ function cameraEye() {
   return { eye: V.mad(at, fwd, -dist), at, fwd, dist };
 }
 function respawnPlayer() {
-  abortLoot();
+  abortLoot(); endRide(true);
   const f = player;
   f.c4 = Math.max(f.c4 || 0, 1); f.holdC4 = false; f.plantT = -1;
   f.dead = -1; f.hp = 100; f.vest = 0; grenades.length = 0; f.pos = world.map === 'island' ? [START[0], groundAt(START[0], START[2]), START[2]] : [0, 0, 0]; f.air = 0; f.jump = -1; f.equip = 0;
@@ -712,6 +717,7 @@ function playerStep(dt) {
     locomotion(f, 0, 0, false, dt); weaponStep(f, dt); return;
   }
   if (FLY.on) { flyStep(f, dt); weaponStep(f, dt); mouse.pressed = false; return; }
+  if (rideStep(dt)) { weaponStep(f, dt); seaStep(f, dt); mouse.pressed = false; return; }
   if (lootStep(dt)) { mouse.pressed = false; return; }
   const mx = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
   const my = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
@@ -843,13 +849,16 @@ function update(dt) {
   }
   effectsStep(dt);
   grenadesStep(dt);
+  bikesStep(dt);
   const k = 1 - Math.exp(-dt * 11), a = player.ads;
   propsStep(dt);
-  cam.dist += ((2.25 - 0.45 * a) - cam.dist) * k;
   const still = player.weapon && GUNS[player.weapon].scoped ? 0 : a;
-  cam.side += ((0.92 - 0.10 * still) - cam.side) * k;
-  cam.fov += ((0.95 - 0.34 * a + (player.speed > 3 ? 0.07 : 0)) - cam.fov) * k;
-  cam.height += ((player.crouch ? 1.34 : 1.70 - 0.05 * still) - cam.height) * k;
+  // further back and more in the middle on the bike; under a roof, close in and up over his head
+  const ride = player.ride, indoors = world.map === 'island' && !FLY.on && houseAt(player.pos[0], player.pos[2], -0.1);
+  cam.dist += ((indoors ? 1.55 : ride ? 3.1 : 2.25 - 0.45 * a) - cam.dist) * k;
+  cam.side += ((indoors ? 0.55 : ride ? 0.3 : 0.92 - 0.10 * still) - cam.side) * k;
+  cam.fov += ((0.95 - 0.34 * a + (ride ? Math.min(0.2, Math.abs(ride.v) * 0.017) : player.speed > 3 ? 0.07 : 0)) - cam.fov) * k;
+  cam.height += ((indoors ? (player.crouch ? 1.7 : 1.98) : ride ? 1.5 : player.crouch ? 1.34 : 1.70 - 0.05 * still) - cam.height) * k;
   const back = cam.recoil * Math.min(1, dt * 7); cam.recoil -= back; cam.pitch += back;
   cam.shake = Math.max(0, cam.shake - dt * 6);
 }
@@ -957,6 +966,7 @@ function drawStatics(prog, textured, hideSelf) {
   drawProps(prog, textured);
   drawSends(prog);
   drawPlanted(prog);
+  drawBikes(prog, textured);
   for (const s of shells) {
     flat(prog, s.color || [0.72, 0.50, 0.16], 0.28, s.color ? 0.2 : 1.0);
     const R = M3.mul(s.rest ? M3.ry(s.a) : M3.mul(M3.axis(s.spin, s.a), s.R), [s.size[0], 0, 0, 0, s.size[1], 0, 0, 0, s.size[2]]);
@@ -1072,7 +1082,7 @@ function hud(dt) {
   if (hudDirty) {
     hudDirty = false;
     const g = player.weapon ? GUNS[player.weapon] : null, am = g && player.ammo[player.weapon];
-    ui.weapon.textContent = g ? g.name : player.holdC4 ? 'C4' : 'Fists';
+    ui.weapon.textContent = player.ride ? 'Tiny bike' : g ? g.name : player.holdC4 ? 'C4' : 'Fists';
     ui.ammo.innerHTML = g ? `<b class="${am.clip <= g.mag * 0.2 ? 'low' : ''}">${am.clip}</b> / ${am.spare}` : '';
     ui.hp.textContent = Math.ceil(player.hp); ui.hpfill.style.width = player.hp + '%';
     ui.vestbox.hidden = !(player.vest > 0); ui.vest.textContent = Math.ceil(player.vest); ui.vestfill.style.width = player.vest / VEST * 100 + '%';
@@ -1143,7 +1153,7 @@ window.__game = {
   ready: true, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
-  resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE,
+  resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE, bikes, HOUSES, houseWorld,
   look(eye, at) { testView = eye ? { eye, at } : null; },
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },

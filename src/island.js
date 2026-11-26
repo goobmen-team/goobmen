@@ -148,7 +148,52 @@ function pathDistance(x, z, path) {
   }
   return best;
 }
-function shape(x, z) { return cutCaves(x, z, natural(x, z)); }
+function shape(x, z) { return levelHouses(x, z, cutCaves(x, z, natural(x, z))); }
+// ---------------------------------------------------------------- where the abandoned houses stand
+// x, z, which way the door faces, floor height. the first is in sight of the sign; the rest are
+// spread round the island wherever the land is already fairly flat. houses.js builds on these
+const HOUSES = [];
+const HOUSE_COUNT = 12;
+const addHouse = (x, z, base, turn) => HOUSES.push({ x, z, base, yaw: Math.atan2(z, -x) + turn, cos: 0, sin: 0 });
+function findHouses() {
+  addHouse(-19, -16, MEADOW, 0.1);
+  for (let k = 0; k < 6000 && HOUSES.length < HOUSE_COUNT; k++) {
+    const a = bump(k, 7001) * Math.PI * 2, d = 70 + Math.sqrt(bump(k, 7013)) * 370, x = Math.sin(a) * d, z = Math.cos(a) * d;
+    // the early tries keep them far apart, later ones may come closer
+    if (HOUSES.some(q => Math.hypot(q.x - x, q.z - z) < (k < 3000 ? 140 : 95))) continue;
+    if (pastCoast(x, z) > -34 || riverDistance(x, z) < RIVER.valley - 4) continue;
+    if (pathDistance(x, z, GORGE) < 32 || pathDistance(x, z, CANYON) < 32) continue;
+    if (Object.values(SPOTS).some(([px, pz, r]) => Math.hypot(x - px, z - pz) < r + 24)) continue;
+    if (CAVES.some(c => Math.abs(x - c.x) < 26 && z > c.z - CAVE.end - 18 && z < c.z + 24)) continue;
+    const around = [natural(x, z)];
+    for (const r of [5, 11]) for (let i = 0; i < 8; i++) around.push(natural(x + Math.sin(i * 0.785) * r, z + Math.cos(i * 0.785) * r));
+    const low = Math.min(...around), high = Math.max(...around);
+    if (low < 1.5 || high > 14 || high - low > (k < 3000 ? 2.6 : 3.4)) continue;
+    addHouse(x, z, around.reduce((s, h) => s + h, 0) / around.length, (bump(k, 7027) - 0.5) * 1.2);
+  }
+  for (const q of HOUSES) { q.cos = Math.cos(q.yaw); q.sin = Math.sin(q.yaw); }
+}
+function levelHouses(x, z, h) {
+  for (const q of HOUSES) {
+    const dx = x - q.x, dz = z - q.z;
+    if (Math.abs(dx) > 16 || Math.abs(dz) > 16) continue;
+    const flat = smooth(15, 9, Math.hypot(dx, dz));
+    h += (q.base - h) * flat;
+  }
+  return h;
+}
+const nearHouse = (x, z, r) => HOUSES.some(q => Math.hypot(q.x - x, q.z - z) < r);
+// a point in a house's own space (+x out of the door), and whether it is under that roof
+const houseLocal = (q, x, z) => [(x - q.x) * q.cos - (z - q.z) * q.sin, (x - q.x) * q.sin + (z - q.z) * q.cos];
+const houseWorld = (q, lx, lz) => [q.x + lx * q.cos + lz * q.sin, q.z - lx * q.sin + lz * q.cos];
+function houseAt(x, z, pad) {
+  for (const q of HOUSES) {
+    if (Math.abs(x - q.x) > 12 || Math.abs(z - q.z) > 12) continue;
+    const [lx, lz] = houseLocal(q, x, z);
+    if (lx > -3.7 - pad && lx < 4.8 + pad && Math.abs(lz) < 3.1 + pad) return q;
+  }
+  return null;
+}
 function natural(x, z) {
   const e = pastCoast(x, z);
   return carveRivers(x, z, e >= 0 ? SEA.floor * clamp(e / SEA.wade, 0, 1) : rawGround(x, z, e), e);
@@ -223,6 +268,7 @@ const GRID = { half: 660, n: 760 };
 GRID.cell = GRID.half * 2 / GRID.n;
 const heights = new Float32Array((GRID.n + 1) * (GRID.n + 1));
 findCaves();
+findHouses();
 for (let j = 0; j <= GRID.n; j++) for (let i = 0; i <= GRID.n; i++) heights[j * (GRID.n + 1) + i] = shape(i * GRID.cell - GRID.half, j * GRID.cell - GRID.half);
 
 function groundAt(x, z, y) {
@@ -297,7 +343,7 @@ function cameraRoom(at, fwd, dist) {
   if (world.map !== 'island') return dist;
   for (let d = 0.2; d <= dist; d += 0.2) {
     const p = V.mad(at, fwd, -d);
-    if (caveCamera(p)) return Math.max(0.35, d - 0.25);
+    if (caveCamera(p) || houseBlocks(p)) return Math.max(0.35, d - 0.25);
     if (p[1] < floorAt(p[0], p[2], p[1]) + 0.2 || leaves.some(c => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]) < c[3])) return Math.max(0.4, d - 0.2);
   }
   return dist;
@@ -329,6 +375,7 @@ function setMap(name, low) {
   world.map = name; world.low = name === 'island' && !!low;
   if (name === 'island') loadFlora();
   setChests(name);
+  setBikes(name);
   grassNow = true;
   for (const q of pops) q.el.remove();
   for (const list of [pops, props, stars, particles, tracers, shells, flashes, marks]) list.length = 0;
@@ -472,6 +519,7 @@ function groundColour(x, z, h, up) {
   col = V.lerp(col, [0.20, 0.17, 0.15], smooth(80, 45, ash + roll(x, z, 9) * 14) * smooth(8, 16, h));     // dark rock up the volcano
   col = V.lerp(col, ROCK, Math.max(smooth(0.17, 0.30, 1 - up), smooth(17, 21, h)));
   col = V.lerp(col, PEAK, smooth(24, 28, h) * smooth(60, 90, Math.hypot(x - SPOTS.volcano[0], z - SPOTS.volcano[1])));
+  for (const q of HOUSES) if (Math.abs(x - q.x) < 11 && Math.abs(z - q.z) < 11) col = V.lerp(col, DIRT, smooth(9.5, 4, Math.hypot(x - q.x, z - q.z) + roll(x, z, 4) * 3) * 0.85);
   return V.lerp(col, DEEP, smooth(0, 0.8, -h));
 }
 // the grid as a mesh
@@ -688,7 +736,7 @@ function buildFlora() {
     if (Math.hypot(x, z) > GRID.half) continue;
     const e = pastCoast(x, z);
     if (e > -4 || Math.hypot(x, z) < 17 || pathDistance(x, z, GORGE) < 5 || pathDistance(x, z, CANYON) < 6) continue;
-    if (riverDistance(x, z) < RIVER.bank + 1 || nearBridge(x, z, 4) || caveClear(x, z)) continue;
+    if (riverDistance(x, z) < RIVER.bank + 1 || nearBridge(x, z, 4) || caveClear(x, z) || nearHouse(x, z, 11)) continue;
     if (Object.values(SPOTS).some(([px, pz, r]) => Math.hypot(x - px, z - pz) < r)) continue;
     const y = groundHeight(x, z), slope = Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y), s = 0.75 + r(3) * 0.6, at = [x, y - 0.15, z];
     const woods = roll(x - 50, z + 30, 31);
@@ -760,7 +808,7 @@ const TURF = 18, turf = new Map();                           // square patches o
 let grassNow = false;
 const grassHere = (x, z) => {
   const y = groundHeight(x, z);
-  if (y < 1.4 || y > 18 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7 || pathDistance(x, z, CANYON) < 8 || riverDistance(x, z) < RIVER.bank || nearBridge(x, z, 0.5) || CAVES.some(c => Math.abs(x - c.x) < CAVE.room + 1 && c.z - z > -0.5 && c.z - z < 4)) return null;
+  if (houseAt(x, z, 0.7) || y < 1.4 || y > 18 || pastCoast(x, z) > -6 || pathDistance(x, z, GORGE) < 7 || pathDistance(x, z, CANYON) < 8 || riverDistance(x, z) < RIVER.bank || nearBridge(x, z, 0.5) || CAVES.some(c => Math.abs(x - c.x) < CAVE.room + 1 && c.z - z > -0.5 && c.z - z < 4)) return null;
   return Math.hypot(groundHeight(x + 1, z) - y, groundHeight(x, z + 1) - y) > 0.6 ? null : y;
 };
 function growTurf(ti, tj, low) {
@@ -838,6 +886,7 @@ function drawFloraShadow(light, eye) {
   drawCaveShadow();                                          // in both versions: it keeps the sun out
   if (world.low) return;
   drawBridgeShadow();
+  drawHouseShadow(player.pos, 30);
   for (const p of flora) if (Math.hypot(p.x - player.pos[0], p.z - player.pos[2]) < PATCH * 0.75 + 16) { const m = meshOf(p, 0); if (m) drawPart(m); }
 }
 
@@ -868,6 +917,7 @@ function bakeShadows(shade, at) {
   for (const p of flora) if (Math.hypot(p.x - at[0], p.z - at[2]) < REACH + PATCH) { const m = p.mesh[1] || p.mesh[0]; if (m) drawPart(m); }
   drawBridgeShadow();
   drawCaveShadow();
+  drawHouseShadow(at, REACH);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, canvas.width, canvas.height);
   return shade;
@@ -920,6 +970,7 @@ function drawLand(vp, light, eye) {
   drawGrass(eye);
   drawSign(vp, light, eye);
   drawBridges(vp, light, eye);
+  drawHouses(vp, light, eye);
   drawCaveInsides(vp, light, eye);
 }
 // after everything solid, so legs show through the water

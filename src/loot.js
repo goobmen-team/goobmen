@@ -498,7 +498,7 @@ function chestStep(L) {
 
 // ---------------------------------------------------------------- starting, holding, finishing
 function lootTarget() {
-  if (player.dead >= 0) return null;
+  if (player.dead >= 0 || player.ride) return null;
   const p = player.pos;
   let best = null, bestD = 1e9;
   for (const b of bots) {
@@ -569,7 +569,10 @@ function lootStep(dt) {
   lootCam = clamp(lootCam + (looting && looting.cancel < 0 && looting.t < looting.def.end - 0.45 ? dt / 0.65 : -dt / 0.55), 0, 1);
   if (!looting) {
     const target = pressed ? lootTarget() : null;
-    if (!target) { if (pressed && player.dead < 0) { const o = gunNear(player.pos); if (o) pickUp(o); } return false; }
+    if (!target) {
+      if (pressed && player.dead < 0) { const o = gunNear(player.pos), b = !o && bikeNear(player.pos); if (o) pickUp(o); else if (b) startRide(b); }
+      return false;
+    }
     startLoot(target);
   }
   const L = looting, f = player;
@@ -622,11 +625,13 @@ function lootStep(dt) {
 function hudLoot(dt) {
   const target = looting ? null : lootTarget();
   const L = looting && !looting.given && looting.cancel < 0 ? looting : null;
-  const lying = !target && !looting && player.dead < 0 ? gunNear(player.pos) : null;
-  const show = (target || L || lying) && player.dead < 0;
+  const lying = !target && !looting && player.dead < 0 && !player.ride ? gunNear(player.pos) : null;
+  const bike = !target && !looting && !lying && player.dead < 0 && !player.ride ? bikeNear(player.pos) : null;
+  const show = (target || L || lying || bike) && player.dead < 0;
   ui.prompt.style.display = show ? 'flex' : 'none';
   ui.prompt.classList.toggle('holding', !!L);
   if (lying) { ui.prompttext.textContent = 'Press E to pick up ' + (lying.kind === 'c4' ? 'the C4' : 'the ' + GUNS[lying.gun].name); ui.ring.style.setProperty('--p', '100%'); }
+  else if (bike) { ui.prompttext.textContent = 'Press E to ride the tiny bike'; ui.ring.style.setProperty('--p', '100%'); }
   else if (show) {
     const kind = L ? L.kind : target.kind, def = kind === 'body' ? BODY : CHEST;
     const gun = kind === 'chest' ? ' (' + itemName((L || target).chest.gun) + ')' : '';

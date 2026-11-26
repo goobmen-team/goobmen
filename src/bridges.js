@@ -250,6 +250,7 @@ function drawBridges(vp, light, eye) {
 const FLY = { on: false, speed: 20, min: 3, max: 160 };
 function setFly(on) {
   if (on === FLY.on || (on && (player.dead >= 0 || looting))) return;
+  if (on) endRide(true);
   FLY.on = on; player.drop = 0; player.air = 0; player.jump = -1; player.crouch = false; player.wet = 0;
   notify(on ? 'Flying. Space up, C down, wheel for speed, N to land' : 'Flying off');
 }
