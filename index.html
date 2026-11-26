@@ -22,6 +22,8 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; o
 #slots span.on { border-color: #fff; background: rgba(20,22,26,.8); } #slots span.none { opacity: .45; }
 #score { position: fixed; left: 18px; top: 14px; }
 #minimap { position: fixed; inset: auto; right: 16px; top: 14px; left: auto; bottom: auto; width: 180px; height: 180px; border: 3px solid rgba(255,255,255,.75); background: #222; }
+#kills { position: fixed; right: 16px; top: 204px; width: 186px; display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 22px; font-weight: 800; color: #fff; text-shadow: 0 1px 3px #000; }
+#kills svg { width: 22px; height: 22px; filter: drop-shadow(0 1px 2px #000); }
 #cross { --gap: 6px; position: fixed; left: 50%; top: 50%; }
 #cross i { position: absolute; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
 #cross i:nth-child(1) { width: 2px; height: 9px; left: -1px; bottom: var(--gap); }
@@ -80,6 +82,7 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
 <div id="hud" hidden>
   <div id="scope"><i></i><i></i><i></i><i></i><i></i><i></i></div>
   <canvas id="minimap" width="180" height="180"></canvas>
+  <div id="kills"><svg viewBox="0 0 24 24" aria-label="kills"><path fill="#fff" d="M12 2C6.9 2 3 5.7 3 10.4c0 2.7 1.3 5 3.3 6.5V20a1 1 0 0 0 1 1h1.7v-2h2v2h2v-2h2v2h1.7a1 1 0 0 0 1-1v-3.1c2-1.5 3.3-3.8 3.3-6.5C21 5.7 17.1 2 12 2z"/><circle cx="8.6" cy="11" r="2.3" fill="#222"/><circle cx="15.4" cy="11" r="2.3" fill="#222"/><path d="M12 13.4l-1.3 2.4h2.6z" fill="#222"/></svg><span id="killcount">0</span></div>
   <div id="vignette"></div><div id="hurtDir"></div><div id="boomflash"></div>
   <div id="pops"></div>
   <div id="bars"></div>
@@ -3502,7 +3505,7 @@ const keys = new Set();
 const mouse = { fire: false, pressed: false, aim: false, drag: null };
 const game = { running: false, locked: false, lockWorked: false, aimToggle: false, enemiesShoot: true, godMode: false, kills: 0, deaths: 0, marker: 0, hurtFade: 0, note: 0, time: 0 };
 const ui = {};
-for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'shootback', 'msg', 'reloadbar', 'boomflash', 'minimap']) ui[id] = document.getElementById(id);
+for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'shootback', 'msg', 'reloadbar', 'boomflash', 'minimap', 'killcount']) ui[id] = document.getElementById(id);
 let hudDirty = true;
 function notify(text) { ui.note.textContent = text; ui.note.style.opacity = 1; game.note = 2.4; }
 
@@ -6708,6 +6711,7 @@ function hud(dt) {
       `<span class="${player.holdC4 ? 'on' : player.c4 ? '' : 'none'}">5 C4 ×${player.c4 || 0}</span>` +
       SLOTS.slice(3).map((id, i) => player.inv.includes(id) ? slot(i + 6, id) : '').join('');
     ui.score.textContent = `Knockouts ${game.kills} · Deaths ${game.deaths}`;
+    ui.killcount.textContent = game.kills;
   }
   const g = player.weapon ? GUNS[player.weapon] : null;
   if (lastView) {

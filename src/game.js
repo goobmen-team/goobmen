@@ -539,7 +539,7 @@ const keys = new Set();
 const mouse = { fire: false, pressed: false, aim: false, drag: null };
 const game = { running: false, locked: false, lockWorked: false, aimToggle: false, enemiesShoot: true, godMode: false, kills: 0, deaths: 0, marker: 0, hurtFade: 0, note: 0, time: 0 };
 const ui = {};
-for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'shootback', 'msg', 'reloadbar', 'boomflash', 'minimap']) ui[id] = document.getElementById(id);
+for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'shootback', 'msg', 'reloadbar', 'boomflash', 'minimap', 'killcount']) ui[id] = document.getElementById(id);
 let hudDirty = true;
 function notify(text) { ui.note.textContent = text; ui.note.style.opacity = 1; game.note = 2.4; }
 
@@ -1118,6 +1118,7 @@ function hud(dt) {
       `<span class="${player.holdC4 ? 'on' : player.c4 ? '' : 'none'}">5 C4 ×${player.c4 || 0}</span>` +
       SLOTS.slice(3).map((id, i) => player.inv.includes(id) ? slot(i + 6, id) : '').join('');
     ui.score.textContent = `Knockouts ${game.kills} · Deaths ${game.deaths}`;
+    ui.killcount.textContent = game.kills;
   }
   const g = player.weapon ? GUNS[player.weapon] : null;
   if (lastView) {
