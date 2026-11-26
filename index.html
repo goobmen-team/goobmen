@@ -4360,12 +4360,20 @@ function skinHeight(L, tris, x, z) {
 // the bomb sitting on him: tipped to follow his shape, then lowered until it just rests on the highest skin under it.
 // Also hands back the skin around it in the bomb's own space, so the tape can be laid right on it.
 function seatOn(f, face, cache) {
-  const top = bellyTop(f);
-  if (!cache.near || V.len(V.sub(cache.c, top)) > 0.1) { cache.near = skinNear(f, top, 0.4); cache.c = top; }
-  const pts = cache.near.verts.map(([prim, k]) => skinAt(f, prim, k)), tris = cache.near.tris;
+  const top = bellyTop(f), hp = bonePos(f, 'hips'), nk = bonePos(f, 'neck');
+  // a body lying still gives the same answer every frame: only work it out again when he has moved
+  if (cache.seat && cache.face === face && V.len(V.sub(cache.top, top)) < 0.004 && V.len(V.sub(cache.hp, hp)) < 0.004 && V.len(V.sub(cache.nk, nk)) < 0.004) return cache.seat;
+  cache.top = top; cache.hp = hp; cache.nk = nk; cache.face = face;
+  if (!cache.near || V.len(V.sub(cache.c, top)) > 0.1) { cache.near = skinNear(f, top, 0.3); cache.c = top; }
+  const pts = cache.near.verts.map(([prim, k]) => skinAt(f, prim, k));
   const toLocal = R => { const T = M3.tr(R); return pts.map(q => M3.vec(T, V.sub(q, top))); };
   const Ry = M3.ry(face);
   let L = toLocal(Ry);
+  // only the triangles under the bomb matter (about a hundred of thousands): short list, fast lookups
+  const tris = cache.near.tris.filter(([a, b, c]) => {
+    const A = L[a], B = L[b], C = L[c];
+    return Math.min(A[0], B[0], C[0]) < 0.3 && Math.max(A[0], B[0], C[0]) > -0.3 && Math.min(A[2], B[2], C[2]) < 0.25 && Math.max(A[2], B[2], C[2]) > -0.25;
+  });
   // tip it to follow his shape: a plane fitted (least squares) to the skin all round the edge of the bomb
   let n = 0, Sx = 0, Sz = 0, Sy = 0, Sxx = 0, Szz = 0, Sxz = 0, Sxy = 0, Szy = 0;
   for (let gx = -0.16; gx <= 0.1601; gx += 0.02) for (let gz = -0.12; gz <= 0.1201; gz += 0.02) {
@@ -4396,7 +4404,9 @@ function seatOn(f, face, cache) {
   lift += 0.003;                                               // a hair above his skin at the edges: touching, never in it
   const at = V.add(top, M3.vec(R, [0, lift, 0]));
   for (const q of L) q[1] -= lift;
-  return { at, R, skin: (x, z) => skinHeight(L, tris, x, z) };
+  const seat = { at, R, skin: (x, z) => skinHeight(L, tris, x, z) };
+  cache.seat = seat;
+  return seat;
 }
 const bombSpot = s => s.seat ? s.seat.at : bellyTop(s.f);
 // after he puts it down he tapes it on. The taping is a pause slipped into his timeline; inside it (u = seconds in):
