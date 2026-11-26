@@ -422,6 +422,10 @@ const Sound = (() => {
     // the bomb: k is how close to going off it is (0 to 1): the bip gets a touch higher and shorter
     beep: (v, k) => { k = k || 0; chirp(1870 * (1 + 0.07 * k), 0.085 - 0.03 * k, 0.32 * v); },
     key: (v, k) => { chirp([1175, 1397, 1047, 1568][(k || 0) % 4], 0.05, 0.16 * v); burst(0.008, 2600, 0.06 * v, 'bandpass', 0, 3); },
+    tape: v => {                                      // duct tape peeling off the roll: a fast, ragged crackle that sweeps up
+      for (let i = 0; i < 22; i++) burst(0.012 + Math.random() * 0.012, 1400 + i * 110 + Math.random() * 900, (0.16 + Math.random() * 0.12) * v * (1 - i / 30), 'bandpass', i * 0.019 + Math.random() * 0.006, 2.5);
+      burst(0.45, 2200, 0.08 * v, 'bandpass', 0, 0.8);
+    },
     set: v => { tone(140, 70, 0.12, 0.35 * v); burst(0.05, 900, 0.25 * v, 'bandpass', 0, 2); },
     armed: v => { chirp(1397, 0.07, 0.26 * v); chirp(1870, 0.16, 0.3 * v, 0.09); },
     final: v => { chirp(1990, 0.42, 0.34 * v, 0, 2350); },

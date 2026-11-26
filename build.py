@@ -19,7 +19,7 @@ for name in ('engine.js', 'game.js'):
     if name == 'game.js':
         # looting and the jump/death animations live in their own files
         code = code.replace('//MAP//', read('src/island.js') + read('src/places.js') + read('src/bridges.js'))
-        code = code.replace('//LOOT//', read('src/loot.js') + read('src/moves.js'))
+        code = code.replace('//LOOT//', read('src/loot.js') + read('src/moves.js') + read('src/ragdoll.js'))
     assert '</script' not in code
     parts.append('<script>\n%s</script>' % code)
 

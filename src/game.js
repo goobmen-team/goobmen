@@ -284,7 +284,9 @@ function poseFighter(f) {
   }
   let R = M3.mul(M3.ry(f.yaw), M3.rx(f.tilt)), root = [f.pos[0], f.pos[1] + f.air, f.pos[2]];
   let held = null;
-  if (f.dead >= 0) {
+  if (f.dead >= 0 && f.rag) {                                 // a ragdoll: the bones follow the physics, in world space
+    ragPose(f); R = M3.id(); root = [0, 0, 0];
+  } else if (f.dead >= 0) {
     const fall = collapsePose(f), w = smooth(0, 0.1, f.dead);
     blendPose(f, scriptPose(f, fall.S), w);
     R = M3.mix(R, fall.R, w); root = fall.p;
@@ -386,6 +388,7 @@ function damage(victim, amount, from, head) {
     game.hurtFade = 0.9;
   } else victim.ai.seen = true;
   if (victim.hp <= 0) {
+    victim.lastHit = { from: from.pos, amount, head, blast: !!from.blast };   // how the ragdoll gets thrown
     if (from.isPlayer) {
       Sound.play('kill', 0.8); game.kills++; hudDirty = true;
       notify((head ? 'Headshot! ' : '') + 'Go to him and hold E to loot');
@@ -401,10 +404,13 @@ function fire(f, origin, dir, spread, minT) {
   const g = GUNS[f.weapon], am = f.ammo[f.weapon];
   am.clip--; f.cool = 60 / g.rate;
   const d = jitter(dir, spread);
-  const hit = trace(origin, d, f, minT);
+  let hit = trace(origin, d, f, minT);
+  const body = rayBody(origin, d, hit.t);                      // a knocked-out body in the way: it gets shoved
+  if (body && body.t > (minT || 0)) { hit = { t: body.t, kind: 'body', f: body.f, p: V.mad(origin, d, body.t) }; ragPush(body.f, hit.p, V.mul(d, 2.5 + g.damage * 0.05), 0.45); }
   const muzzle = muzzleFx(f);
   tracers.push({ a: muzzle, b: hit.p, life: 0.09, max: 0.09 });
-  if (hit.kind === 'fighter') {
+  if (hit.kind === 'body') puff(hit.p, 6, [0.55, 0.04, 0.03, 0.9], 1.0, 0.03, 0.45, 6);
+  else if (hit.kind === 'fighter') {
     const head = hit.mult > 2;
     puff(hit.p, 7, [0.55, 0.04, 0.03, 0.9], 1.1, 0.032, 0.45, 6);
     damage(hit.f, (f.isPlayer ? g.damage : 5) * hit.mult, f, head);
@@ -684,6 +690,10 @@ function playerStep(dt) {
     const d = [Math.sin(f.yaw), 0, Math.cos(f.yaw)];
     const hit = trace(V.add(f.pos, [0, 1.15, 0]), d, f, 0);
     if (hit.kind === 'fighter' && hit.t < 1.2) { damage(hit.f, 20, f); Sound.play('punch', 0.9); game.marker = 0.18; puff(hit.p, 4, [0.8, 0.8, 0.75, 0.7], 0.6, 0.04, 0.3, 2); }
+    else {                                                     // punching a body knocks it about
+      const o = V.add(f.pos, [0, 0.6, 0]), down = V.norm([d[0], -0.5, d[2]]), rb = rayBody(o, down, 1.4) || rayBody(V.add(f.pos, [0, 1.15, 0]), d, 1.2);
+      if (rb) { ragPush(rb.f, rb.f.rag.p[rb.pt], V.mul(V.norm([d[0], 0.35, d[2]]), 4.5), 0.5); Sound.play('punch', 0.8); }
+    }
   }
   if (!g || f.equip >= 1) mouse.pressed = false;
 }
@@ -913,6 +923,7 @@ function drawEffects(vp, eye, fwd) {
   flushFx(true);
   gl.depthMask(true); gl.disable(gl.BLEND);
 }
+let testView = null;
 let lastView = null, quality = 1, frameAvg = 0.016, qualityWait = 3;
 function render() {
   const slim = world.map === 'island' && world.low;           // the optimized map also draws fewer pixels
@@ -921,7 +932,8 @@ function render() {
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   for (const f of fighters.concat(helpers)) poseFighter(f);
   const sc = scopeAmount();
-  const view = deathCamera(lootCamera(scopedView(cameraEye(), sc)));
+  let view = deathCamera(lootCamera(scopedView(cameraEye(), sc)));
+  if (testView) view = { eye: testView.eye, fwd: V.norm(V.sub(testView.at, testView.eye)), at: testView.at, dist: 1 };   // automated checks only
   const hideSelf = sc > 0.55;
   const sh = cam.shake * cam.shake * 0.012;
   const eye = V.add(view.eye, [rand(-sh, sh), rand(-sh, sh), rand(-sh, sh)]);
@@ -1044,6 +1056,7 @@ window.__game = {
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
   resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges,
+  look(eye, at) { testView = eye ? { eye, at } : null; },
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },
   gunInfo() { const f = player; if (!f.gun) return null; const g = f.gun.g, hr = bonePos(f, 'hand_R'), hl = bonePos(f, 'hand_L'); const at = q => V.add(f.gun.p, M3.vec(f.gun.S, q)); return { rightErr: V.len(V.sub(hr, at(g.right.at))), leftErr: V.len(V.sub(hl, at(g.left.at))), muzzle: at(g.muzzle), forward: M3.vec(f.gun.R, [0, 0, 1]), target: f.target }; },
