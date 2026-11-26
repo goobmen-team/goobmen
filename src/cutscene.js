@@ -464,7 +464,7 @@ function washUp() {
   player.script = null; player.scriptW = 0; player.hp = 100; player.dead = -1; player.air = 0; player.speed = 0;
   player.weights = { Idle: 1, Walk: 0, Run: 0, Crouch: 0, CrouchWalk: 0 };
   keys.clear(); mouse.fire = mouse.pressed = mouse.aim = false;
-  bots.forEach(spawnBot);
+  if (royaleOn()) matchBegin(); else bots.forEach(spawnBot);
   poseFighter(player);
   notify('You washed up on Goob Island');
 }

@@ -142,21 +142,22 @@ function makeFighter(isPlayer, tint) {
     pose: newPose(), weights: { Idle: 1, Walk: 0, Run: 0, Crouch: 0, CrouchWalk: 0 }, phase: 0, time: rand(0, 9), legYaw: 0, back: false,
     moveRel: 0, speed: 0, vel: [0, 0], jump: -1, jumpMoving: false, jumpBack: false, air: 0, tilt: 0, send: null, gone: false, crouch: false,
     aimW: 0, ads: 0, sprintW: 0, equip: 1, cycle: -1, inspect: -1, script: null, scriptW: 0, looted: false, beingLooted: false, reload: -1, cool: 0, kick: 0, kickV: 0, rise: 0, riseV: 0, roll: 0, bolt: 0, bloom: 0, punch: -1,
-    target: [0, 1.2, 10], hurt: 0, vest: 0, item: null, drumA: 0, drumT: 0, bones: new Float32Array(NB * 16), wr: new Array(NB), wp: new Array(NB), gun: null, model: new Float32Array(16),
+    target: [0, 1.2, 10], hurt: 0, vest: 0, hasVest: false, item: null, slots: [null, null, null, null], hand: null, use: null, bank: 0, carry: null, thing: null, headTilt: null, holdThing: null, vis: true, away: 0, posedT: -1, posedAt: [0, 0, 0], drumA: 0, drumT: 0, bones: new Float32Array(NB * 16), wr: new Array(NB), wp: new Array(NB), gun: null, model: new Float32Array(16),
     ai: { wait: rand(0.8, 1.8), burst: 0, strafe: 1, strafeT: 0, seen: false }
   };
 }
 const player = makeFighter(true, [1, 1, 1]);
 const bots = [[0.78, 0.95, 0.72], [1.0, 0.72, 0.66], [0.72, 0.82, 1.05]].map(t => makeFighter(false, t));
-const fighters = [player, ...bots];
-function give(f, id, spare) {
+const fighters = [player, ...bots];                            // royale.js grows these to a hundred on the island
+function give(f, id, spare, rarity) {
   const g = GUNS[id];
-  if (!f.inv.includes(id)) { f.inv.push(id); f.inv.sort((a, b) => SLOTS.indexOf(a) - SLOTS.indexOf(b)); f.ammo[id] = { clip: g.mag, spare: spare === undefined ? g.reserve : spare }; }
-  else f.ammo[id].spare = Math.min(g.reserve * 3, f.ammo[id].spare + g.mag * 2);
+  if (f.isPlayer) { takeItem(f, gunItem(id, rarity || 0, g.mag, spare === undefined ? g.reserve : spare), !!f.weapon); return; }
+  if (!f.inv.includes(id)) { f.inv.push(id); f.ammo[id] = { clip: g.mag, spare: spare === undefined ? g.reserve : spare, rarity: rarity || 0 }; }
+  else { f.ammo[id].spare = Math.min(g.reserve * 3, f.ammo[id].spare + g.mag * 2); f.ammo[id].rarity = Math.max(f.ammo[id].rarity || 0, rarity || 0); }
 }
 function equip(f, id) {
   if (f.weapon === id || (id && !f.inv.includes(id))) return;
-  f.holdC4 = false;
+  f.holdC4 = false; f.hand = null; f.use = null;
   f.weapon = id; f.equip = 0; f.reload = -1; f.cool = Math.max(f.cool, 0.2); f.bolt = 0; f.cycle = -1; f.inspect = -1;
   if (f.isPlayer) { Sound.play('rack', 0.5); hudDirty = true; }
 }
@@ -165,11 +166,11 @@ function spawnBot(b, i) {
   const a = Math.PI + (i - 1) * 0.75 + rand(-0.25, 0.25), d = rand(13, 19);
   b.pos = [clamp(player.pos[0] + Math.sin(a) * d, -HALF + 2, HALF - 2), 0, clamp(player.pos[2] + Math.cos(a) * d, -HALF + 2, HALF - 2)];
   if (world.map === 'island') b.pos = enemySpot(player.pos);
-  b.hp = 100; b.dead = -1; b.hurt = 0; b.vest = 0; b.air = 0; b.jump = -1; b.looted = b.beingLooted = false; b.script = null; b.scriptW = 0; b.cycle = -1; b.inv = []; b.ammo = {}; b.weapon = null; b.crouch = false; b.ai.wait = rand(1.0, 2.2); b.ai.seen = false;
+  b.hp = 100; b.dead = -1; b.hurt = 0; b.vest = 0; b.hasVest = false; b.gone = false; b.rag = null; b.use = null; b.carry = null; b.thing = null; b.headTilt = null; b.br = null; b.onBike = null; b.air = 0; b.jump = -1; b.looted = b.beingLooted = false; b.script = null; b.scriptW = 0; b.cycle = -1; b.inv = []; b.ammo = {}; b.weapon = null; b.crouch = false; b.ai.wait = rand(1.0, 2.2); b.ai.seen = false;
   give(b, i === 1 ? 'ak' : 'glock', 999); equip(b, b.inv[0]);
   b.yaw = Math.atan2(player.pos[0] - b.pos[0], player.pos[2] - b.pos[2]);
 }
-const chests = [['glock', -2.2, -3.2], ['awp', 0, -4.7], ['ak', 2.2, -3.2]].map(([gun, x, z]) => ({ pos: [x, 0, z], gun, open: 0, openV: 0, wobble: 0, t: -1, forced: false }));
+const chests = [[-2.2, -3.2], [0, -4.7], [2.2, -3.2]].map(([x, z]) => ({ pos: [x, 0, z], loot: null, claimed: null, open: 0, openV: 0, wobble: 0, t: -1, forced: false }));
 player.yaw = Math.PI;
 bots.forEach(spawnBot);
 
@@ -325,6 +326,7 @@ function poseFighter(f) {
       wr[i] = M3.mul(M3.mul(M3.ry(blade / 2 + (punching ? 0.2 * Math.sin(Math.PI * f.punch / 0.4) : 0)), M3.rx(-lean * 0.22)), wr[i]);
     }
     if (i === IDX.head && g) wr[i] = M3.mul(M3.mul(M3.ry(-blade * 0.9), M3.rx(-lean * 0.25)), wr[i]);
+    if (i === IDX.head && f.headTilt && f.dead < 0) wr[i] = M3.mul(f.headTilt, wr[i]);
     if (i === IDX.head && g && f.reload >= 0) {           // peering: head cocked to one side
       const peer = peerAmount(f);
       wr[i] = M3.mul(M3.mul(M3.mul(M3.ry(-0.5 * peer), M3.rz(0.3 * peer)), M3.rx(0.14 * peer)), wr[i]);
@@ -397,6 +399,9 @@ function poseFighter(f) {
   f.item = null;
   const vest = f.script && f.scriptW > 0.3 && f.script.vest;          // a vest being held up out of a chest
   f.holdVest = vest ? { R: M3.mul(R, vest.R), p: toWorld(f, vest.p) } : null;
+  const thing = f.dead >= 0 ? null : (f.script && f.scriptW > 0.3 && f.script.thing) || f.thing;     // food or a plate in his hands
+  f.holdThing = thing ? { kind: thing.kind, R: M3.mul(R, thing.R), p: toWorld(f, thing.p) } : null;
+  f.posedT = game.time; f.posedAt[0] = f.pos[0]; f.posedAt[1] = f.pos[1]; f.posedAt[2] = f.pos[2];
   if (item && !held) { const world = M3.mul(R, item.R); f.item = { gun: f.weapon, R: world, S: world.map(x => x * g.scale), p: toWorld(f, item.p), out: M3.vec(R, item.out) }; }
   if (held) {
     const hg = GUNS[held.id];
@@ -459,7 +464,11 @@ function trace(origin, dir, shooter, minT) {
   const s = surfaceHit(origin, dir); if (s && s.t > (minT || 0) && s.t < best.t) best = s;
   for (const c of chests) { const t = rayCapsule(origin, dir, V.add(c.pos, [-0.25, 0.25, 0]), V.add(c.pos, [0.25, 0.25, 0]), 0.3); if (t > (minT || 0) && t < best.t) best = { t, kind: 'chest' }; }
   for (const f of fighters) {
-    if (f === shooter || f.dead >= 0) continue;
+    if (f === shooter || f.dead >= 0 || f.gone) continue;
+    // far off the line: not worth looking at his arms and legs
+    const cx = f.pos[0] - origin[0], cy = f.pos[1] + 0.9 - origin[1], cz = f.pos[2] - origin[2], along = cx * dir[0] + cy * dir[1] + cz * dir[2];
+    if (along < -2 || along > best.t + 2 || cx * cx + cy * cy + cz * cz - along * along > 4.8) continue;
+    ensurePosed(f);
     for (const [a, b, r, mult] of capsules(f)) {
       const t = rayCapsule(origin, dir, a, b, r);
       if (t > (minT || 0) && t < best.t) best = { t, kind: 'fighter', f, mult };
@@ -472,15 +481,19 @@ function jitter(dir, spread) {
   const x = V.norm(V.cross(dir, [0, 1, 0])), y = V.cross(x, dir), a = rand(0, Math.PI * 2), r = Math.sqrt(Math.random()) * spread;
   return V.norm(V.add(dir, V.add(V.mul(x, Math.cos(a) * r), V.mul(y, Math.sin(a) * r))));
 }
-function damage(victim, amount, from, head) {
+// exotic: it goes through the vest and he is out
+function damage(victim, amount, from, head, exotic) {
   if (victim.dead >= 0 || (victim.isPlayer && (game.godMode || FLY.on))) return;
-  if (victim.vest > 0 && !head) {                           // the vest takes most of it, until it breaks
+  if (exotic) amount = 1000;
+  else if (victim.vest > 0 && !head) {                      // the vest takes most of it, until it breaks
     const soak = Math.min(victim.vest, amount * 0.65);
     victim.vest -= soak; amount -= soak;
-    if (victim.vest <= 0) { popWord(V.add(victim.pos, [0, 1.9, 0]), 'CRACK!', 0.8); Sound.play('bonk', victim.isPlayer ? 0.9 : 0.5); }
-    else Sound.play('thwack', victim.isPlayer ? 0.7 : 0.4);
+    if (victim.vest <= 0) { victim.vest = 0; playAt('vestbreak', victim.pos, 0.9, 30); }
+    else playAt('thwack', victim.pos, 0.7, 25);
+    if (victim.isPlayer) hudDirty = true;
   }
   victim.hp -= amount; victim.hurt = 0.22;
+  if (!victim.isPlayer && royaleOn()) royaleHurt(victim, from);
   if (victim.ride) bikeHurt(victim, amount);                 // knocked off the bike
   if (victim.isPlayer) {
     Sound.play('hurt', 0.8); hudDirty = true;
@@ -490,32 +503,34 @@ function damage(victim, amount, from, head) {
   } else victim.ai.seen = true;
   if (victim.hp <= 0) {
     victim.lastHit = { from: from.pos, amount, head, blast: !!from.blast };   // how the ragdoll gets thrown
-    if (from.isPlayer) {
-      Sound.play('kill', 0.8); game.kills++; hudDirty = true;
-      notify((head ? 'Headshot! ' : '') + 'Go to him and hold E to loot');
+    if (from.isPlayer && !victim.isPlayer) {
+      Sound.play('kill', 0.85); if (head) Sound.play('headshot', 0.8); game.kills++; hudDirty = true;
     }
     knockOut(victim, 'You got knocked out');
   }
 }
 function knockOut(victim, why) {
   victim.hp = 0; victim.dead = 0; victim.reload = -1; victim.crouch = false; victim.tilt = 0;
-  if (victim.isPlayer) { game.deaths++; hudDirty = true; abortLoot(); notify(why); startSend(victim, 1.2); aimDeathCam(); }
+  victim.hand = null; victim.use = null; victim.thing = null; victim.headTilt = null;
+  if (victim.isPlayer) { game.deaths++; hudDirty = true; abortLoot(); notify(why); if (royaleOn()) royaleLost(); startSend(victim, 1.2); aimDeathCam(); }
+  else if (royaleOn()) royaleDeath(victim);
 }
 function fire(f, origin, dir, spread, minT) {
-  const g = GUNS[f.weapon], am = f.ammo[f.weapon];
+  const g = GUNS[f.weapon], am = f.ammo[f.weapon], rarity = am.rarity || 0, exotic = rarity === EXOTIC;
   am.clip--; f.cool = 60 / g.rate;
+  if (f.isPlayer) f.shotAt = game.time;
   const muzzle = muzzleFx(f);
   // a knocked-out body in the way gets shoved
   const shot = d => {
     const hit = trace(origin, d, f, minT), body = rayBody(origin, d, hit.t);
     return body && body.t > (minT || 0) ? { t: body.t, kind: 'body', f: body.f, p: V.mad(origin, d, body.t) } : hit;
   };
-  if (g.grenade) { launchGrenade(f, muzzle, shot(jitter(dir, spread)).p); f.drumT += Math.PI / 3; }
+  if (g.grenade) { launchGrenade(f, muzzle, shot(jitter(dir, spread)).p, rarity); f.drumT += Math.PI / 3; }
   else {
     const struck = new Map(), count = g.pellets || 1;
     for (let i = 0; i < count; i++) {
       const d = jitter(dir, g.pellets ? spread + g.pelletSpread : spread), hit = shot(d);
-      tracers.push({ a: muzzle, b: hit.p, life: 0.09, max: 0.09 });
+      tracers.push({ a: muzzle, b: hit.p, life: 0.09, max: 0.09, color: exotic ? [0.1, 1.0, 0.85] : null });
       if (hit.kind === 'body') {
         ragPush(hit.f, hit.p, V.mul(d, g.pellets ? 0.9 : 2.5 + g.damage * 0.05), 0.45);
         puff(hit.p, g.pellets ? 2 : 6, [0.55, 0.04, 0.03, 0.9], 1.0, 0.03, 0.45, 6);
@@ -523,7 +538,8 @@ function fire(f, origin, dir, spread, minT) {
         const head = hit.mult > 2, falloff = g.pellets ? clamp(1.3 - hit.t / 18, 0.25, 1) : 1;
         puff(hit.p, g.pellets ? 3 : 7, hit.f.vest > 0 && !head ? [0.10, 0.13, 0.07, 0.9] : [0.55, 0.04, 0.03, 0.9], 1.1, 0.032, 0.45, 6);
         const so = struck.get(hit.f) || { amount: 0, head: false };
-        so.amount += (f.isPlayer ? g.damage : 5) * hit.mult * falloff; so.head = so.head || head;
+        // the others hit softer than their guns would, you most of all
+        so.amount += g.damage * RARITY[rarity].mult * (f.isPlayer ? 1 : hit.f.isPlayer ? 0.42 : 0.62) * hit.mult * falloff; so.head = so.head || head;
         struck.set(hit.f, so);
       } else if (hit.kind === 'ground') { puff(hit.p, 6, [0.45, 0.43, 0.40, 0.7], 0.9, 0.045, 0.5, 3); marks.push(hit.p); if (marks.length > 90) marks.shift(); }
       else if (hit.kind === 'water') puff(hit.p, 8, [0.85, 0.93, 0.97, 0.8], 1.2, 0.04, 0.45, 5);
@@ -531,8 +547,8 @@ function fire(f, origin, dir, spread, minT) {
       else if (hit.kind === 'chest') puff(hit.p, 6, [0.55, 0.36, 0.17, 0.9], 1.2, 0.025, 0.45, 6);
     }
     for (const [victim, so] of struck) {
-      damage(victim, so.amount, f, so.head);
-      if (f.isPlayer) { Sound.play('hit', 0.8); game.marker = 0.18; ui.marker.classList.toggle('head', so.head || victim.dead >= 0); }
+      damage(victim, so.amount, f, so.head, exotic);
+      if (f.isPlayer) { Sound.play(so.head ? 'headshot' : 'hit', 0.8); game.marker = 0.18; ui.marker.classList.toggle('head', so.head || victim.dead >= 0); }
     }
   }
   // recoil on the gun itself
@@ -540,10 +556,8 @@ function fire(f, origin, dir, spread, minT) {
   f.bloom = Math.min(g.maxBloom, f.bloom + g.bloom);
   if (g.boltAction || g.pumpAction) f.cycle = 0;
   f.inspect = -1;
-  const dist = f.isPlayer ? 0 : V.len(V.sub(f.pos, player.pos));
-  Sound.play(g.sound, f.isPlayer ? 0.9 : 0.8 / (1 + dist * 0.12));
-  Sound.play('shell', 0.6);
-  if (f.isPlayer) hudDirty = true;
+  if (f.isPlayer) { Sound.play(g.sound, 0.9); if (exotic) Sound.play('exoticshot', 0.7); Sound.play('shell', 0.6); hudDirty = true; }
+  else gunHeard(f, g);
 }
 function startReload(f) {
   if (!f.weapon || f.reload >= 0 || f.equip < 1 || f.cycle >= 0) return;
@@ -558,7 +572,7 @@ const keys = new Set();
 const mouse = { fire: false, pressed: false, aim: false, drag: null };
 const game = { running: false, locked: false, lockWorked: false, aimToggle: false, enemiesShoot: true, godMode: false, kills: 0, deaths: 0, marker: 0, hurtFade: 0, note: 0, time: 0 };
 const ui = {};
-for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'msg', 'tabplay', 'tabsettings', 'panelplay', 'panelsettings', 'shadowpick', 'dist', 'distlabel', 'reloadbar', 'boomflash', 'minimap', 'killcount']) ui[id] = document.getElementById(id);
+for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'msg', 'alive', 'alivecount', 'results', 'restitle', 'resplace', 'reskills', 'tabplay', 'tabsettings', 'panelplay', 'panelsettings', 'shadowpick', 'dist', 'distlabel', 'reloadbar', 'boomflash', 'minimap', 'killcount']) ui[id] = document.getElementById(id);
 let hudDirty = true;
 function notify(text) { }                                    // the messages in the middle of the screen are switched off
 
@@ -576,7 +590,7 @@ function lockMouse() {
 function enterGame() { Sound.init(); game.enemiesShoot = ui.shootback.checked; setRunning(true); ui.play.blur(); ui.island.blur(); lockMouse(); canvas.focus(); }
 // the two tiles on the menu. The island always starts with the boat trip
 function pickMap(name) {
-  const resume = game.started && world.map === name && !(name === 'island' && world.low !== ui.lowend.checked);
+  const resume = game.started && world.map === name && !(name === 'island' && (world.low !== ui.lowend.checked || (match && match.over)));
   if (!resume) {
     Sound.init();
     cineEnd(false);
@@ -590,6 +604,11 @@ function pickMap(name) {
 function menuTiles() {
   ui.menu.classList.toggle('paused', !!game.started);
   for (const [el, name] of [[ui.play, 'plate'], [ui.island, 'island']]) el.classList.toggle('current', !!game.started && world.map === name);
+}
+// the menu clicks and ticks too
+for (const el of document.querySelectorAll('#menu button, #menu summary, #menu input')) {
+  el.addEventListener('pointerenter', () => Sound.play('uihover', 0.8));
+  el.addEventListener('click', () => { Sound.init(); Sound.play('uiclick', 0.9); });
 }
 ui.play.addEventListener('click', () => pickMap('plate'));
 ui.island.addEventListener('click', () => pickMap('island'));
@@ -644,11 +663,12 @@ addEventListener('blur', () => { keys.clear(); mouse.fire = mouse.aim = false; }
 addEventListener('wheel', e => {
   if (!game.running) return;
   if (FLY.on) { e.preventDefault(); if (e.deltaY) flySpeed(-e.deltaY); return; }   // up is faster
-  if (!player.inv.length) return;
   e.preventDefault();
-  if (looting) return;
-  const i = player.inv.indexOf(player.weapon);
-  equip(player, player.inv[(i + (e.deltaY > 0 ? 1 : player.inv.length - 1)) % player.inv.length]);
+  if (looting || player.ride || player.dead >= 0 || !e.deltaY) return;
+  // round the filled pockets, fists included
+  const ring = [-1, ...player.slots.map((q, k) => q ? k : null).filter(k => k !== null)];
+  const next = ring[(Math.max(0, ring.indexOf(heldSlot(player))) + (e.deltaY > 0 ? 1 : ring.length - 1)) % ring.length];
+  if (next < 0) fists(player); else selectSlot(player, next);
 }, { passive: false });
 function fullscreen() {
   if (document.fullscreenElement) { document.exitFullscreen(); return; }
@@ -656,6 +676,7 @@ function fullscreen() {
   if (p && p.then) p.then(() => { if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['KeyW', 'ControlLeft', 'ControlRight']).catch(() => {}); lockMouse(); }).catch(() => {});
 }
 addEventListener('keydown', e => {
+  if (game.running && matchKey(e)) return;                      // the results screen
   if (!game.running) { if (e.code === 'Escape' && !game.lockWorked && game.started) setRunning(true); return; }
   if (e.metaKey || e.altKey) return;
   if (cine.on) {                                              // watching: only pause, sound and fullscreen (no skipping)
@@ -676,12 +697,8 @@ addEventListener('keydown', e => {
   else if (e.code === 'Space') { if (!FLY.on) startJump(player); }
   else if (e.code === 'KeyR') startReload(player);
   else if (world.asking && ['Digit1', 'Digit2', 'Numpad1', 'Numpad2'].includes(e.code)) { setMap('island', e.code.endsWith('2')); menuTiles(); cineStart(); }
-  else if (e.code === 'Digit1') equip(player, 'ak');
-  else if (e.code === 'Digit2') equip(player, 'glock');
-  else if (e.code === 'Digit3') equip(player, 'awp');
-  else if (e.code === 'Digit4' || e.code === 'KeyH') { player.holdC4 = false; equip(player, null); hudDirty = true; }
-  else if (e.code === 'Digit5') holdC4(player);
-  else if (['Digit6', 'Digit7', 'Digit8', 'Digit9'].includes(e.code)) equip(player, SLOTS[+e.code.slice(5) - 3]);
+  else if (['Digit1', 'Digit2', 'Digit3', 'Digit4'].includes(e.code)) selectSlot(player, +e.code.slice(5) - 1);
+  else if (e.code === 'Digit5' || e.code === 'KeyH') fists(player);
   else if (e.code === 'KeyG') dropGun(player);
   else if (e.code === 'KeyV') { if (player.weapon && player.reload < 0 && player.cycle < 0 && player.equip >= 1 && player.inspect < 0) player.inspect = 0; }
   else if (e.code === 'KeyT') { if (world.map === 'island') { setMap('plate'); menuTiles(); } else askMap(!world.asking); }   // temporary, while the map is being made
@@ -704,7 +721,8 @@ function locomotion(f, mx, my, sprint, dt) {
   const aiming = f.ads > 0.5;
   let target = 0;
   if (want) target = f.crouch ? 0.8 : aiming ? 1.25 : sprint && my > 0.1 ? 3.8 : my < -0.1 ? 1.7 : 2.5;
-  if (!f.isPlayer) target = Math.min(target, 1.7);
+  if (!f.isPlayer) target = Math.min(target, f.runCap || 1.7);
+  if (f.use) target = Math.min(target, 1.1);                     // eating, or busy with a plate
   if (want) f.moveRel = Math.atan2(-mx, my);
   f.speed += (target - f.speed) * Math.min(1, dt * 10);
   if (f.speed < 0.04) f.speed = 0;
@@ -721,7 +739,11 @@ function locomotion(f, mx, my, sprint, dt) {
   // play each gait at the rate that matches the ground speed, so feet do not skate
   let gw = 0, cycles = 0;
   for (const n of ['Walk', 'Run', 'CrouchWalk']) { const c = Rig.clips[n]; gw += f.weights[n]; cycles += f.weights[n] * clamp(f.speed / c.speed, 0.6, 1.75) / c.T; }
-  if (gw > 0.001) f.phase = (f.phase + (f.back ? -1 : 1) * dt * cycles / gw + 1) % 1;
+  if (gw > 0.001) {
+    const was = f.phase;
+    f.phase = (f.phase + (f.back ? -1 : 1) * dt * cycles / gw + 1) % 1;
+    if (Math.floor(was * 2) !== Math.floor(f.phase * 2) && f.speed > 0.5 && f.jump < 0 && f.dead < 0) footstep(f);
+  }
   f.time += dt;
   jumpStep(f, dt);
   if (f.dead >= 0) f.legYaw = 0;
@@ -745,6 +767,27 @@ function locomotion(f, mx, my, sprint, dt) {
   for (const o of fighters) if (o !== f && o.dead < 0 && Math.abs(o.pos[1] - f.pos[1]) < 2) push(f, o.pos, 0.55);
   wreckPush(f);
 }
+// what his foot comes down on
+function groundKind(p) {
+  if (world.map !== 'island') return 0;                          // the baseplate
+  if (inSea(p)) return 4;
+  if (inCave(p) || p[1] > 14) return 3;                          // stone
+  if (houseAt(p[0], p[2], 0) || nearBridge(p[0], p[2], 0)) return 2;   // boards
+  if (pastCoast(p[0], p[2]) > -9) return 1;                      // sand
+  return 5;                                                      // grass
+}
+function footstep(f) {
+  const heavy = f.speed > 2.8 ? 1 : f.crouch ? 0.35 : 0.6;
+  if (f.isPlayer) { Sound.play('step', 0.55 * heavy, groundKind(f.pos)); return; }
+  playAt('step', f.pos, 0.9 * heavy, 20, groundKind(f.pos));
+}
+// a sound somewhere in the world: quieter and duller with distance, and off to the side it came from
+function playAt(name, p, vol, range, k) {
+  const dx = p[0] - player.pos[0], dz = p[2] - player.pos[2], d = Math.hypot(dx, dz);
+  if (d > (range || 40)) return;
+  const near = 1 - d / (range || 40), side = d > 0.8 ? clamp((dx * Math.cos(cam.yaw) - dz * Math.sin(cam.yaw)) / d, -1, 1) * 0.8 : 0;
+  Sound.play(name, vol * (0.25 + 0.75 * near * near) * Math.min(1, near * 4), k, side, d);
+}
 function push(f, p, r) {
   const dx = f.pos[0] - p[0], dz = f.pos[2] - p[2], d = Math.hypot(dx, dz);
   if (d < r && d > 1e-4) { f.pos[0] += dx / d * (r - d); f.pos[2] += dz / d * (r - d); }
@@ -756,10 +799,10 @@ function weaponStep(f, dt) {
   if (f.cycle >= 0) {
     const g = GUNS[f.weapon], u0 = f.cycle / g.cycle;
     f.cycle += dt;
-    const u = f.cycle / g.cycle, cue = (at, s) => { if (u0 < at && u >= at) Sound.play(s, f.isPlayer ? 0.9 : 0.2); };
+    const u = f.cycle / g.cycle, cue = (at, s) => { if (u0 < at && u >= at) { if (f.isPlayer) Sound.play(s, 0.9); else playAt(s, f.pos, 0.35, 20); } };
     if (g.pumpAction) { cue(0.22, 'pumpback'); cue(0.55, 'pumpfwd'); } else { cue(0.27, 'boltup'); cue(0.41, 'boltback'); cue(0.58, 'boltfwd'); }
     const out = g.pumpAction ? 0.36 : 0.5;
-    if (u0 < out && u >= out) { eject(f); Sound.play('shell', 0.8); }
+    if (u0 < out && u >= out) { eject(f); if (f.isPlayer) Sound.play('shell', 0.8); }
     if (u >= 1) f.cycle = -1;
   }
   f.aimW += ((f.weapon ? 1 : 0) - f.aimW) * Math.min(1, dt * 9);
@@ -804,10 +847,13 @@ function cameraEye() {
 function respawnPlayer() {
   abortLoot(); endRide(true);
   const f = player;
-  f.c4 = Math.max(f.c4 || 0, 1); f.holdC4 = false; f.plantT = -1;
-  f.dead = -1; f.hp = 100; f.vest = 0; grenades.length = 0; f.pos = world.map === 'island' ? [START[0], groundAt(START[0], START[2]), START[2]] : [0, 0, 0]; f.air = 0; f.jump = -1; f.equip = 0;
+  if (world.map === 'island') freshPockets(f, 'island');
+  else if (!(f.c4 > 0)) { f.c4 = 1; syncC4(f); }
+  f.holdC4 = false; f.plantT = -1; f.hand = null; f.use = null; f.carry = null; f.thing = null; f.headTilt = null; f.gone = false; f.rag = null;
+  f.dead = -1; f.hp = 100; f.vest = 0; f.hasVest = false; grenades.length = 0; f.pos = world.map === 'island' ? [START[0], groundAt(START[0], START[2]), START[2]] : [0, 0, 0]; f.air = 0; f.jump = -1; f.equip = 0;
   deathCam = 0; deathShot = null; hudDirty = true;
-  bots.forEach(spawnBot); notify('Back on your feet');
+  if (world.map === 'island') newMatch(); else { setRoster(3); bots.forEach(spawnBot); }
+  notify('Back on your feet');
 }
 function playerStep(dt) {
   const f = player;
@@ -837,6 +883,7 @@ function playerStep(dt) {
   locomotion(f, kneeling ? 0 : mx, kneeling ? 0 : my, sprint && !kneeling, dt);
   weaponStep(f, dt);
   c4Step(f, dt);
+  itemStep(f, dt);
   seaStep(f, dt);
   if (f.dead >= 0) return;
 
@@ -863,8 +910,8 @@ function playerStep(dt) {
     if (am.clip === 0 && am.spare > 0 && f.reload < 0 && f.cool <= 0 && !firing) startReload(f);
   } else if (f.holdC4) {
     if (mouse.pressed) startPlant(f);
-  } else if (mouse.pressed && f.punch < 0) {
-    f.punch = 0;
+  } else if (mouse.pressed && f.punch < 0 && !f.hand) {
+    f.punch = 0; Sound.play('swing', 0.6);
     const d = [Math.sin(f.yaw), 0, Math.cos(f.yaw)];
     const hit = trace(V.add(f.pos, [0, 1.15, 0]), d, f, 0);
     if (hit.kind === 'fighter' && hit.t < 1.2) { damage(hit.f, 20, f); Sound.play('punch', 0.9); game.marker = 0.18; puff(hit.p, 4, [0.8, 0.8, 0.75, 0.7], 0.6, 0.04, 0.3, 2); }
@@ -936,12 +983,14 @@ function effectsStep(dt) {
 function update(dt) {
   if (cine.on) return;
   game.time += dt;
+  stars.length = 0;
   playerStep(dt);
-  bots.forEach((b, i) => botStep(b, i, dt));
+  if (royaleOn()) royaleStep(dt); else bots.forEach((b, i) => botStep(b, i, dt));
+  ambience(dt);
   sendsStep(dt);
   deathCamStep(dt);
   for (const c of chests) {
-    if (c.t >= 0) { c.t += dt; if (c.t > 25) c.t = -1; }
+    if (c.t >= 0) { c.t += dt; if (c.t > 25 && !royaleOn()) { c.t = -1; c.loot = null; } }     // on the island an opened chest stays open
     // the lid is on a spring, so it bounces when it is knocked open
     const to = c.t >= 0 || c.forced ? 1 : 0;
     c.openV += ((to - c.open) * 140 - c.openV * (to ? 11 : 20)) * dt; c.open += c.openV * dt;
@@ -951,6 +1000,7 @@ function update(dt) {
   }
   effectsStep(dt);
   grenadesStep(dt);
+  matchStep(dt);
   bikesStep(dt);
   wreckStep(dt);
   const k = 1 - Math.exp(-dt * 11), a = player.ads;
@@ -983,12 +1033,15 @@ function globals(prog, vp, light, eye) {
 }
 function drawFighters(prog, textured, hideSelf) {
   for (const f of fighters.concat(helpers)) {
-    if (f.gone || (hideSelf && f.isPlayer)) continue;
+    if (f.gone || (hideSelf && f.isPlayer) || !f.vis) continue;
+    if (!textured && f.away > 18 && !f.isPlayer) continue;      // no moving shadow for the far ones
+    const far = f.away > 15 && !f.isPlayer;                     // and a simpler body
     gl.uniformMatrix4fv(prog.u.uBones, false, f.bones);
     gl.uniformMatrix4fv(prog.u.uModel, false, f.model);
     if (textured) gl.uniform1f(prog.u.uHurt, f.hurt * 1.4);
     const dim = textured ? caveLight(f.pos) : 1;
     for (const p of Rig.prims) {
+      if (far && !p.lod) continue;
       if (textured) {
         gl.uniform1i(prog.u.uHasTex, p.tex ? 1 : 0); gl.uniform1i(prog.u.uHasNormal, p.normal ? 1 : 0);
         gl.uniform3fv(prog.u.uColor, p.color); gl.uniform1f(prog.u.uRough, p.rough);
@@ -996,10 +1049,10 @@ function drawFighters(prog, textured, hideSelf) {
         if (p.tex) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, p.tex); }
         if (p.normal) { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, p.normal); }
       }
-      gl.bindVertexArray(p.vao);
-      gl.drawElements(gl.TRIANGLES, p.count, gl.UNSIGNED_SHORT, 0);
+      gl.bindVertexArray(far ? p.lod.vao : p.vao);
+      gl.drawElements(gl.TRIANGLES, far ? p.lod.count : p.count, gl.UNSIGNED_SHORT, 0);
     }
-    if (textured) drawWornVest(prog, f);
+    if (textured && f.away < 45) drawWornVest(prog, f);
   }
 }
 const modelM = new Float32Array(16);
@@ -1035,7 +1088,7 @@ function drawGun(prog, textured, g, R, p, o) {
 }
 function drawStatics(prog, textured, hideSelf) {
   for (const f of fighters) {
-    if (!f.gun || (hideSelf && f.isPlayer)) continue;
+    if (!f.gun || (hideSelf && f.isPlayer) || f.gone || !f.vis || f.away > (textured ? 55 : 18)) continue;
     const { g, S: R, p, held } = f.gun, o = {};
     if (!held) {
       const t = f.reload >= 0 ? f.reload / g.reload : -1;
@@ -1052,10 +1105,12 @@ function drawStatics(prog, textured, hideSelf) {
     drawGun(prog, textured, g, R, p, o);
   }
   for (const f of fighters) {
-    if (hideSelf && f.isPlayer) continue;
+    if ((hideSelf && f.isPlayer) || f.gone || !f.vis || f.away > 30) continue;
     if (f.item) drawItem(prog, textured, f.item);
     if (f.holdVest) drawHeldVest(prog, f.holdVest.R, f.holdVest.p);
+    if (f.holdThing) drawThing(prog, f.holdThing.kind, f.holdThing.R, f.holdThing.p);
   }
+  drawFloorLoot(prog, textured);
   drawGrenades(prog);
   const chestRange = !textured ? 16 : world.low ? 60 : 110;
   for (const c of chests) {
@@ -1098,7 +1153,7 @@ function drawEffects(vp, eye, fwd) {
     if (len < 0.3) continue;
     const n = V.mul(d, 1 / len), prog = 1 - t.life / t.max, head = Math.min(len, 1.5 + prog * len), tail = Math.max(0, head - 3.5);
     const mid = V.mad(t.a, n, (head + tail) / 2), side = V.norm(V.cross(n, V.sub(mid, eye)));
-    quad(mid, V.mul(n, (head - tail) / 2), V.mul(side, 0.012), [1.0, 0.78, 0.35, 0.95]);
+    quad(mid, V.mul(n, (head - tail) / 2), V.mul(side, t.color ? 0.03 : 0.012), t.color ? [t.color[0], t.color[1], t.color[2], 0.95] : [1.0, 0.78, 0.35, 0.95]);
   }
   for (const f of flashes) {
     if (f.f.isPlayer && lastView.hideSelf) continue;
@@ -1114,6 +1169,7 @@ function drawEffects(vp, eye, fwd) {
   }
   for (const p of particles) if (p.add) { const a = Math.min(1, p.life / p.max * 1.4); quad(p.p, V.mul(right, p.size), V.mul(up, p.size), [p.color[0] * a, p.color[1] * a, p.color[2] * a, p.color[3] * a]); }
   drawBlasts(quad, right, up, true);
+  drawLootGlow(quad, right);
   flushFx(true);
   gl.depthMask(true); gl.disable(gl.BLEND);
 }
@@ -1131,7 +1187,8 @@ function render() {
   const dpr = Math.min(window.devicePixelRatio || 1, slim ? 1 : 1.5) * quality * (slim ? 0.9 : 1);
   const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-  for (const f of fighters.concat(helpers)) poseFighter(f);
+  poseFighter(player);
+  for (const f of helpers) { f.vis = true; f.away = 0; poseFighter(f); }
   const sc = scopeAmount();
   let view = deathCamera(lootCamera(scopedView(cameraEye(), sc)));
   if (!game.started) view = menuView();                     // behind the menu: him from the front
@@ -1144,6 +1201,7 @@ function render() {
   const proj = perspective(fov, w / Math.max(1, h), 0.08, settings.chunks ? viewRange() + 8 : world.map !== 'island' ? 160 : FLY.on ? 2200 : world.low ? 300 : 600);
   const vp = mul4(proj, lookAt(eye, V.add(eye, view.fwd)));
   lastView = { vp, w: canvas.clientWidth, h: canvas.clientHeight };
+  poseOthers(vp, eye);
 
   const centre = V.add(player.pos, [view.fwd[0] * 5, 0.5, view.fwd[2] * 5]);
   const area = shadowSet().area, light = mul4(ortho(area, area, 1, 30), lookAt(V.mad(centre, SUN, 14), centre));
@@ -1187,7 +1245,20 @@ function render() {
 }
 
 // ======================================================================= interface
-const barEls = bots.map(() => { const d = document.createElement('div'); d.className = 'bar'; d.innerHTML = '<i></i>'; ui.bars.appendChild(d); return d; });
+// health bars and loot arrows: a handful of them, handed to whoever needs one
+const barEls = Array.from({ length: 14 }, () => { const d = document.createElement('div'); d.className = 'bar'; d.innerHTML = '<i></i>'; ui.bars.appendChild(d); return d; });
+// what is in your pockets
+function slotsHtml() {
+  const held = heldSlot(player);
+  const html = player.slots.map((q, k) => {
+    let text = '---', colour = '';
+    if (q && q.t === 'gun') { const r = RARITY[rarityOf(player, q.id)]; text = q.id === 'mgl' ? 'Launcher' : GUNS[q.id].name; colour = r.css; }
+    else if (q && q.t === 'c4') text = 'C4 ×' + player.c4;
+    else if (q) { text = (q.t === 'plate' ? 'Plate' : FOOD[q.t].name) + ' ×' + q.n; }
+    return `<span class="${held === k ? 'on' : q ? '' : 'none'}${colour ? ' rare' : ''}" style="--r:${colour}">${k + 1} ${text}</span>`;
+  }).join('');
+  return html + `<span class="${held < 0 ? 'on' : ''}">H Fists</span>`;
+}
 function project(p) {
   const m = lastView.vp, x = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], y = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
   return w > 0.1 ? [(x / w * 0.5 + 0.5) * lastView.w, (0.5 - y / w * 0.5) * lastView.h] : null;
@@ -1197,17 +1268,16 @@ function hud(dt) {
   if (hudDirty) {
     hudDirty = false;
     const g = player.weapon ? GUNS[player.weapon] : null, am = g && player.ammo[player.weapon];
-    ui.weapon.textContent = player.ride ? 'Tiny bike' : g ? g.name : player.holdC4 ? 'C4' : 'Fists';
+    const r = g ? RARITY[rarityOf(player, player.weapon)] : null;
+    ui.weapon.textContent = player.ride ? 'Tiny bike' : g ? r.name + ' ' + g.name : player.holdC4 ? 'C4' : player.hand ? (player.hand === 'plate' ? 'Vest plate' : FOOD[player.hand].name) : 'Fists';
+    ui.weapon.style.color = g && !player.ride ? r.css : '';
     ui.ammo.innerHTML = g ? `<b class="${am.clip <= g.mag * 0.2 ? 'low' : ''}">${am.clip}</b> / ${am.spare}` : '';
     ui.hp.textContent = Math.ceil(player.hp); ui.hpfill.style.width = player.hp + '%';
-    ui.vestbox.hidden = !(player.vest > 0); ui.vest.textContent = Math.ceil(player.vest); ui.vestfill.style.width = player.vest / VEST * 100 + '%';
-    const slot = (k, id) => `<span class="${player.weapon === id ? 'on' : player.inv.includes(id) ? '' : 'none'}">${k} ${player.inv.includes(id) ? (id === 'mgl' ? 'Launcher' : GUNS[id].name) : '---'}</span>`;
-    // the first three always show; the new ones only once you have them
-    ui.slots.innerHTML = [0, 1, 2].map(i => slot(i + 1, SLOTS[i])).join('') + `<span class="${player.weapon || player.holdC4 ? '' : 'on'}">4 Fists</span>` +
-      `<span class="${player.holdC4 ? 'on' : player.c4 ? '' : 'none'}">5 C4 ×${player.c4 || 0}</span>` +
-      SLOTS.slice(3).map((id, i) => player.inv.includes(id) ? slot(i + 6, id) : '').join('');
+    ui.vestbox.hidden = !player.hasVest && !(player.vest > 0); ui.vest.textContent = player.vest > 0 ? Math.ceil(player.vest) : 'broken'; ui.vestfill.style.width = player.vest / VEST * 100 + '%';
+    ui.slots.innerHTML = slotsHtml();
     ui.score.textContent = `Knockouts ${game.kills} · Deaths ${game.deaths}`;
     ui.killcount.textContent = game.kills;
+    ui.alive.hidden = !royaleOn(); ui.alivecount.textContent = playersLeft();
   }
   const g = player.weapon ? GUNS[player.weapon] : null;
   if (lastView) {
@@ -1227,16 +1297,33 @@ function hud(dt) {
   if (sc > 0.4 || looting) ui.cross.style.opacity = 0;
   ui.reloadbar.style.display = player.reload >= 0 ? 'block' : 'none';
   if (player.reload >= 0) ui.reloadbar.firstElementChild.style.width = (player.reload / g.reload * 100) + '%';
-  bots.forEach((b, i) => {
-    // health bar over the living, an arrow over bodies that still have loot
-    const body = b.dead >= 1.2 && !b.looted && !looting && !b.send, alive = b.dead < 0;
+  healthBars();
+}
+// health bar over the living near you (on the island only ones who have just been hurt), an arrow over bodies with loot
+function healthBars() {
+  const want = [], most = Math.min(60, viewRange()), br = royaleOn();
+  if (lastView && scopeAmount() < 0.5) for (const b of bots) {
+    if (b.gone) continue;
+    const alive = b.dead < 0, body = b.dead >= 1.2 && !b.looted && !looting && !b.send && (!br || b.inv.length > 0);
+    if (!(alive ? !br || (game.time - (b.hitByYou || -99) < 5) : body)) continue;
     const at = alive ? V.add(b.pos, [0, b.crouch ? 1.6 : 1.92, 0]) : [b.pos[0] - Math.sin(b.yaw) * 0.8, b.pos[1] + 0.75 + Math.sin(game.time * 5) * 0.08, b.pos[2] - Math.cos(b.yaw) * 0.8];
-    const el = barEls[i], p = (alive || body) && Math.hypot(at[0] - player.pos[0], at[2] - player.pos[2]) < Math.min(60, viewRange()) && lastView && scopeAmount() < 0.5 && !behindHill(cameraEye().eye, at) ? project(at) : null;
-    el.style.display = p ? 'block' : 'none';
-    el.classList.toggle('loot', body);
-    el.classList.toggle('soon', body && b.dead > LOOT_WINDOW - 3);
-    if (p) { el.style.left = p[0] + 'px'; el.style.top = p[1] + 'px'; el.firstElementChild.style.width = b.hp + '%'; }
-  });
+    const d = Math.hypot(at[0] - player.pos[0], at[2] - player.pos[2]);
+    if (d < (br && body ? 14 : most)) want.push({ b, at, d, body });
+  }
+  want.sort((a, b) => a.d - b.d);
+  let used = 0;
+  for (const q of want) {
+    if (used >= barEls.length) break;
+    if (behindHill(cameraEye().eye, q.at)) continue;
+    const p = project(q.at);
+    if (!p) continue;
+    const el = barEls[used++];
+    el.style.display = 'block';
+    el.classList.toggle('loot', q.body);
+    el.classList.toggle('soon', q.body && q.b.dead > (br ? 40 : LOOT_WINDOW) - 3);
+    el.style.left = p[0] + 'px'; el.style.top = p[1] + 'px'; el.firstElementChild.style.width = q.b.hp + '%';
+  }
+  for (let i = used; i < barEls.length; i++) barEls[i].style.display = 'none';
 }
 
 cam.yaw = player.yaw - Math.PI;
@@ -1261,6 +1348,7 @@ function frame(now) {
 }
 ui.msg.textContent = '';
 ui.play.disabled = ui.island.disabled = false;
+freshPockets(player, 'plate');
 player.target = [0, 1.2, -10];
 for (const f of fighters) poseFighter(f);
 update(0.016); render();
@@ -1268,9 +1356,11 @@ requestAnimationFrame(frame);
 
 // hooks used by the automated checks
 window.__game = {
-  ready: true, rig: Rig, player, bots, chests, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
+  ready: true, rig: Rig, player, bots, fighters, chests, floorLoot, takeItem, selectSlot, rollLoot, rollRarity, newMatch, get match() { return match; }, playersLeft, footstep, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
+  tick(dt) { manual = true; update(dt); },                    // the world only, no drawing
+  ensure(f) { f.posedT = -1; ensurePosed(f); },
   resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE, bikes, HOUSES, houseWorld,
   look(eye, at) { testView = eye ? { eye, at } : null; },
   cine, CINE, TRIP, Sound, cineStart, settings, setShadows, setDistance, get wreck() { return wreck; },

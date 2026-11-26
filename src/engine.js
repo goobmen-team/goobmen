@@ -291,10 +291,40 @@ async function loadCaveman(glb64) {
     const idx = acc(p.indices); buffer(gl.ELEMENT_ARRAY_BUFFER, idx);
     const m = g.materials[p.material], pbr = m.pbrMetallicRoughness;
     gl.bindVertexArray(null);
-    Rig.prims.push({ vao, count: idx.length, name: m.name, rough: pbr.roughnessFactor, color: (pbr.baseColorFactor || [1, 1, 1]).slice(0, 3),
+    const cell = { skin: 0.05, cloth: 0.05, bone: 0.035, rope: 0.04 }[m.name];       // eyes and mouth are not seen from afar
+    const lod = cell && simpler(acc(p.attributes.POSITION), acc(p.attributes.NORMAL), acc(p.attributes.TEXCOORD_0), jo, we, torso, idx, cell);
+    Rig.prims.push({ lod, vao, count: idx.length, name: m.name, rough: pbr.roughnessFactor, color: (pbr.baseColorFactor || [1, 1, 1]).slice(0, 3),
       cpu: { pos: acc(p.attributes.POSITION), j: acc(p.attributes.JOINTS_0), w: acc(p.attributes.WEIGHTS_0), idx },   // for finding his skin (tape, bombs)
       tex: pbr.baseColorTexture ? await tex(pbr.baseColorTexture.index, true) : null, normal: m.normalTexture ? await tex(m.normalTexture.index, false) : null });
   }
+}
+
+// a rougher copy of a skinned mesh for cavemen a long way off: the corners that share a little cube become one
+function simpler(pos, nrm, uv, jo, we, torso, idx, cell) {
+  const seen = new Map(), of = new Uint16Array(pos.length / 3), P = [], N = [], T = [], J = [], W = [], O = [], I = [];
+  for (let i = 0; i < of.length; i++) {
+    let main = 0;
+    for (let k = 1; k < 4; k++) if (we[i * 4 + k] > we[i * 4 + main]) main = k;
+    const key = Math.floor(pos[i * 3] / cell) + ',' + Math.floor(pos[i * 3 + 1] / cell) + ',' + Math.floor(pos[i * 3 + 2] / cell) + ',' + jo[i * 4 + main];
+    let n = seen.get(key);
+    if (n === undefined) {
+      n = P.length / 3; seen.set(key, n);
+      P.push(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]); N.push(nrm[i * 3], nrm[i * 3 + 1], nrm[i * 3 + 2]); T.push(uv[i * 2], uv[i * 2 + 1]);
+      for (let k = 0; k < 4; k++) { J.push(jo[i * 4 + k]); W.push(we[i * 4 + k]); }
+      O.push(torso[i]);
+    }
+    of[i] = n;
+  }
+  for (let t = 0; t < idx.length; t += 3) {
+    const a = of[idx[t]], b = of[idx[t + 1]], c = of[idx[t + 2]];
+    if (a !== b && b !== c && a !== c) I.push(a, b, c);
+  }
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  attrib(0, new Float32Array(P), 3, gl.FLOAT); attrib(1, new Float32Array(N), 3, gl.FLOAT); attrib(2, new Float32Array(T), 2, gl.FLOAT);
+  attrib(3, new jo.constructor(J), 4, gl.UNSIGNED_BYTE, true); attrib(4, new Float32Array(W), 4, gl.FLOAT); attrib(5, new Float32Array(O), 1, gl.FLOAT);
+  buffer(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(I));
+  gl.bindVertexArray(null);
+  return { vao, count: I.length };
 }
 
 // ---------------------------------------------------------------- clip blending
@@ -395,9 +425,11 @@ const Sound = (() => {
     o.connect(g); route(g, out); o.start(t); o.stop(t + dur + 0.02);
   }
   let pan = 0;                                       // left/right for the sound being played now
+  let damp = null;                                   // a lowpass for the sound being played now, when it is a way off
   function route(g, to) {
     if (pan && ac.createStereoPanner) { const p = ac.createStereoPanner(); p.pan.value = pan; g.connect(p); g = p; }
-    if (to === 'verb') { g.connect(master); g.connect(verb); }
+    if (damp && to !== 'clear' && !(to && to.connect)) g.connect(damp);
+    else if (to === 'verb') { g.connect(master); g.connect(verb); }
     else if (to === 'room') { g.connect(master); const s = ac.createGain(); s.gain.value = 0.18; g.connect(s); s.connect(verb); }
     else if (to === 'grit') g.connect(grit); else if (to === 'clear') g.connect(clear); else if (to && to.connect) g.connect(to); else g.connect(master);
   }
@@ -483,7 +515,8 @@ const Sound = (() => {
       for (const f of [58, 58.9, 116.5]) { const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.connect(lp); o.start(); sources.push(o); }
       swing(a, 23, 0.09);
       noisy(brown, 'lowpass', 700, 0.7, 0.35);
-    } else if (name === 'water') { swing(noisy(noise, 'bandpass', 900, 0.6, 0.22), 0.7, 0.08); noisy(brown, 'lowpass', 500, 0.7, 0.3); }
+    } else if (name === 'wind') { swing(noisy(noise, 'bandpass', 420, 0.8, 0.5), 0.11, 0.3); swing(noisy(brown, 'lowpass', 260, 0.5, 0.7), 0.07, 0.4); swing(noisy(noise, 'bandpass', 1500, 3, 0.05), 0.19, 0.045); }
+    else if (name === 'water') { swing(noisy(noise, 'bandpass', 900, 0.6, 0.22), 0.7, 0.08); noisy(brown, 'lowpass', 500, 0.7, 0.3); }
     else if (name === 'surf') { swing(noisy(noise, 'lowpass', 700, 0.5, 0.22), 0.13, 0.2); swing(noisy(brown, 'lowpass', 350, 0.5, 0.5), 0.17, 0.4); }
     else { noisy(brown, 'lowpass', 600, 0.7, 0.8); swing(noisy(noise, 'bandpass', 1800, 0.5, 0.08), 5.3, 0.05); }   // fire
     return { g, sources, vol: 0, crackle: 0 };
@@ -515,6 +548,45 @@ const Sound = (() => {
     g.gain.setValueAtTime(vol, t + dur * 0.4); g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
     g.connect(lp); route(lp, 'room');
   }
+  const r = (a, b) => a + Math.random() * (b - a);
+  // struck metal: a handful of pure partials that die away at different speeds
+  function ping(f, dur, vol, at, to) { [[1, 1], [2.76, 0.55], [5.40, 0.3], [8.93, 0.16]].forEach(([m, k]) => tone(f * m, f * m * 0.996, dur / (0.6 + m * 0.35), vol * k, at, 'sine', to)); }
+  // a caveman's voice: a buzzing throat through three moving mouth shapes, with some breath
+  const VOWEL = { oo: [320, 800, 2300], oh: [480, 900, 2450], ah: [760, 1180, 2600], uh: [580, 1080, 2500], eh: [560, 1750, 2600], ee: [320, 2200, 2950], mm: [260, 700, 2000] };
+  function voice(notes, vowels, dur, vol, at) {
+    const t = ac.currentTime + (at || 0), size = r(0.93, 1.07), out = ac.createGain();
+    const o = ac.createOscillator(), o2 = ac.createOscillator(), lfo = ac.createOscillator(), depth = ac.createGain(), rough = ac.createGain();
+    o.type = 'sawtooth'; o2.type = 'square'; rough.gain.value = 0.28;
+    notes.forEach(([k, hz], i) => { for (const [osc, m] of [[o, 1], [o2, 0.5]]) { if (!i) osc.frequency.setValueAtTime(hz * size * m, t); else osc.frequency.linearRampToValueAtTime(hz * size * m, t + k); } });
+    lfo.frequency.value = r(5, 7); depth.gain.value = 5; lfo.connect(depth); depth.connect(o.frequency);
+    const breath = ac.createBufferSource(), air = ac.createGain(); breath.buffer = noise; breath.loop = true; air.gain.value = 0.16; breath.connect(air);
+    o2.connect(rough);
+    for (let f = 0; f < 3; f++) {
+      const b = ac.createBiquadFilter(), a = ac.createGain();
+      b.type = 'bandpass'; b.Q.value = [5, 8, 10][f]; a.gain.value = [3.2, 2.0, 0.8][f];
+      vowels.forEach(([k, name], i) => { const hz = VOWEL[name][f] * size; if (!i) b.frequency.setValueAtTime(hz, t); else b.frequency.linearRampToValueAtTime(hz, t + k); });
+      o.connect(b); rough.connect(b); air.connect(b); b.connect(a); a.connect(out);
+    }
+    out.gain.setValueAtTime(0.0001, t); out.gain.exponentialRampToValueAtTime(Math.max(0.001, vol), t + 0.025);
+    out.gain.setValueAtTime(Math.max(0.001, vol), t + dur * 0.7); out.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    route(out, 'room');
+    for (const q of [o, o2, lfo]) { q.start(t); q.stop(t + dur + 0.03); }
+    breath.start(t, Math.random() * 3); breath.stop(t + dur + 0.03);
+  }
+  // a gunshot in layers: the snap, the bark, the thump in your chest, the action working, and the echo off the hills
+  function shot(v, o) {
+    const d = r(0.94, 1.06);
+    burst(0.014, 6500 * d, o.crack * v, 'highpass', 0, 0, 'grit');
+    tone(2400 * d, 300, 0.02, 0.35 * o.crack * v, 0, 'square', 'grit');
+    burst(o.len, o.bright * d, o.bark * v);
+    burst(o.len * 0.6, o.bright * 0.32 * d, o.bark * 0.8 * v, 'bandpass', 0.003, 0.8);
+    tone(o.low * 2.1 * d, o.low * 0.45, o.len * 0.75, o.thump * v);
+    tone(o.low * d, o.low * 0.4, o.len * 1.2, o.thump * 0.6 * v, 0.004, 'triangle');
+    burst(o.tail, 1300, 0.20 * v, null, 0.02, 0, 'verb');
+    burst(o.tail * 1.5, 380, 0.22 * v, null, 0.07, 0, 'verb', brown);
+    burst(0.012, 4200 * d, 0.22 * v, 'bandpass', 0.045, 9);
+    ping(2900 * d, 0.05, 0.035 * v, 0.05);
+  }
   // a swell: noise that fades in, holds, then fades out (the roar of the fireball, the fire after)
   function swell(rise, dur, freq, vol, at, buf, to) {
     const t = ac.currentTime + (at || 0), s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
@@ -523,19 +595,20 @@ const Sound = (() => {
     s.connect(f); f.connect(g); route(g, to); s.start(t, Math.random() * 3); s.stop(t + dur + 0.05);
   }
   const play = {
-    ak: v => { burst(0.05, 5200, 0.9 * v, 'highpass'); burst(0.32, 3800, 1.1 * v); tone(150, 38, 0.18, 1.0 * v); burst(0.6, 600, 0.22 * v, null, 0.05); },
-    glock: v => { burst(0.04, 6000, 0.8 * v, 'highpass'); burst(0.2, 5200, 0.85 * v); tone(230, 60, 0.1, 0.7 * v); burst(0.4, 900, 0.14 * v, null, 0.04); },
-    click: v => { burst(0.03, 3200, 0.5 * v, 'bandpass', 0, 3); },
-    magout: v => { burst(0.06, 1800, 0.5 * v, 'bandpass', 0, 4); burst(0.05, 900, 0.35 * v, 'bandpass', 0.07, 4); },
-    magin: v => { burst(0.05, 1200, 0.6 * v, 'bandpass', 0, 5); burst(0.04, 2600, 0.5 * v, 'bandpass', 0.08, 5); },
-    rack: v => { burst(0.07, 2200, 0.55 * v, 'bandpass', 0, 3); burst(0.06, 3400, 0.65 * v, 'bandpass', 0.11, 3); },
-    hit: v => { tone(1900, 1400, 0.05, 0.28 * v, 0, 'square'); },
-    kill: v => { tone(900, 900, 0.08, 0.3 * v, 0, 'square'); tone(1350, 1350, 0.16, 0.3 * v, 0.08, 'square'); },
-    hurt: v => { tone(180, 70, 0.22, 0.7 * v, 0, 'sawtooth'); burst(0.1, 700, 0.5 * v); },
+    ak: v => shot(v, { crack: 1.1, bark: 1.2, bright: 3600, len: 0.30, low: 70, thump: 1.1, tail: 1.1 }),
+    glock: v => shot(v, { crack: 1.0, bark: 0.9, bright: 5200, len: 0.18, low: 105, thump: 0.75, tail: 0.7 }),
+    click: v => { burst(0.022, r(2900, 3500), 0.55 * v, 'bandpass', 0, 4); ping(r(2200, 2600), 0.06, 0.09 * v); },
+    magout: v => { burst(0.05, 1900, 0.55 * v, 'bandpass', 0, 4); ping(1150, 0.09, 0.12 * v, 0.02); burst(0.12, 2600, 0.18 * v, 'bandpass', 0.05, 1.2); burst(0.04, 800, 0.4 * v, 'bandpass', 0.1, 3); },
+    magin: v => { burst(0.07, 2400, 0.2 * v, 'bandpass', 0, 1.2); burst(0.045, 1200, 0.7 * v, 'bandpass', 0.07, 5); tone(180, 90, 0.07, 0.4 * v, 0.07); ping(1700, 0.1, 0.13 * v, 0.075); burst(0.03, 2800, 0.5 * v, 'bandpass', 0.15, 5); },
+    rack: v => { burst(0.09, 2000, 0.55 * v, 'bandpass', 0, 2); ping(1300, 0.07, 0.1 * v, 0.02); burst(0.05, 3500, 0.7 * v, 'bandpass', 0.12, 3); ping(2050, 0.12, 0.15 * v, 0.12); tone(210, 110, 0.06, 0.35 * v, 0.12); },
+    hit: v => { tone(1500, 900, 0.045, 0.32 * v, 0, 'triangle'); burst(0.03, 2400, 0.4 * v, 'bandpass', 0, 3); tone(260, 120, 0.05, 0.25 * v); },
+    headshot: v => { ping(1750, 0.45, 0.28 * v); burst(0.025, 6000, 0.4 * v, 'highpass'); tone(300, 90, 0.1, 0.35 * v); },
+    kill: v => { tone(200, 55, 0.22, 0.7 * v); burst(0.07, 1600, 0.35 * v, 'bandpass', 0, 2); [[880, 0.06], [1175, 0.13], [1760, 0.2]].forEach(([f, at]) => { tone(f, f, 0.16, 0.2 * v, at, 'triangle', 'room'); tone(f * 2, f * 2, 0.07, 0.05 * v, at, 'sine'); }); },
+    hurt: v => { burst(0.09, 800, 0.6 * v); tone(110, 50, 0.12, 0.55 * v); voice([[0, 190], [0.2, 110]], [[0, 'ah'], [0.2, 'uh']], 0.24, 0.35 * v); },
     chest: v => { tone(110, 260, 0.35, 0.25 * v, 0, 'sawtooth'); tone(660, 660, 0.1, 0.2 * v, 0.3, 'triangle'); tone(990, 990, 0.2, 0.2 * v, 0.4, 'triangle'); },
-    punch: v => { burst(0.1, 500, 0.8 * v); tone(120, 50, 0.1, 0.7 * v); },
-    shell: v => { tone(4200, 3600, 0.04, 0.07 * v, 0, 'triangle'); },
-    awp: v => { burst(0.07, 4800, 1.2 * v, 'highpass'); burst(0.7, 3000, 1.4 * v); tone(110, 26, 0.45, 1.3 * v); burst(1.4, 500, 0.35 * v, null, 0.12); tone(70, 30, 0.7, 0.4 * v, 0.1); },
+    punch: v => { burst(0.09, 650, 0.9 * v); tone(150, 48, 0.13, 0.85 * v); burst(0.03, 2600, 0.35 * v, 'bandpass', 0, 2); burst(0.06, 280, 0.6 * v, null, 0.02); },
+    shell: v => { for (const [at, k] of [[0.32, 1], [0.43, 0.55], [0.5, 0.3]]) ping(r(3800, 4600), 0.06, 0.06 * v * k, at + r(0, 0.03)); },
+    awp: v => { shot(1.25 * v, { crack: 1.2, bark: 1.35, bright: 3000, len: 0.62, low: 50, thump: 1.25, tail: 2.4 }); burst(2.2, 700, 0.35 * v, null, 0.22, 0, 'verb', brown); },
     boltup: v => { burst(0.04, 2600, 0.5 * v, 'bandpass', 0, 5); },
     boltback: v => { burst(0.09, 1700, 0.6 * v, 'bandpass', 0, 3); tone(900, 500, 0.05, 0.12 * v, 0.06, 'square'); },
     boltfwd: v => { burst(0.07, 2100, 0.65 * v, 'bandpass', 0, 3); burst(0.03, 3600, 0.5 * v, 'bandpass', 0.08, 5); },
@@ -549,9 +622,9 @@ const Sound = (() => {
     clink: v => { for (const [f, at] of [[2650, 0], [3420, 0.012], [4310, 0.02]]) tone(f, f * 0.995, 0.28, 0.14 * v, at, 'sine', 'room'); burst(0.025, 5200, 0.2 * v, 'highpass'); },
     pshh: v => { burst(0.03, 2400, 0.5 * v, 'bandpass', 0, 3); burst(0.38, 6500, 0.28 * v, 'highpass', 0.02); },
     gulp: v => { for (const at of [0, 0.34, 0.68]) { tone(240, 95, 0.12, 0.4 * v, at); burst(0.04, 600, 0.2 * v, 'bandpass', at, 3); } },
-    ahh: v => { burst(0.55, 1100, 0.2 * v, 'bandpass', 0, 2.5); tone(170, 120, 0.5, 0.18 * v, 0, 'sawtooth'); },
+    ahh: v => { burst(0.5, 1100, 0.12 * v, 'bandpass', 0, 2.5); voice([[0, 170], [0.5, 118]], [[0, 'ah'], [0.5, 'ah']], 0.55, 0.3 * v); },
     scratch: v => { for (const [at, f] of [[0, 2600], [0.09, 700], [0.18, 3200], [0.26, 500]]) burst(0.09, f, 0.7 * v, 'bandpass', at, 2); tone(900, 90, 0.4, 0.2 * v, 0, 'sawtooth'); },
-    yell: v => { tone(190, 330, 0.18, 0.4 * v, 0, 'sawtooth'); tone(330, 260, 0.55, 0.4 * v, 0.18, 'sawtooth'); tone(660, 520, 0.55, 0.12 * v, 0.18, 'square'); },
+    yell: v => { voice([[0, 170], [0.18, 330], [0.7, 250]], [[0, 'eh'], [0.2, 'ah'], [0.7, 'ah']], 0.75, 0.65 * v); },
     crash: v => {
       burst(0.12, 3800, 1.4 * v, 'highpass', 0, 0, 'grit'); burst(0.8, 1800, 1.4 * v, null, 0, 0, 'grit'); tone(95, 30, 0.8, 1.8 * v);
       for (let i = 0; i < 22; i++) { const at = Math.random() * 0.9; burst(0.02 + Math.random() * 0.05, 600 + Math.random() * 2600, 0.7 * v * (1 - at * 0.8), 'bandpass', at, 4, 'room'); }
@@ -559,18 +632,18 @@ const Sound = (() => {
     },
     splash: v => { burst(1.1, 2600, 0.9 * v, null, 0, 0, 'room'); burst(0.7, 5200, 0.25 * v, 'highpass', 0.08); tone(130, 50, 0.25, 0.5 * v); },
     snore: v => { for (let i = 0; i < 14; i++) burst(0.06, 160 + i * 9, 0.55 * v * Math.sin(Math.PI * (i + 0.5) / 14), 'lowpass', i * 0.055, 5); tone(620, 900, 0.5, 0.05 * v, 1.0, 'sine'); },
-    bonk: v => { tone(620, 190, 0.13, 0.8 * v, 0, 'triangle'); tone(1240, 500, 0.05, 0.25 * v, 0, 'square'); burst(0.04, 900, 0.5 * v); },
-    thud: v => { tone(95, 40, 0.2, 0.9 * v); burst(0.18, 420, 0.6 * v); },
+    bonk: v => { tone(560 * r(0.92, 1.08), 175, 0.14, 0.85 * v, 0, 'triangle'); tone(1180, 460, 0.045, 0.3 * v, 0, 'square'); burst(0.035, 1100, 0.6 * v, 'bandpass', 0, 2); tone(310, 296, 0.22, 0.3 * v, 0.01, 'sine', 'room'); tone(120, 55, 0.1, 0.5 * v); },
+    thud: v => { tone(105 * r(0.9, 1.1), 36, 0.22, 0.95 * v); burst(0.16, 430, 0.65 * v); burst(0.05, 1700, 0.14 * v, 'bandpass', 0.005, 1); },
     boing: v => { tone(160, 640, 0.18, 0.35 * v, 0, 'sawtooth'); tone(640, 300, 0.25, 0.3 * v, 0.17, 'sine'); tone(300, 480, 0.2, 0.2 * v, 0.4, 'sine'); },
     chomp: v => { burst(0.05, 1500, 0.8 * v, 'bandpass', 0, 2); tone(2400, 1700, 0.09, 0.18 * v, 0.02, 'square'); },
-    huh: v => { tone(150, 120, 0.14, 0.3 * v, 0, 'sawtooth'); tone(130, 270, 0.22, 0.3 * v, 0.16, 'sawtooth'); },
-    ooga: v => { tone(190, 130, 0.22, 0.4 * v, 0, 'sawtooth'); tone(150, 260, 0.14, 0.4 * v, 0.26, 'sawtooth'); tone(260, 190, 0.34, 0.4 * v, 0.4, 'sawtooth'); },
+    huh: v => { voice([[0, 135], [0.14, 130], [0.34, 235]], [[0, 'mm'], [0.14, 'uh'], [0.34, 'uh']], 0.38, 0.45 * v); },
+    ooga: v => { voice([[0, 190], [0.22, 135]], [[0, 'oo'], [0.22, 'oo']], 0.26, 0.55 * v); voice([[0, 160], [0.12, 270], [0.4, 185]], [[0, 'uh'], [0.1, 'ah'], [0.4, 'ah']], 0.46, 0.6 * v, 0.27); },
     tada: v => { tone(523, 523, 0.12, 0.25 * v, 0, 'triangle'); tone(659, 659, 0.12, 0.25 * v, 0.1, 'triangle'); tone(784, 784, 0.12, 0.25 * v, 0.2, 'triangle'); tone(1046, 1046, 0.45, 0.3 * v, 0.3, 'triangle'); },
-    whoosh: v => { burst(0.3, 900, 0.35 * v, 'bandpass', 0, 1.2); },
-    pop: v => { tone(300, 900, 0.07, 0.25 * v); },
-    hup: v => { tone(170, 260, 0.11, 0.25 * v, 0, 'sawtooth'); burst(0.14, 900, 0.18 * v, 'bandpass', 0, 1.5); },
-    land: v => { tone(110, 45, 0.14, 0.55 * v); burst(0.12, 500, 0.4 * v); },
-    ugh: v => { tone(210, 80, 0.42, 0.35 * v, 0, 'sawtooth'); },
+    whoosh: v => { swell(0.09, 0.3, 2600, 0.3 * v, 0); burst(0.28, 950, 0.25 * v, 'bandpass', 0, 1.4); },
+    pop: v => { tone(280, 980, 0.07, 0.3 * v); burst(0.02, 2000, 0.25 * v, 'bandpass', 0, 3); },
+    hup: v => { voice([[0, 160], [0.12, 245]], [[0, 'uh'], [0.1, 'ah']], 0.13, 0.35 * v); burst(0.14, 900, 0.14 * v, 'bandpass', 0, 1.5); },
+    land: v => { tone(115, 40, 0.15, 0.65 * v); burst(0.13, 520, 0.45 * v); burst(0.09, 2400, 0.12 * v, 'bandpass', 0.01, 0.8); },
+    ugh: v => { voice([[0, 215], [0.4, 82]], [[0, 'ah'], [0.18, 'uh'], [0.4, 'mm']], 0.45, 0.55 * v); },
     zoom: v => { tone(140, 1500, 0.55, 0.22 * v, 0, 'sawtooth'); burst(0.7, 1600, 0.5 * v, 'bandpass', 0, 0.8); },
     screech: v => { tone(1500, 900, 0.24, 0.2 * v, 0, 'square'); burst(0.25, 2800, 0.45 * v, 'bandpass', 0, 4); },
     pump: (v, k) => { const f = 260 + 120 * (k || 0); burst(0.2, 1200 + 300 * (k || 0), 0.45 * v, 'bandpass', 0, 2); tone(f, f * 1.7, 0.17, 0.2 * v, 0.02, 'triangle'); },
@@ -631,10 +704,53 @@ const Sound = (() => {
       }
     },
     ring: v => { tone(3300, 3300, 3.2, 0.045 * v, 0.25, 'sine', 'clear'); },
+    // under your feet. k: 0 the baseplate, 1 sand, 2 boards, 3 stone, 4 water, 5 grass
+    step: (v, k) => {
+      const d = r(0.85, 1.15);
+      if (k === 1) { burst(0.11, 2800 * d, 0.3 * v, 'bandpass', 0, 0.7); burst(0.07, 300, 0.45 * v); }
+      else if (k === 2) { tone(150 * d, 85, 0.09, 0.55 * v, 0, 'triangle'); burst(0.05, 650 * d, 0.45 * v, 'bandpass', 0, 3); tone(300 * d, 280, 0.08, 0.09 * v, 0, 'sine', 'room'); }
+      else if (k === 3) { burst(0.035, 2300 * d, 0.4 * v, 'bandpass', 0, 1.6); burst(0.08, 380, 0.5 * v, null, 0, 0, 'room'); }
+      else if (k === 4) { burst(0.22, 2400 * d, 0.4 * v, null, 0, 0, 'room'); burst(0.12, 5200, 0.1 * v, 'highpass', 0.02); tone(r(300, 600), 900, 0.05, 0.08 * v, 0.05); }
+      else if (k === 5) { burst(0.09, 1400 * d, 0.28 * v, 'bandpass', 0, 0.8); burst(0.07, 6200, 0.07 * v, 'highpass', 0.01); burst(0.07, 320, 0.45 * v); }
+      else { tone(120 * d, 60, 0.07, 0.35 * v); burst(0.04, 1500 * d, 0.3 * v, 'bandpass', 0, 1.4); }
+    },
+    swing: v => { swell(0.07, 0.2, 3200, 0.25 * v, 0); burst(0.18, 700, 0.25 * v, 'bandpass', 0.02, 2); },
+    nope: v => { for (const at of [0, 0.13]) tone(150, 130, 0.1, 0.22 * v, at, 'square'); },
+    grab: v => { burst(0.09, 2600, 0.25 * v, 'bandpass', 0, 0.9); burst(0.03, 900, 0.4 * v, 'bandpass', 0.06, 3); tone(520, 780, 0.09, 0.2 * v, 0.07, 'triangle'); },
+    rustle: v => { for (let i = 0; i < 5; i++) burst(0.045, r(1200, 3600), 0.2 * v, 'bandpass', i * 0.035 + r(0, 0.02), 1.2); },
+    // a better colour rings brighter and longer; k is the rarity
+    rarity: (v, k) => {
+      k = k || 0;
+      burst(0.05, 1800, 0.35 * v, 'bandpass', 0, 3); ping(900, 0.1, 0.1 * v);
+      const notes = [0, 4, 7, 12, 16, 19, 24];
+      for (let i = 0; i < k + 2; i++) { const f = 523 * Math.pow(2, notes[i] / 12); tone(f, f, 0.2 + k * 0.06, 0.16 * v, 0.07 + i * 0.065, 'triangle', 'room'); tone(f * 2, f * 2, 0.12, 0.04 * v, 0.07 + i * 0.065, 'sine', 'room'); }
+      if (k >= 4) burst(0.9, 8000, 0.09 * v, 'highpass', 0.15, 0, 'verb');
+      if (k === 5) { for (let i = 0; i < 14; i++) tone(r(2000, 5200), r(2000, 5200), 0.12, 0.05 * v, 0.2 + i * 0.05, 'sine', 'verb'); tone(110, 55, 0.7, 0.35 * v, 0.07); }
+    },
+    exoticshot: v => { tone(1900, 140, 0.35, 0.22 * v, 0, 'sawtooth', 'room'); tone(2850, 220, 0.3, 0.1 * v, 0.01, 'square', 'room'); ping(2600, 0.35, 0.08 * v, 0.02, 'verb'); },
+    chestopen: v => { tone(130, 70, 0.14, 0.5 * v, 0, 'triangle'); burst(0.1, 600, 0.5 * v, 'bandpass', 0, 2); [1047, 1319, 1568, 2093, 2637].forEach((f, i) => { tone(f, f, 0.4, 0.09 * v, 0.08 + i * 0.055, 'sine', 'room'); tone(f * 1.006, f * 1.006, 0.3, 0.05 * v, 0.1 + i * 0.055, 'triangle', 'room'); }); burst(0.7, 7500, 0.07 * v, 'highpass', 0.1, 0, 'verb'); },
+    heal: v => { [392, 523, 659, 784].forEach((f, i) => tone(f, f * 1.01, 0.35, 0.12 * v, i * 0.06, 'sine', 'room')); burst(0.5, 6500, 0.04 * v, 'highpass', 0.05, 0, 'verb'); },
+    // the vest and its plates
+    plateout: v => { ping(520, 0.18, 0.16 * v); burst(0.07, 1700, 0.28 * v, 'bandpass', 0, 1.2); },
+    clank: v => { ping(430 * r(0.95, 1.05), 0.7, 0.32 * v, 0, 'room'); burst(0.04, 2200, 0.5 * v, 'bandpass', 0, 2); },
+    velcro: v => { let at = 0; for (let i = 0; i < 20; i++) { at += 0.009 + Math.random() * 0.004; burst(0.012, 1800 + i * 140 + Math.random() * 700, 0.24 * v, 'bandpass', at, 1.8); } },
+    platein: v => { tone(150, 62, 0.14, 0.75 * v); burst(0.09, 900, 0.5 * v, 'bandpass', 0, 2); ping(700, 0.22, 0.14 * v, 0.02); burst(0.03, 3200, 0.5 * v, 'bandpass', 0.11, 5); },
+    vestbreak: v => { burst(0.06, 4800, 0.9 * v, 'highpass', 0, 0, 'grit'); ping(620, 0.35, 0.28 * v, 0, 'room'); for (let i = 0; i < 9; i++) ping(r(900, 3400), 0.07, 0.07 * v, r(0.03, 0.35)); tone(180, 55, 0.2, 0.5 * v); },
+    oogaq: v => { voice([[0, 175], [0.2, 150]], [[0, 'oo'], [0.2, 'oo']], 0.24, 0.65 * v); voice([[0, 160], [0.1, 190], [0.42, 360]], [[0, 'uh'], [0.1, 'ah'], [0.42, 'ah']], 0.48, 0.65 * v, 0.26); },
+    // out and about
+    drip: (v, k) => { const f = 900 + 900 * (k || 0); tone(f, f * 2.1, 0.05, 0.28 * v, 0, 'sine', 'verb'); },
+    bird: (v, k) => { const f = 2300 + 1500 * (k || 0), n = 2 + Math.floor(Math.random() * 4); for (let i = 0; i < n; i++) tone(f * r(0.9, 1.1), f * r(1.15, 1.5), r(0.05, 0.11), 0.09 * v, i * r(0.09, 0.13), 'sine', 'room'); },
+    gull: v => { for (let i = 0; i < 3; i++) { tone(1500, 2100, 0.07, 0.05 * v, i * 0.28, 'sawtooth', 'room'); tone(2100, 1150, 0.17, 0.08 * v, i * 0.28 + 0.07, 'sawtooth', 'room'); } },
+    // the end of a match
+    victory: v => { [[523, 0], [523, 0.14], [523, 0.28], [698, 0.42], [784, 0.74], [1047, 0.96]].forEach(([f, at], i) => { const d = i > 3 ? 0.5 : 0.13; tone(f, f, d, 0.2 * v, at, 'sawtooth', 'room'); tone(f * 1.5, f * 1.5, d, 0.1 * v, at, 'triangle', 'room'); tone(f / 2, f / 2, d, 0.25 * v, at); }); burst(1.6, 7000, 0.12 * v, 'highpass', 0.96, 0, 'verb'); voice([[0, 200], [0.3, 140]], [[0, 'oo'], [0.3, 'oo']], 0.34, 0.5 * v, 1.5); voice([[0, 170], [0.2, 300], [0.7, 220]], [[0, 'uh'], [0.15, 'ah'], [0.7, 'ah']], 0.75, 0.55 * v, 1.86); },
+    lose: v => { [[330, 0], [311, 0.34], [294, 0.68], [277, 1.02]].forEach(([f, at], i) => { tone(f, i === 3 ? f * 0.82 : f * 0.98, i === 3 ? 0.9 : 0.3, 0.16 * v, at, 'sawtooth', 'room'); tone(f / 2, f / 2.1, i === 3 ? 0.9 : 0.3, 0.2 * v, at, 'triangle'); }); },
+    // the menu
+    uihover: v => { tone(900, 1100, 0.035, 0.07 * v, 0, 'triangle'); },
+    uiclick: v => { tone(220, 140, 0.07, 0.35 * v, 0, 'triangle'); burst(0.025, 1600, 0.3 * v, 'bandpass', 0, 4); tone(660, 990, 0.06, 0.1 * v, 0.03, 'sine'); },
     ting: v => { tone(2100, 2100, 0.5, 0.25 * v, 0, 'sine'); tone(3150, 3150, 0.35, 0.14 * v, 0.04, 'sine'); },
-    mp5: v => { burst(0.035, 5600, 0.7 * v, 'highpass'); burst(0.18, 3200, 0.8 * v); tone(190, 55, 0.1, 0.6 * v); burst(0.3, 700, 0.12 * v, null, 0.04); },
-    p90: v => { burst(0.03, 6800, 0.75 * v, 'highpass'); burst(0.14, 4400, 0.7 * v); tone(260, 80, 0.07, 0.5 * v); burst(0.25, 1100, 0.1 * v, null, 0.03); },
-    shotgun: v => { burst(0.06, 4200, 1.2 * v, 'highpass'); burst(0.55, 2400, 1.5 * v); tone(100, 28, 0.35, 1.4 * v); burst(1.0, 420, 0.4 * v, null, 0.1); },
+    mp5: v => shot(0.85 * v, { crack: 0.9, bark: 0.9, bright: 3300, len: 0.17, low: 95, thump: 0.75, tail: 0.6 }),
+    p90: v => shot(0.8 * v, { crack: 1.0, bark: 0.75, bright: 5200, len: 0.13, low: 125, thump: 0.6, tail: 0.5 }),
+    shotgun: v => { shot(1.2 * v, { crack: 1.2, bark: 1.5, bright: 2500, len: 0.5, low: 55, thump: 1.3, tail: 1.6 }); for (let i = 0; i < 8; i++) burst(0.015, r(1500, 5000), 0.25 * v, 'bandpass', r(0.01, 0.09), 3); },
     thoomp: v => { tone(210, 55, 0.2, 1.2 * v); burst(0.12, 900, 0.8 * v); burst(0.25, 500, 0.35 * v, 'bandpass', 0.05, 2); },
     boom: v => { burst(0.04, 6000, 1.4 * v, 'highpass', 0, 0, 'grit'); burst(0.8, 2600, 1.6 * v, null, 0, 0, 'grit'); tone(110, 28, 0.6, 1.8 * v); burst(1.8, 700, 0.6 * v, null, 0.05, 0, 'verb'); },
     pumpback: v => { burst(0.08, 1300, 0.8 * v, 'bandpass', 0, 3); tone(500, 300, 0.05, 0.12 * v, 0.03, 'square'); },
@@ -642,9 +758,9 @@ const Sound = (() => {
     shellin: v => { burst(0.04, 1500, 0.6 * v, 'bandpass', 0, 5); burst(0.03, 3000, 0.35 * v, 'bandpass', 0.05, 6); },
     vest: v => { burst(0.16, 900, 0.5 * v, 'bandpass', 0, 1.5); burst(0.1, 2400, 0.35 * v, 'bandpass', 0.14, 3); tone(300, 600, 0.12, 0.2 * v, 0.28, 'triangle'); },
     thwack: v => { tone(260, 90, 0.1, 0.7 * v, 0, 'triangle'); burst(0.07, 1400, 0.6 * v, 'bandpass', 0, 2); },
-    hmph: v => { tone(150, 105, 0.17, 0.32 * v, 0, 'sawtooth'); burst(0.13, 480, 0.22 * v, 'bandpass', 0, 1.6); },     // a short satisfied grunt
-    creak: v => { tone(340, 250, 0.42, 0.06 * v, 0, 'sawtooth'); tone(352, 262, 0.42, 0.05 * v, 0.01, 'sawtooth'); burst(0.4, 1100, 0.1 * v, 'bandpass', 0, 6); },   // an old lid
-    knock: v => { tone(210, 150, 0.07, 0.55 * v, 0, 'triangle'); burst(0.05, 700, 0.45 * v, 'bandpass', 0, 2.5); },   // knuckles on wood
+    hmph: v => { voice([[0, 155], [0.17, 105]], [[0, 'mm'], [0.17, 'mm']], 0.19, 0.45 * v); burst(0.13, 480, 0.22 * v, 'bandpass', 0, 1.6); },
+    creak: v => { let at = 0; for (let i = 0; i < 17; i++) { at += 0.018 + i * 0.0011; tone(r(300, 380) + i * 9, 260, 0.02, 0.07 * v, at, 'sawtooth'); burst(0.014, 900 + i * 60, 0.12 * v, 'bandpass', at, 8); } tone(342, 268, 0.42, 0.05 * v, 0, 'sawtooth'); },
+    knock: v => { tone(215, 145, 0.08, 0.6 * v, 0, 'triangle'); burst(0.05, 720, 0.5 * v, 'bandpass', 0, 3); tone(430, 400, 0.12, 0.18 * v, 0, 'sine', 'room'); },
     sniff: v => {                                     // snf snf: two quick breathy pulls through the nose
       for (const at of [0, 0.15]) { swell(0.05, 0.11, 3800, 0.22 * v, at); burst(0.08, 2400, 0.12 * v, 'bandpass', at + 0.01, 1.4); }
     },
@@ -663,8 +779,17 @@ const Sound = (() => {
   return {
     init, music, loop, loopsOff,
     hush(on) { if (hushed !== on) { hushed = on; if (ac) level(); } },
-    // p: left/right, -1 to 1 (optional)
-    play(name, vol, k, p) { if (ac && !muted && ac.state === 'running') { pan = p || 0; try { play[name](vol === undefined ? 1 : vol, k); } finally { pan = 0; } } },
+    // p: left/right, -1 to 1. d: how far away in metres. both optional
+    play(name, vol, k, p, d) {
+      if (!ac || muted || ac.state !== 'running') return;
+      pan = p || 0;
+      if (d > 8 && name !== 'boom' && name !== 'explode') {
+        damp = ac.createBiquadFilter(); damp.type = 'lowpass'; damp.frequency.value = clamp(16000 / (1 + (d - 8) / 14), 450, 16000); damp.connect(master);
+        if (d > 35) damp.connect(verb);
+      }
+      try { play[name](vol === undefined ? 1 : vol, k); } finally { pan = 0; damp = null; }
+    },
+    has: name => !!play[name],
     toggle() { muted = !muted; if (ac) level(); return muted; }
   };
 })();

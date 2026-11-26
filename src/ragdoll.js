@@ -206,7 +206,7 @@ function ragsStep(dt) {
   dragStep();
   for (const f of fighters) {
     if (f.dead < 0 || f.gone) { f.rag = null; continue; }
-    if (!f.rag) { ragKnock(f); continue; }
+    if (!f.rag) { ensurePosed(f); ragKnock(f); continue; }
     // while someone is handling him (looting, balloons), the animation owns the body; let go and he falls from there
     if (f.scriptW > 0.01) { f.rag.held = true; continue; }
     if (f.rag.held) { ragStart(f); f.rag.held = false; }
@@ -254,7 +254,7 @@ function dragStep() {
 function rayBody(origin, dir, maxT) {
   let best = null;
   for (const f of fighters) {
-    if (!f.rag || f.dead < 0 || f.gone || f.scriptW > 0.5) continue;
+    if (!f.rag || f.dead < 0 || f.gone || f.scriptW > 0.5 || Math.hypot(f.pos[0] - origin[0], f.pos[2] - origin[2]) > maxT + 4) continue;
     const P = f.rag.p, def = ragSetup();
     for (let i = 0; i < P.length; i++) {
       const oc = V.sub(P[i], origin), t = V.dot(oc, dir);

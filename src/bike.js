@@ -29,7 +29,7 @@ function bikeNear(p) {
   let best = null, bestD = 1.2;
   for (const b of bikes) {
     const d = Math.hypot(b.p[0] - p[0], b.p[2] - p[2]);
-    if (d < bestD && Math.abs(b.p[1] - p[1]) < 1.2) { bestD = d; best = b; }
+    if (!b.rider && d < bestD && Math.abs(b.p[1] - p[1]) < 1.2) { bestD = d; best = b; }
   }
   return best;
 }
@@ -53,6 +53,7 @@ const pedalAt = (b, s) => {
 function drawBikes(prog, textured) {
   const at = BIKE.at;
   for (const b of bikes) {
+    if (Math.hypot(b.p[0] - player.pos[0], b.p[2] - player.pos[2]) > (textured ? 90 : 18)) continue;
     if (textured) {
       gl.uniform1i(prog.u.uHasTex, 1);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, BIKE.tex);
@@ -156,8 +157,9 @@ const standing = x => ({
 const MOUNT = 0.9, OFF = 0.55;
 function startRide(b) {
   const f = player;
-  if (f.dead >= 0 || f.ride || looting) return;
+  if (f.dead >= 0 || f.ride || looting || b.rider) return;
   const held = f.weapon;
+  f.hand = null; f.use = null; f.thing = null; f.headTilt = null;
   equip(f, null);
   f.holdC4 = false; f.plantT = -1; f.carry = null; f.reload = -1; f.cycle = -1; f.inspect = -1; f.jump = -1; f.air = 0; f.punch = -1; f.ads = 0; f.sprintW = 0; f.crouch = false; f.legYaw = 0; f.speed = 0;
   game.aimToggle = false; mouse.fire = mouse.aim = mouse.pressed = false;
@@ -435,6 +437,7 @@ function rideStep(dt) {
 // springs: the squash, and parked bikes tipping onto their sides
 function bikesStep(dt) {
   for (const b of bikes) {
+    if (b.rider) continue;                                     // someone else is on it
     b.sqV += (-b.sq * 260 - b.sqV * 13) * dt; b.sq = clamp(b.sq + b.sqV * dt, -0.2, 0.3);
     const ridden = player.ride && player.ride.b === b;
     if (ridden && player.ride.mode === 'ride') continue;

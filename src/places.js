@@ -132,7 +132,7 @@ function reachMap() {
 }
 
 // ---------------------------------------------------------------- chests
-const CHEST_COUNT = 130;
+const CHEST_COUNT = 230;                                     // a hundred cavemen need something to find
 // x, z, radius, how many: the places worth searching. whatever is left over lands anywhere
 const area = (name, radius, count) => [SPOTS[name][0], SPOTS[name][1], radius, count];
 const CHEST_AREAS = [
@@ -152,30 +152,26 @@ function goodChestSpot(x, z, taken) {
   for (const dz of [0, 0.9]) if (solidsNear(x, z + dz).some(o => edgeOf(o, x, z + dz).d < 0.9)) return false;
   return taken.every(c => Math.hypot(c.pos[0] - x, c.pos[2] - z) > 5);
 }
-const newChest = (gun, x, z) => ({ pos: [x, groundAt(x, z), z], gun, open: 0, openV: 0, wobble: 0, t: -1, forced: false });
+// loot: rolled when somebody opens it
+const newChest = (x, z) => ({ pos: [x, groundAt(x, z), z], loot: null, claimed: null, open: 0, openV: 0, wobble: 0, t: -1, forced: false });
 let plateChests = null;
 // the baseplate keeps its three; the island gets a fresh random scatter each visit
 function setChests(name) {
   if (!plateChests) plateChests = chests.slice();
   chests.length = 0;
   if (name !== 'island') {
-    for (const c of plateChests) { c.t = -1; c.open = c.openV = c.wobble = 0; c.forced = false; chests.push(c); }
+    for (const c of plateChests) { c.t = -1; c.open = c.openV = c.wobble = 0; c.forced = false; c.loot = null; c.claimed = null; chests.push(c); }
     return;
   }
-  // what a chest holds, and how often
-  const odds = [['glock', 0.30], ['ak', 0.20], ['mp5', 0.14], ['shotgun', 0.11], ['p90', 0.09], ['awp', 0.08], ['vest', 0.05], ['mgl', 0.03]];
-  const gun = () => { let r = Math.random(); for (const [id, share] of odds) if ((r -= share) < 0) return id; return 'glock'; };
-  // TEMPORARY, for testing: one chest of everything in front of the "something cool here" sign
-  [...SLOTS, 'vest'].forEach((id, k) => chests.push(newChest(id, (k - SLOTS.length / 2) * 1.35, 2.6)));
-  const tryAt = (x, z) => { if (goodChestSpot(x, z, chests)) chests.push(newChest(gun(), x, z)); };
-  // one or two at the back of every cave, with better odds of the rifles
+  const tryAt = (x, z) => { if (goodChestSpot(x, z, chests)) chests.push(newChest(x, z)); };
+  // one or two at the back of every cave
   for (const c of CAVES) {
-    const mid = c.x + c.bend, z = c.z - CAVE.end + 2.6, rare = () => (Math.random() < 0.45 ? 'awp' : 'ak');
-    chests.push(newChest(rare(), mid + rand(-0.4, 0.4), z));
-    if (Math.random() < 0.5) chests.push(newChest(rare(), mid + (Math.random() < 0.5 ? -2.2 : 2.2), z + 1.8));
+    const mid = c.x + c.bend, z = c.z - CAVE.end + 2.6;
+    chests.push(newChest(mid + rand(-0.4, 0.4), z));
+    if (Math.random() < 0.5) chests.push(newChest(mid + (Math.random() < 0.5 ? -2.2 : 2.2), z + 1.8));
   }
   for (const [ax, az, radius, count] of CHEST_AREAS) {
-    const want = Math.min(CHEST_COUNT, chests.length + count);
+    const want = Math.min(CHEST_COUNT, chests.length + Math.round(count * 1.4));
     for (let k = 0; k < count * 80 && chests.length < want; k++) {
       const a = rand(0, Math.PI * 2), d = Math.sqrt(Math.random()) * radius;
       tryAt(ax + Math.sin(a) * d, az + Math.cos(a) * d);

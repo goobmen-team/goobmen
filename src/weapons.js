@@ -80,9 +80,9 @@ function reloadPose(f, g, G, rest, chest) {
 
 // the bits of a reload that happen once: sounds, the "ooo?", the dropped magazine
 function reloadCues(f, g, t0, t) {
-  const loud = f.isPlayer ? 0.9 : 0.2, crossed = at => t0 < at && t >= at, mag = g.item.kind === 'mag';
+  const loud = f.isPlayer ? 0.9 : clamp(1 - V.len(V.sub(f.pos, player.pos)) / 20, 0, 1) * 0.35, crossed = at => t0 < at && t >= at, mag = g.item.kind === 'mag';
   const near = f.isPlayer || V.len(V.sub(f.pos, player.pos)) < 18;
-  const cue = (at, s, v) => { if (crossed(at)) Sound.play(s, loud * (v || 1)); };
+  const cue = (at, s, v) => { if (crossed(at) && loud > 0.01) Sound.play(s, loud * (v || 1)); };
   if (mag) {
     cue(RL.reach + 0.02, 'magout');
     if (crossed(RL.eye) && near) { Sound.play('ooo', f.isPlayer ? 0.7 : 0.3, 0.2); popWord(V.add(bonePos(f, 'head'), [0, 0.42, 0]), 'ooo?', g.reload * (RL.peer - RL.eye) + 0.2); }
@@ -150,9 +150,9 @@ function tossItem(f, g) {
 const grenades = [];
 const BLAST_REACH = 4.5;
 // lob it so that it lands on what the crosshair is on
-function launchGrenade(f, from, to) {
+function launchGrenade(f, from, to, rarity) {
   const T = clamp(V.len(V.sub(to, from)) / 24, 0.06, 2.2), d = V.sub(to, from);
-  grenades.push({ p: from.slice(), v: [d[0] / T, d[1] / T + 4.9 * T, d[2] / T], owner: f, life: 5, puff: 0 });
+  grenades.push({ p: from.slice(), v: [d[0] / T, d[1] / T + 4.9 * T, d[2] / T], owner: f, life: 5, puff: 0, rarity: rarity || 0 });
 }
 function grenadesStep(dt) {
   for (let i = grenades.length - 1; i >= 0; i--) {
@@ -162,16 +162,16 @@ function grenadesStep(dt) {
     if ((hit.kind !== 'none' && hit.t <= len + 0.04) || n.life <= 0) {
       grenades.splice(i, 1);
       const at = n.life <= 0 ? n.p : hit.p;
-      grenadeBoom([at[0], Math.max(at[1], floorAt(at[0], at[2]) + 0.12), at[2]], n.owner);
+      grenadeBoom([at[0], Math.max(at[1], floorAt(at[0], at[2]) + 0.12), at[2]], n.owner, n.rarity);
       continue;
     }
     n.p = V.add(n.p, move);
     if ((n.puff -= dt) <= 0) { n.puff = 0.025; fx(n.p, [rand(-0.2, 0.2), rand(0, 0.3), rand(-0.2, 0.2)], 0.5, 0.05, [0.7, 0.7, 0.72, 0.35], -0.2, 0.25); }
   }
 }
-function grenadeBoom(c, owner) {
+function grenadeBoom(c, owner, rarity) {
   const d = V.len(V.sub(c, cameraEye().eye)), floor = floorAt(c[0], c[2]);
-  Sound.play('boom', clamp(1.2 - d / 55, 0.15, 1));
+  Sound.play('boom', clamp(1.2 - d / 55, 0.15, 1), 0, 0, d);
   cam.shake = Math.max(cam.shake, clamp(1.4 - d / 14, 0, 1));
   for (let i = 0; i < 5; i++) fx(V.add(c, ball(0.15)), ball(1), rand(0.08, 0.18), rand(0.7, 1.1), [1, 0.95, 0.8, 1], 0, 3, true);
   for (let i = 0; i < 55; i++) { const v = ball(rand(1.5, 5)); v[1] = Math.abs(v[1]) * 0.8 + rand(0.5, 2); fx(V.add(c, ball(0.2)), v, rand(0.3, 0.85), rand(0.2, 0.5), Math.random() < 0.4 ? [1, 0.82, 0.4, 1] : [1, 0.42, 0.06, 0.95], -1.8, 0.8, true); }
@@ -182,11 +182,12 @@ function grenadeBoom(c, owner) {
   while (marks.length > 120) marks.shift();
   shoveProps(c, BLAST_REACH, 5);                                      // loose junk goes flying
   for (const v of [player, ...bots]) {
+    if (v.gone) continue;
     const dd = V.len(V.sub(V.add(v.pos, [0, 0.9, 0]), c));
     if (v.dead >= 0) { if (v.rag && !v.gone) ragBlast(v, c, BLAST_REACH + 1); continue; }   // and so do bodies
     if (dd >= BLAST_REACH) continue;
-    const mine = v === owner, amount = Math.round((20 + 130 * (1 - dd / BLAST_REACH)) * (mine ? 0.4 : 1));
-    damage(v, amount, { pos: c, isPlayer: owner.isPlayer && !mine, blast: true }, false);
+    const mine = v === owner, amount = Math.round((20 + 130 * (1 - dd / BLAST_REACH)) * (mine ? 0.4 : RARITY[rarity || 0].mult * (!owner.isPlayer && v.isPlayer ? 0.6 : 1)));
+    damage(v, amount, { pos: c, isPlayer: owner.isPlayer && !mine, blast: true }, false, rarity === EXOTIC && !mine);
     if (owner.isPlayer && !mine) { Sound.play('hit', 0.8); game.marker = 0.18; ui.marker.classList.toggle('head', v.dead >= 0); }
   }
 }
@@ -217,10 +218,10 @@ const pouches = (() => {
 })();
 // called while the skinned program is drawing this fighter
 function drawWornVest(prog, f) {
-  if (!(f.vest > 0) || (f.script && f.script.vest && f.scriptW > 0.3)) return;
+  if (!(f.vest > 0 || f.hasVest) || (f.script && f.script.vest && f.scriptW > 0.3)) return;
   const skin = Rig.prims.find(p => p.name === 'skin');
   gl.uniform1i(prog.u.uHasTex, 0); gl.uniform1i(prog.u.uHasNormal, 0); gl.uniform3fv(prog.u.uTint, [1, 1, 1]); gl.uniform1f(prog.u.uRough, 0.75);
-  gl.uniform3fv(prog.u.uColor, OLIVE); gl.uniform1i(prog.u.uVest, 1); gl.uniform1f(prog.u.uInflate, 0.028);
+  gl.uniform3fv(prog.u.uColor, f.vest > 0 ? OLIVE : BLACK); gl.uniform1i(prog.u.uVest, 1);      // a broken one hangs there dark gl.uniform1f(prog.u.uInflate, 0.028);
   gl.bindVertexArray(skin.vao); gl.drawElements(gl.TRIANGLES, skin.count, gl.UNSIGNED_SHORT, 0);
   gl.uniform1i(prog.u.uVest, 0); gl.uniform1f(prog.u.uInflate, 0);
   gl.uniform3fv(prog.u.uColor, BLACK);

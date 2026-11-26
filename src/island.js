@@ -379,7 +379,7 @@ function setMap(name, low) {
   setBikes(name);
   grassNow = true;
   for (const q of pops) q.el.remove();
-  for (const list of [pops, props, stars, particles, tracers, shells, flashes, marks]) list.length = 0;
+  for (const list of [pops, props, stars, particles, tracers, shells, flashes, marks, floorLoot]) list.length = 0;
   player.yaw = Math.PI; cam.yaw = 0; cam.pitch = 0.12;
   player.hurt = 0; player.wet = 0; player.reload = -1; player.cycle = -1; game.hurtFade = 0;
   respawnPlayer();

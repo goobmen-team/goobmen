@@ -726,12 +726,12 @@ function holdC4(f) {
   if (f.holdC4) return;
   equip(f, null); f.holdC4 = true; f.equip = 1; Sound.play('magin', 0.5); hudDirty = true;
 }
-function giveC4(f, n) { f.c4 = Math.min(C4_MAX, (f.c4 || 0) + (n || 1)); hudDirty = true; }
+function giveC4(f, n) { takeItem(f, { t: 'c4', n: n || 1 }, false); }
 // where it goes: a body's belly if there is one close in front, otherwise the ground in front of you
 function plantSpot(f) {
   const fwd = [Math.sin(f.yaw), 0, Math.cos(f.yaw)], at = V.mad(f.pos, fwd, 0.74);
   for (const b of bots) {
-    if (b.dead < 1 || b.send) continue;
+    if (b.dead < 1 || b.send || b.gone) continue;
     const belly = bellyTop(b);
     if (Math.hypot(belly[0] - at[0], belly[2] - at[2]) < 0.8) return { p: belly, body: b };
   }
@@ -795,7 +795,7 @@ function c4Step(f, dt) {
   if (t >= PLANT) {
     f.plantT = -1; f.script = null; f.scriptW = 0; f.plantBomb = null;
     if (!f.c4) f.holdC4 = false;
-    hudDirty = true;
+    syncC4(f);
   }
 }
 function plantedStep(dt) {
@@ -832,7 +832,7 @@ function sendsStep(dt) {
     if (s.t >= s.end) {
       const f = s.f;
       endSend(f);
-      if (f.isPlayer) respawnPlayer(); else spawnBot(f, bots.indexOf(f));
+      if (!f.isPlayer) spawnBot(f, bots.indexOf(f)); else if (royaleOn()) f.gone = true; else respawnPlayer();   // on the island there is no coming back
     }
   }
 }
