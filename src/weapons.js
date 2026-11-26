@@ -1,14 +1,13 @@
-// ======================================================================= the caveman reload
-// He has no idea how this works. He yanks the magazine out, sniffs it, bites it like a coin to see if it is any good,
-// shakes it by his ear, decides it is broken and throws it over his shoulder. He gets a fresh one, tries to jam it in
-// sideways, stares, turns it round, slams it in, smacks the gun twice to make it work, and racks it.
-// Shells and grenades get the sniff and the bite too, then go in one at a time. Times are fractions of the reload.
-const RL = { reach: 0.07, out: 0.13, up: 0.2, sniff: 0.29, bite: 0.38, shake: 0.45, toss: 0.5, belt: 0.57, wrong: 0.65, flip: 0.71, seat: 0.78, smack: 0.86, rack: 0.93 };
-const LITTER = 10, BIG = 1.5;                                                   // seconds a thrown magazine stays on the floor
+// ======================================================================= the reload
+// He pulls the magazine out and, not being sure what it is, holds it up to his eye and peers into it like a telescope.
+// Ooo? Nothing to see. He shrugs, lets it drop, takes a fresh one off his hip and reloads properly.
+// Shells go in one at a time from his hip. Times are fractions of the reload.
+const RL = { reach: 0.07, out: 0.16, eye: 0.26, peer: 0.38, drop: 0.43, pouch: 0.56, grab: 0.61, up: 0.73, line: 0.79, seat: 0.85, rack: 0.93 };
+const LITTER = 10, BIG = 1.5;                                                   // seconds a dropped magazine stays on the floor
 
 const reloadAt = f => f.reload >= 0 && f.weapon ? f.reload / GUNS[f.weapon].reload : -1;
-// how much he is busy with the thing in his hand rather than the gun (the gun sags, his head cocks)
-const peerAmount = f => { const t = reloadAt(f); return t < 0 ? 0 : smooth(RL.out, RL.up, t) * (1 - smooth(RL.shake, RL.toss, t)); };
+// how much he is busy peering into it (the gun sags, his head cocks towards it)
+const peerAmount = f => { const t = reloadAt(f); return t < 0 || !GUNS[f.weapon] || GUNS[f.weapon].item.kind !== 'mag' ? 0 : smooth(RL.out, RL.eye, t) * (1 - smooth(RL.peer, RL.drop, t)); };
 // the slide on the shotgun: 0 forward, 1 pulled right back
 function pumpAmount(f, g) {
   if (!g.pumpAction) return 0;
@@ -20,86 +19,78 @@ const leftGrip = (f, g) => g.pumpAction ? Object.assign({}, g.left, { at: V.add(
 
 function mixGoal(a, b, w) {
   const dir = V.norm(V.lerp(a.dir, b.dir, w));
-  return { wrist: V.lerp(a.wrist, b.wrist, w), dir, palm: V.orth(V.lerp(a.palm, b.palm, w), dir), pole: b.pole, curl: [a.curl[0] + (b.curl[0] - a.curl[0]) * w, a.curl[1] + (b.curl[1] - a.curl[1]) * w] };
+  const o = { wrist: V.lerp(a.wrist, b.wrist, w), dir, palm: V.orth(V.lerp(a.palm, b.palm, w), dir), pole: b.pole, curl: [a.curl[0] + (b.curl[0] - a.curl[0]) * w, a.curl[1] + (b.curl[1] - a.curl[1]) * w] };
+  if (a.natural !== undefined || b.natural !== undefined) o.natural = (a.natural === undefined ? 1 : a.natural) + ((b.natural === undefined ? 1 : b.natural) - (a.natural === undefined ? 1 : a.natural)) * w;
+  return o;
 }
 // where the free hand is during a reload, and what it is holding. everything is in the fighter's own space
 function reloadPose(f, g, G, rest, chest) {
-  const t = reloadAt(f), I = g.item, u = (a, b) => smooth(a, b, t), mag = I.kind === 'mag';
+  const t = reloadAt(f), I = g.item, mag = I.kind === 'mag', u = (a, b) => smooth(a, b, t);
   const shift = V.sub(chest, Rig.rest[IDX.chest]);
-  const eye = V.add([-0.01, 1.53, 0.12], shift);
-  const nose = V.add(eye, [0, -0.05, 0.14]), mouth = V.add(eye, [0, -0.12, 0.13]), ear = V.add(eye, [0.17, -0.02, -0.02]);
-  const atGun = onGun(G, I.grab), pulled = onGun(G, V.add(I.grab, I.pull));
+  const atGun = onGun(G, I.grab), pulled = onGun(G, V.add(I.grab, V.mul(I.pull, 0.3))), below = onGun(G, V.add(I.grab, V.mul(I.pull, 1.1)));
+  const pouch = V.add([0.27, 0.86, 0.1], shift), side = V.add([0.36, 1.0, 0.26], shift);
+  const eye = V.add([0.03, 1.54, 0.13], shift), scope = V.add(eye, [0.01, -0.01, 0.17]);     // his left eye, and the magazine held up to it
   const gunDir = V.norm(M3.vec(G.R, [-0.5, 0.35, 0.8])), gunPalm = V.norm(M3.vec(G.R, [-0.4, 0.8, 0]));
-  const upDir = V.norm([-0.35, 0.9, 0.25]), upPalm = [-1, -0.1, 0];
-  // the hand cupped round whatever is at q; k turns it from the gun's angle to holding something up to his face
-  const holding = (q, k) => {
-    const dir = V.norm(V.lerp(gunDir, upDir, k)), palm = V.orth(V.lerp(gunPalm, upPalm, k), dir);
-    return { wrist: V.add(V.add(q, V.mul(dir, -0.09)), V.mul(palm, -0.037)), dir, palm, pole: [0.8, -1, 0.1], curl: [0.9, 0.95] };
+  const hipDir = V.norm([0.1, -0.85, 0.5]), hipPalm = [-1, 0, 0];
+  const holding = (q, k, curl) => {
+    const dir = V.norm(V.lerp(gunDir, hipDir, k)), palm = V.orth(V.lerp(gunPalm, hipPalm, k), dir);
+    return { wrist: V.add(V.add(q, V.mul(dir, -0.09)), V.mul(palm, -0.037)), dir, palm, pole: [0.9, -1, -0.2], curl: [curl === undefined ? 0.9 : curl, curl === undefined ? 0.95 : curl], natural: 0.55 };
   };
-  // held up to his face, open end towards him
-  const toFace = V.norm(V.sub(nose, V.add(nose, [-0.12, -0.05, 0.22])));
-  const faceR = M3.frame(I.mouth, [1, 0, 0], toFace, [1, 0, 0]);
-  const sideways = M3.mul(G.R, M3.rx(Math.PI / 2));                 // the new one, the wrong way round: lying along the barrel
-  const wind = V.add(eye, [0.28, 0.2, -0.22]), belt = V.add(chest, [0.24, -0.2, 0.08]);
-  const smackAt = onGun(G, [0.075, 0.02, 0.06]);
+  // held up to his eye from below, like a telescope
+  const atEye = q => ({ wrist: V.add(q, [0.02, -0.12, -0.01]), dir: V.norm([-0.1, 1, 0.15]), palm: [-1, 0, 0.2], pole: [1, -0.8, -0.3], curl: [1.0, 1.05], natural: 0.6 });
+  const toEye = V.norm(V.sub(eye, scope)), eyeR = M3.frame(I.mouth, [1, 0, 0], toEye, [1, 0, 0]);
+  const tipped = a => M3.mul(G.R, M3.rx(a));
 
-  let p = null, k = 0, R = G.R, show = false, hand = null;
-  if (t < RL.reach) hand = mixGoal(rest, holding(atGun, 0), u(0, RL.reach));
-  else if (t < RL.out) { p = V.lerp(atGun, pulled, u(RL.reach, RL.out)); show = true; }                       // yank
-  else if (t < RL.up) { const w = u(RL.out, RL.up); p = V.lerp(pulled, nose, w); R = M3.mix(G.R, faceR, w); k = w; show = true; }
-  else if (t < RL.sniff) {                                                                                  // snf snf
-    const w = (t - RL.up) / (RL.sniff - RL.up);
-    p = V.add(nose, [0.02 * Math.sin(w * 30), 0.012 * Math.sin(w * 47), 0]); R = faceR; k = 1; show = true;
-  } else if (t < RL.bite) {                                                                                 // a bite, like a coin
-    const w = (t - RL.sniff) / (RL.bite - RL.sniff), chomp = Math.max(0, Math.sin(w * Math.PI * 2)) * 0.03;
-    p = V.lerp(nose, V.add(mouth, [0, 0, -chomp]), smooth(0, 0.3, w)); R = M3.mul(faceR, M3.rz(0.4 * smooth(0, 0.3, w))); k = 1; show = true;
-  } else if (t < RL.shake) {                                                                                // shake it by his ear: rattle?
-    const w = (t - RL.bite) / (RL.shake - RL.bite);
-    p = V.add(V.lerp(mouth, ear, smooth(0, 0.35, w)), [0, 0.035 * Math.sin(w * 40) * smooth(0.25, 0.4, w), 0]); R = faceR; k = 1; show = true;
-  } else if (t < RL.toss) { const w = u(RL.shake, RL.toss); p = V.lerp(ear, wind, w); R = M3.mul(faceR, M3.rx(-1.2 * w)); k = 1; show = true; }   // nah: over the shoulder
-  else if (t < RL.belt) { const w = u(RL.toss, RL.belt); p = V.lerp(wind, belt, w); k = 1 - w; }
-  else if (!mag) {                                                                                         // shells and grenades go in one at a time
-    if (t < RL.smack) {
-      const v = (t - RL.belt) / (RL.smack - RL.belt), i = Math.min(2, Math.floor(v * 3)), w = v * 3 - i;
-      if (w < 0.55) { p = V.lerp(belt, atGun, smooth(0, 0.55, w)); show = true; }
-      else p = i === 2 || w < 0.7 ? atGun : V.lerp(atGun, belt, smooth(0.7, 1, w));
-    } else hand = mixGoal(holding(atGun, 0), rest, u(RL.smack, 0.91));
-  } else if (t < RL.wrong) {                                                                               // jams it in sideways. it won't go.
-    const w = u(RL.belt, RL.wrong - 0.02), bump = t > RL.wrong - 0.03 ? 0.012 * Math.sin((t - RL.wrong) * 260) : 0;
-    p = V.add(V.lerp(belt, pulled, w), [0, bump, 0]); R = M3.mix(G.R, sideways, smooth(0, 0.5, w)); show = true;
-  } else if (t < RL.flip) {                                                                                // stares... turns it round
-    const w = (t - RL.wrong) / (RL.flip - RL.wrong), spin = smooth(0.3, 0.9, w);
-    p = V.add(pulled, [0, -0.05 * Math.sin(Math.PI * spin), 0]);
-    R = M3.mul(G.R, M3.rx(Math.PI / 2 * (1 - spin))); show = true;
-  } else if (t < RL.seat) { const w = u(RL.flip, RL.seat - 0.02); p = V.lerp(pulled, atGun, w * w); show = true; }   // SLAM
-  else if (t < RL.smack) {                                                                                 // smack, smack: that will make it work
-    const w = (t - RL.seat) / (RL.smack - RL.seat), hit = Math.abs(Math.sin(w * Math.PI * 2));
-    const off = V.mad(smackAt, V.norm(M3.vec(G.R, [1, 0.2, 0])), 0.1 * (1 - hit));
-    hand = { wrist: off, dir: V.norm(M3.vec(G.R, [-0.2, 0.3, 1])), palm: V.norm(M3.vec(G.R, [-1, 0, 0])), pole: [0.8, -1, 0.1], curl: [0.2, 0.2] };
-  } else if (g.boltAction || g.pumpAction || g.drumLoad) hand = mixGoal(holding(atGun, 0), rest, u(RL.smack, g.boltAction ? 1 : 0.91));
-  else {                                                                                                   // pull the charging handle
+  let goal = null, item = null;
+  if (t < RL.reach) goal = mixGoal(rest, holding(atGun, 0), u(0, RL.reach));
+  else if (!mag) {                                                // shells: from his hip to the loading port, three times
+    if (t < RL.seat) {
+      const v = (t - RL.reach) / (RL.seat - RL.reach), n = Math.min(2, Math.floor(v * 3)), w = v * 3 - n;
+      const q = flow([[0, atGun], [0.28, side], [0.45, pouch], [0.58, pouch], [0.78, below], [1, atGun]], w);
+      const k = flow([[0, 0], [0.3, 0.6], [0.45, 1], [0.58, 1], [0.8, 0.1], [1, 0]], w);
+      goal = holding(q, k);
+      if (w > 0.5) item = { p: q, R: tipped(0.3 * (1 - smooth(0.8, 1, w))) };
+    } else goal = mixGoal(holding(atGun, 0), rest, u(RL.seat, 0.91));
+  } else if (t < RL.out) {                                        // thumb the catch, pull it down and out
+    const w = u(RL.reach, RL.out);
+    item = { p: V.lerp(atGun, below, w), R: tipped(0.3 * w) };
+    goal = holding(item.p, 0);
+  } else if (t < RL.drop) {                                       // up to his eye: a good long look inside. ooo?
+    const w = u(RL.out, RL.eye), shrug = u(RL.peer, RL.drop);
+    const wobble = t > RL.eye && t < RL.peer ? [0.012 * Math.sin(t * 60), 0.008 * Math.sin(t * 47), 0] : [0, 0, 0];
+    const q = V.add(V.lerp(V.lerp(below, scope, w), V.add(scope, [0.12, -0.2, 0.1]), shrug), wobble);
+    item = { p: q, R: M3.mix(tipped(0.3), eyeR, w) };
+    goal = mixGoal(holding(below, 0), atEye(q), w);
+  } else if (t < RL.up) {                                         // nothing in there. let go of it; get a fresh one; bring it up
+    const q = flow([[RL.drop, V.add(scope, [0.12, -0.2, 0.1])], [0.49, side], [RL.pouch, pouch], [RL.grab, pouch], [0.67, side], [RL.up, below]], t);
+    const k = flow([[RL.drop, 0.4], [0.49, 0.6], [RL.pouch, 1], [RL.grab, 1], [0.67, 0.55], [RL.up, 0]], t);
+    goal = t < 0.47 ? mixGoal(atEye(V.add(scope, [0.12, -0.2, 0.1])), holding(q, k, 0.35), u(RL.drop, 0.47)) : holding(q, k, t < RL.pouch ? 0.35 : 0.9);
+    if (t >= RL.grab) item = { p: q, R: tipped(flow([[RL.grab, 1.0], [0.67, 0.7], [RL.up, 0.35]], t)) };
+  } else if (t < RL.seat) {                                       // line it up and push it home
+    const q = flow([[RL.up, below], [RL.line, pulled], [RL.seat, atGun]], t);
+    item = { p: q, R: tipped(0.35 * (1 - u(RL.up, RL.line))) };
+    goal = holding(q, 0);
+  } else if (g.boltAction || g.pumpAction || g.drumLoad) goal = mixGoal(holding(atGun, 0), rest, u(RL.seat, g.boltAction ? 1 : 0.91));
+  else {                                                          // pull the charging handle
     const knob = holding(onGun(G, g.boltPoint), 0), back = holding(onGun(G, V.add(g.boltPoint, [0, 0, -g.boltTravel])), 0);
-    hand = t < 0.93 ? mixGoal(holding(atGun, 0), knob, u(RL.smack, 0.93)) : t < 0.975 ? mixGoal(knob, back, u(0.93, 0.955)) : mixGoal(back, rest, u(0.975, 1));
+    goal = t < 0.93 ? mixGoal(holding(atGun, 0), knob, u(RL.seat, 0.93)) : t < 0.975 ? mixGoal(knob, back, u(0.93, 0.955)) : mixGoal(back, rest, u(0.975, 1));
   }
-  return { hand: hand || holding(p, k), item: show ? { p, R, out: V.mul(toFace, 0.045 * k) } : null };
+  return { hand: goal, item: item ? { p: item.p, R: item.R, out: [0, 0, 0] } : null };
 }
 
-// the bits of a reload that happen once: sounds, words, the throw
+// the bits of a reload that happen once: sounds, the "ooo?", the dropped magazine
 function reloadCues(f, g, t0, t) {
   const loud = f.isPlayer ? 0.9 : 0.2, crossed = at => t0 < at && t >= at, mag = g.item.kind === 'mag';
-  const near = f.isPlayer || V.len(V.sub(f.pos, player.pos)) < 22;
+  const near = f.isPlayer || V.len(V.sub(f.pos, player.pos)) < 18;
   const cue = (at, s, v) => { if (crossed(at)) Sound.play(s, loud * (v || 1)); };
-  const word = (at, text, life) => { if (crossed(at) && near) popWord(V.add(bonePos(f, 'head'), [0, 0.42, 0]), text, life); };
-  cue(RL.reach, mag ? 'magout' : 'shellin');
-  cue(RL.up + 0.01, 'sniff'); word(RL.up + 0.01, 'snf snf?', g.reload * (RL.sniff - RL.up) + 0.2);
-  cue(RL.sniff + (RL.bite - RL.sniff) * 0.25, 'chomp'); word(RL.sniff + (RL.bite - RL.sniff) * 0.25, 'CRONCH', 0.45);
-  for (let i = 0; i < 3; i++) cue(RL.bite + (RL.shake - RL.bite) * (0.4 + i * 0.18), 'click', 0.6);
-  if (crossed(RL.toss)) { tossItem(f, g); Sound.play('whoosh', loud * 0.5); }
   if (mag) {
-    cue(RL.wrong - 0.02, 'bonk', 0.5); word(RL.wrong - 0.02, '?', 0.5);
-    cue(RL.seat - 0.02, 'magin'); cue(RL.seat - 0.015, 'thud', 0.6);
-    for (const w of [0.25, 0.75]) cue(RL.seat + (RL.smack - RL.seat) * w, 'punch', 0.45);
-  } else for (let i = 0; i < 3; i++) if (crossed(RL.belt + (RL.smack - RL.belt) * (i + 0.55) / 3)) { Sound.play('shellin', loud); if (g.drumLoad) f.drumT += Math.PI / 3; }
+    cue(RL.reach + 0.02, 'magout');
+    if (crossed(RL.eye) && near) { Sound.play('ooo', f.isPlayer ? 0.7 : 0.3, 0.2); popWord(V.add(bonePos(f, 'head'), [0, 0.42, 0]), 'ooo?', g.reload * (RL.peer - RL.eye) + 0.2); }
+    if (crossed(RL.drop)) tossItem(f, g);                          // it just drops out of his hand
+    cue(RL.grab, 'click', 0.7);
+    cue(RL.seat - 0.01, 'magin');
+    if (crossed(RL.seat)) f.riseV += 1.2;                         // the gun jumps a little as it goes home
+  } else for (let i = 0; i < 3; i++) if (crossed(RL.reach + (RL.seat - RL.reach) * (i + 0.97) / 3)) { Sound.play('shellin', loud); if (g.drumLoad) f.drumT += Math.PI / 3; }
   if (g.boltAction) { cue(0.885, 'boltup'); cue(0.915, 'boltback'); cue(0.955, 'boltfwd'); }
   else if (g.pumpAction) { cue(0.92, 'pumpback'); cue(0.965, 'pumpfwd'); }
   else if (g.drumLoad) cue(0.93, 'rack');
@@ -150,9 +141,9 @@ function drawItem(prog, textured, it) {
 function tossItem(f, g) {
   const it = f.item;
   if (!it) return;
-  const kind = g.item.kind, v = M3.vec(M3.ry(f.yaw), [rand(0.4, 1.0), rand(1.6, 2.6), rand(-1.4, -2.2)]);   // over his shoulder
+  const kind = g.item.kind, v = M3.vec(M3.ry(f.yaw), [rand(0.1, 0.4), rand(-0.6, -0.2), rand(0.1, 0.4)]);   // let go of: it just drops
   const at = kind === 'mag' ? V.add(it.p, M3.vec(it.S, V.sub(g.magMid, g.item.grab))) : it.p;
-  spawnProp(kind, at, v, { gun: it.gun, life: LITTER, scale: kind === 'mag' ? 1 : BIG, spin: rand(6, 11), R: it.R.slice() });
+  spawnProp(kind, at, v, { gun: it.gun, life: LITTER, scale: kind === 'mag' ? 1 : BIG, spin: rand(1.5, 4), R: it.R.slice() });
 }
 
 // ======================================================================= grenades

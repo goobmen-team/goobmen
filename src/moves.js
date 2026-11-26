@@ -1,7 +1,8 @@
 // ======================================================================= jumping
-// a big cartoon caveman jump: squat with the arms swung back, spring up with both arms flung over his head, knees
-// tucked up high at the top, arms out wide on the way down, and a wide, knees-out landing. Running, it is a big striding leap.
-const JUMP = { speed: 3.9, gravity: 12.5, pre: 0.13, preMoving: 0.05, land: 0.3, landMoving: 0.17 };
+// A natural jump: a quick dip with the arms swinging back, a push off with the arms swinging forward and up to chest
+// height, the knees drawn up a little at the top, legs reaching for the ground, and a soft knees-bent landing.
+// Running, it is a stride: lead knee up, back leg trailing, arms swinging the other way.
+const JUMP = { speed: 3.9, gravity: 12.5, pre: 0.12, preMoving: 0.05, land: 0.3, landMoving: 0.18 };
 JUMP.air = 2 * JUMP.speed / JUMP.gravity;
 function startJump(f) {
   if (f.jump >= 0 || f.dead >= 0) return;
@@ -23,58 +24,50 @@ function jumpStep(f, dt) {
   if (crossed(T.down)) {
     Sound.play('land', mine ? 0.8 : 0.2); puff([f.pos[0], f.pos[1] + 0.04, f.pos[2]], 12, [0.52, 0.50, 0.46, 0.65], 1.0, 0.065, 0.45, 1);
     f.riseV -= 2.2;                                            // the gun dips with the landing
-    if (mine) cam.shake = Math.max(cam.shake, 0.4);
+    if (mine) cam.shake = Math.max(cam.shake, 0.3);
   }
   if (f.jump >= T.end) f.jump = -1;
 }
 // how the body is shaped this frame: null when not jumping
 function jumpShape(f) {
   if (f.jump < 0 || f.dead >= 0) return null;
-  const T = jumpTimes(f), t = f.jump, A = JUMP.air, P = T.pre, D = T.down, u = clamp((t - P) / A, 0, 1);
-  const air = t >= P && t < D, moving = f.jumpMoving, way = f.jumpBack ? -1 : 1;
-  // how low he is: the squat before, the stretch as he leaves, the squash when he lands
-  const squat = t < P ? smooth(0, P, t) : 0;
-  const stretch = air ? 1 - smooth(0.0, 0.28, u) : 0;
-  const land = t >= D ? track([[D, 0], [D + 0.06, 1], [D + T.land * 0.6, 0.35], [T.end, 0]], t) : 0;
-  const tuck = air ? smooth(0.12, 0.42, u) * (1 - smooth(0.62, 0.92, u)) : 0;
-  const reach = air ? smooth(0.6, 0.95, u) : 0;                      // legs stretch down for the ground
-  const w = smooth(0, 0.04, t) * (1 - smooth(T.end - 0.1, T.end, t));
-  const low = moving ? 0.5 : 1;
+  const T = jumpTimes(f), t = f.jump, A = JUMP.air, P = T.pre, D = T.down, E = T.end, moving = f.jumpMoving, way = f.jumpBack ? -1 : 1;
+  const w = smooth(0, 0.04, t) * (1 - smooth(E - 0.08, E, t));
+  const at = k => P + A * k;                                       // a moment in the air, 0 to 1
   const shape = {
-    w, drop: (-0.2 * squat - 0.2 * land) * low + 0.03 * stretch,
-    bend: (0.45 * squat + 0.35 * land) * low - 0.18 * stretch + (moving ? 0.25 : 0.12) * tuck,
-    head: (-0.1 * squat - 0.1 * land) * low + 0.25 * stretch,
+    w,
+    drop: flow([[0, 0], [P, moving ? -0.05 : -0.12], [at(0.12), 0.02], [at(0.85), 0.01], [D, 0], [D + 0.07, moving ? -0.07 : -0.13], [E, 0]], t),
+    bend: flow([[0, 0], [P, moving ? 0.15 : 0.3], [at(0.15), 0.02], [at(0.5), 0.1], [D, 0.05], [D + 0.07, moving ? 0.2 : 0.32], [E, 0]], t),
+    head: flow([[0, 0], [P, -0.08], [at(0.2), 0.06], [at(0.8), -0.04], [D + 0.07, -0.1], [E, 0]], t),
     legs: {}, arms: {}
   };
-  const wig = Math.sin(t * 34) * tuck;                                // a little flail at the top
   for (const [s, x] of [['R', -1], ['L', 1]]) {
     const rest = Rig.rest[IDX['foot_' + s]], lead = s === 'L';
-    let ankle, foot, pole = [x * 0.45, 0, 1];
-    if (moving) {                                                   // the leap: lead knee up and forward, the other leg trailing behind
-      const fwd = lead ? 0.34 : -0.36, up = lead ? 0.3 : 0.26;
-      ankle = V.add(rest, [0, up * tuck + 0.03 * reach, way * fwd * Math.max(tuck, 0.4 * reach) - 0.05 * stretch]);
-      foot = M3.rx(0.6 * stretch + (lead ? -0.1 : 0.9) * tuck);
-      pole = [x * 0.2, 0, 1];
-    } else {                                                        // the cannonball: both knees right up, feet under his bum
-      ankle = V.add(rest, [x * (0.05 * tuck + 0.09 * land + 0.03 * squat), 0.34 * tuck - 0.02 * stretch, 0.1 * tuck - 0.05 * stretch]);
-      foot = M3.rx(0.7 * stretch + 0.25 * tuck);
+    let up, fwd, toe;
+    if (moving) {                                                  // stride
+      up = flow([[P, 0], [at(0.3), lead ? 0.26 : 0.18], [at(0.6), lead ? 0.24 : 0.2], [at(0.95), lead ? 0.06 : 0.1], [D, 0]], t);
+      fwd = way * flow([[P, 0], [at(0.3), lead ? 0.28 : -0.3], [at(0.7), lead ? 0.24 : -0.22], [D, lead ? 0.08 : -0.06], [E, 0]], t);
+      toe = flow([[P, 0.5], [at(0.3), lead ? -0.1 : 0.9], [at(0.8), 0.1], [D, 0], [E, 0]], t);
+    } else {                                                       // knees drawn up a little, one more than the other
+      up = flow([[P, 0], [at(0.12), -0.02], [at(0.45), lead ? 0.2 : 0.15], [at(0.62), lead ? 0.18 : 0.14], [at(0.92), 0.02], [D, 0]], t);
+      fwd = flow([[P, 0], [at(0.45), lead ? 0.08 : 0.03], [at(0.9), 0.02], [D, 0]], t);
+      toe = flow([[0, 0], [P, 0], [at(0.12), 0.7], [at(0.45), 0.25], [at(0.85), 0.25], [D, 0]], t);
     }
-    shape.legs[s] = { ankle, foot, pole };
-    // the arms (only when his hands are free)
+    const spread = flow([[0, 0], [D, 0], [D + 0.07, 0.04], [E, 0]], t);
+    shape.legs[s] = { ankle: V.add(rest, [x * spread, up, fwd]), foot: M3.rx(toe), pole: [x * 0.3, 0, 1] };
+    // arms, by their joints: relaxed, back on the dip, swung forward and up as he goes, out a little at the top, forward and
+    // bent for the landing. Running, they swing opposite the legs.
+    const K = (ab, sw, el, wf) => ({ ab, sw, el, wf, tw: 0.15 });
     let keys;
     if (moving) {
-      const fore = (lead ? -1 : 1) * way;                           // arms swing opposite the legs
-      keys = [[0, [x * 0.44, 0.68, 0.03]], [P, [x * 0.44, 0.7, 0.03]], [P + A * 0.25, [x * 0.34, 1.62, 0.36 * fore - 0.05]], [P + A * 0.7, [x * 0.62, 1.45, 0.2 * fore]],
-        [D, [x * 0.7, 1.15, 0.1]], [D + 0.07, [x * 0.5, 0.78, 0.2]], [T.end, [x * 0.44, 0.68, 0.03]]];
+      const o = (lead ? -1 : 1) * way;                                // the arm opposite the lead leg goes forward
+      keys = [[0, K(0.15, 0.05, 0.4, 0)], [P, K(0.18, 0.1 * o, 0.55, 0)], [at(0.22), K(0.3, 0.75 * o + 0.1, 0.8, 0.1)], [at(0.6), K(0.55, 0.35 * o + 0.1, 0.6, 0)], [D, K(0.6, 0.15, 0.45, 0)], [D + 0.08, K(0.3, 0.35, 0.7, 0)], [E, K(0.15, 0.05, 0.4, 0)]];
     } else {
-      keys = [[0, [x * 0.44, 0.68, 0.03]], [P, [x * 0.36, 0.66, -0.34]], [P + A * 0.18, [x * 0.24, 2.02, 0.1]], [P + A * 0.5, [x * 0.46, 1.98, 0.02]],
-        [P + A * 0.82, [x * 0.8, 1.38, 0.08]], [D + 0.06, [x * 0.42, 0.8, 0.34]], [T.end, [x * 0.44, 0.68, 0.03]]];
+      keys = [[0, K(0.15, 0.05, 0.3, 0)], [P, K(0.22, -0.6, 0.25, -0.1)], [at(0.14), K(0.3, 0.95, 0.45, 0.1)], [at(0.42), K(0.75, 0.3, 0.4, 0)], [at(0.82), K(0.8, 0.15, 0.3, 0)], [D + 0.07, K(0.35, 0.4, 0.65, 0.1)], [E, K(0.15, 0.05, 0.3, 0)]];
     }
-    const wrist = V.add(track(keys, t), [0, 0.05 * wig * x, 0.04 * wig]);
-    const upness = clamp((wrist[1] - 1.0) / 0.7, 0, 1);
-    const along = V.sub(wrist, [x * 0.22, 1.42, -0.02]);              // the hand carries on the line of the arm
-    const dir = V.len(along) > 0.15 ? V.norm(along) : V.norm(V.lerp([x * 0.35, -0.9, 0.2], [x * 0.25, 1, 0.05], upness));
-    shape.arms[s] = { wrist, dir, palm: V.norm(V.lerp([-x, 0, 0.2], [0, 0, 1], upness)), pole: [x, -0.3, -0.6], curl: [0.25 + 0.3 * tuck, 0.25 + 0.3 * tuck] };
+    const fk = {};
+    for (const key of ['ab', 'sw', 'el', 'wf', 'tw']) fk[key] = flow(keys.map(([kt, kv]) => [kt, kv[key]]), t);
+    shape.arms[s] = { fk, curl: [0.75, 0.8] };
   }
   return shape;
 }
@@ -724,7 +717,7 @@ function tickBomb(b, left, fuse, c) {
 // ---------------------------------------------------------------- your own C4
 // 5 to hold it, click to kneel and plant it (on a knocked-out caveman's belly if one is right there),
 // G to drop it, E to pick one up. You start with one and shake another out of every body you loot.
-const C4_FUSE = 5, C4_MAX = 3, PLANT = 0.75;
+const C4_FUSE = 5, C4_MAX = 3, PLANT = 2.1;
 const C4_HOLD = [0, 0.95, 0.38];
 const planted = [];
 player.c4 = 1; player.holdC4 = false; player.plantT = -1;
@@ -736,7 +729,7 @@ function holdC4(f) {
 function giveC4(f, n) { f.c4 = Math.min(C4_MAX, (f.c4 || 0) + (n || 1)); hudDirty = true; }
 // where it goes: a body's belly if there is one close in front, otherwise the ground in front of you
 function plantSpot(f) {
-  const fwd = [Math.sin(f.yaw), 0, Math.cos(f.yaw)], at = V.mad(f.pos, fwd, 0.62);
+  const fwd = [Math.sin(f.yaw), 0, Math.cos(f.yaw)], at = V.mad(f.pos, fwd, 0.74);
   for (const b of bots) {
     if (b.dead < 1 || b.send) continue;
     const belly = bellyTop(b);
@@ -749,46 +742,78 @@ function startPlant(f) {
   f.plantT = 0; f.plantAt = plantSpot(f); f.plantYaw = f.yaw;
 }
 // runs inside playerStep: the carrying pose, and the plant itself
+// planting: kneel, set it down, steady it with one hand and punch a code into the keypad with the other, press to arm
+// it (only then does the clock start), give it two pats like a good pet, get up
+const PL = { kneel: 0.3, set: 0.55, keys: [0.86, 1.0, 1.13, 1.27], arm: 1.45, pats: [1.62, 1.76], up: 1.92 };
 function c4Step(f, dt) {
   f.carry = null;
-  if (!f.holdC4 || f.dead >= 0 || looting) { if (f.plantT >= 0) { f.plantT = -1; f.script = null; f.scriptW = 0; } return; }
+  if (!f.holdC4 || f.dead >= 0 || looting) { if (f.plantT >= 0) { f.plantT = -1; f.script = null; f.scriptW = 0; if (f.plantBomb && !f.plantBomb.armed) f.plantBomb.armed = true; f.plantBomb = null; } return; }
   if (f.plantT < 0) { f.carry = holdGoals(C4_HOLD); f.c4Hold = C4_HOLD; return; }
-  const t = f.plantT += dt, hips0 = Rig.rest[IDX.hips];
+  const t0 = f.plantT, t = f.plantT += dt, hips0 = Rig.rest[IDX.hips], crossed = at => t0 < at && t >= at;
   const local = M3.vec(M3.ry(-f.yaw), V.sub(f.plantAt.p, f.pos));
-  const down = smooth(0, 0.3, t) * (1 - smooth(PLANT - 0.2, PLANT, t)), lower = smooth(0.08, 0.42, t);
-  const c = V.lerp(C4_HOLD, local, lower);
-  f.c4Hold = t < 0.45 ? c : null;
-  const G = holdGoals(t < 0.45 ? c : V.add(local, [0, 0.08 * smooth(0.45, 0.6, t), 0]));
-  f.script = { hips: V.add(hips0, [0, -0.45 * down, -0.1 * down]), bend: 0.8 * down, head: M3.rx(-0.4 * down), arms: G };
+  const key = V.add(local, M3.vec(M3.ry(f.plantYaw - f.yaw + Math.PI / 2), V.add(C4.panelAt, [0, 0, -0.05])));   // the keypad, in his space
+  const kneel = flow([[0, 0], [PL.kneel, 1], [PL.up - 0.15, 1], [PLANT, 0]], t);
+  const lower = smooth(0.08, PL.set, t), c = V.lerp(C4_HOLD, local, lower);
+  f.c4Hold = t < PL.set ? c : null;
+  const S = {
+    hips: V.add(hips0, [0.02 * kneel, -0.33 * kneel, -0.06 * kneel]),
+    bend: flow([[0, 0], [PL.kneel, 0.5], [PL.set, 0.65], [PL.keys[0], 0.55], [PL.arm, 0.6], [PL.pats[1], 0.55], [PL.up, 0.1], [PLANT, 0]], t),
+    head: M3.rx(flow([[0, 0], [PL.set, 0.4], [PL.arm, 0.45], [PL.arm + 0.12, 0.2], [PL.up, 0], [PLANT, 0]], t)),
+    arms: {}, legs: {
+      R: { ankle: V.lerp(restAt('foot_R'), [-0.16, 0.07, -0.3], kneel), pole: [-0.2, -0.5, 1], footR: M3.rx(1.1 * kneel) },
+      L: { ankle: V.lerp(restAt('foot_L'), [0.18, 0.08, 0.32], kneel), pole: [0.3, 0.3, 1] }
+    }
+  };
+  const G = holdGoals(t < PL.set ? c : local);
+  const steady = reach(V.add(local, [0.11, 0.1, 0.02]), [0, -0.6, 0.8], [0, -1, 0], [1, -0.6, -0.3], 0.5);           // left hand flat on the far end
+  // right hand: lets go, finger to the keypad, four taps, one firm press, then two pats on top
+  let tap = 0;
+  for (const at of PL.keys) tap = Math.max(tap, Math.max(0, Math.sin((t - at + 0.06) / 0.12 * Math.PI)) * (t > at - 0.06 && t < at + 0.06 ? 1 : 0));
+  const press = Math.max(0, Math.sin((t - PL.arm + 0.09) / 0.18 * Math.PI)) * (t > PL.arm - 0.09 && t < PL.arm + 0.09 ? 1 : 0);
+  let pat = 0;
+  for (const at of PL.pats) pat = Math.max(pat, Math.max(0, Math.sin((t - at + 0.07) / 0.14 * Math.PI)) * (t > at - 0.07 && t < at + 0.07 ? 1 : 0));
+  const finger = reach(V.add(key, [0.01 * Math.sin(t * 23), 0.035 + 0.05 * (1 - tap) * (1 - press) - 0.01 * press, 0]), [0.25, -0.55, 0.8], [0.3, -0.2, -1], [-1, -1, -0.1], 1.1, 0.55);
+  const patGoal = reach(V.add(local, [-0.03, 0.12 + 0.08 * (1 - pat), 0]), [0, -0.7, 0.7], [0, -1, 0], [-1, -0.6, -0.2], 0.2);
+  let R;
+  if (t < PL.set + 0.08) R = G.R;
+  else if (t < PL.arm + 0.1) R = armBlend(G.R, finger, smooth(PL.set + 0.08, PL.keys[0] - 0.1, t));
+  else if (t < PL.pats[1] + 0.08) R = armBlend(finger, patGoal, smooth(PL.arm + 0.1, PL.pats[0] - 0.06, t));
+  else R = armBlend(patGoal, relaxed(), smooth(PL.pats[1] + 0.08, PLANT, t));
+  const Lh = t < PL.set + 0.08 ? G.L : t < PL.pats[1] ? armBlend(G.L, steady, smooth(PL.set + 0.08, PL.set + 0.25, t)) : armBlend(steady, relaxed(), smooth(PL.pats[1], PLANT, t));
+  S.arms.R = R; S.arms.L = Lh;
+  f.script = S;
   f.scriptW = smooth(0, 0.12, t) * (1 - smooth(PLANT - 0.15, PLANT, t));
-  if (t >= 0.45 && !f.plantDone) {                              // it's down: arm it
-    f.plantDone = true; f.c4--;
-    planted.push({ p: f.plantAt.p.slice(), R: M3.ry(f.plantYaw), t: 0, owner: f });
-    Sound.play('set', 0.8); Sound.play('armed', 0.9, 0, 0);
-    popWord(V.add(f.plantAt.p, [0, 0.7, 0]), 'BEEP BEEP', 0.8);
-    hudDirty = true;
+  if (crossed(PL.set)) {                                         // it's down
+    f.c4--;
+    f.plantBomb = { p: f.plantAt.p.slice(), R: M3.ry(f.plantYaw), t: 0, owner: f, armed: false };
+    planted.push(f.plantBomb);
+    Sound.play('set', 0.8); hudDirty = true;
   }
+  PL.keys.forEach((at, k) => { if (crossed(at)) { Sound.play('key', 0.8, k); if (f.plantBomb) f.plantBomb.beepAt = game.time; } });
+  if (crossed(PL.arm) && f.plantBomb) { f.plantBomb.armed = true; f.plantBomb.t = 0; f.plantBomb.beepAt = game.time; Sound.play('armed', 0.9, 0, 0); }
+  for (const at of PL.pats) if (crossed(at)) Sound.play('thud', 0.3);
   if (t >= PLANT) {
-    f.plantT = -1; f.plantDone = false; f.script = null; f.scriptW = 0;
+    f.plantT = -1; f.script = null; f.scriptW = 0; f.plantBomb = null;
     if (!f.c4) f.holdC4 = false;
     hudDirty = true;
   }
 }
 function plantedStep(dt) {
   for (let i = planted.length - 1; i >= 0; i--) {
-    const b = planted[i]; b.t += dt;
+    const b = planted[i];
+    if (!b.armed) continue;                                      // still having its code typed in
+    b.t += dt;
     const left = C4_FUSE - b.t;
     tickBomb(b, left, C4_FUSE, b.p);
     if (left <= 0) {
       planted.splice(i, 1);
       const c = V.add(b.p, [0, 0.08, 0]);
       explode(c, b.owner);
-      popWord(V.add(c, [0, 1.6, 0]), 'KABOOM!!', 1.6);
     }
   }
 }
 function drawPlanted(prog) {
-  for (const b of planted) drawC4(prog, b.p, b.R, true, Math.max(0, 1 - (game.time - (b.beepAt || -9)) / 0.12));
+  for (const b of planted) drawC4(prog, b.p, b.R, true, Math.max(b.armed ? 0 : -0.25, 1 - (game.time - (b.beepAt || -9)) / 0.12));
   const f = player;
   if (f.holdC4 && f.c4Hold && f.dead < 0 && !looting && !f.gone) {
     const R = M3.mul(M3.ry(f.yaw), M3.rx(f.tilt || 0));

@@ -21,6 +21,12 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; o
 #slots span { background: rgba(20,22,26,.55); border: 2px solid transparent; border-radius: 7px; padding: 4px 10px; }
 #slots span.on { border-color: #fff; background: rgba(20,22,26,.8); } #slots span.none { opacity: .45; }
 #score { position: fixed; left: 18px; top: 14px; }
+/* the map: a dark plate with a frame of four bones */
+#mapframe { position: fixed; right: 10px; top: 8px; padding: 15px; background: #26211c; }
+#minimap { position: static; inset: auto; display: block; width: 180px; height: 180px; background: #2c6290; border: 2px solid #0e0c0a; }
+#mapframe .bones { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+#kills { position: fixed; right: 10px; top: 227px; width: 214px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 24px; font-weight: 900; color: #f1e3c0; -webkit-text-stroke: 5px #2a1a0c; paint-order: stroke fill; }
+#kills svg { width: 24px; height: 24px; overflow: visible; }
 #cross { --gap: 6px; position: fixed; left: 50%; top: 50%; }
 #cross i { position: absolute; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.6); }
 #cross i:nth-child(1) { width: 2px; height: 9px; left: -1px; bottom: var(--gap); }
@@ -108,6 +114,8 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
 <canvas id="c" tabindex="0"></canvas>
 <div id="hud" hidden>
   <div id="scope"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div id="mapframe"><canvas id="minimap" width="180" height="180"></canvas><svg class="bones" viewBox="0 0 214 214" aria-hidden="true"><g><g fill="#2a1a0c" stroke="#2a1a0c" stroke-width="3.6" stroke-linejoin="round"><rect x="9" y="5.2" width="196" height="5.6" rx="2"/><circle cx="9" cy="4.8" r="4.6"/><circle cx="9" cy="11.2" r="4.6"/><circle cx="205" cy="4.8" r="4.6"/><circle cx="205" cy="11.2" r="4.6"/></g><g fill="#efe3c2"><rect x="9" y="5.2" width="196" height="5.6" rx="2"/><circle cx="9" cy="4.8" r="4.6"/><circle cx="9" cy="11.2" r="4.6"/><circle cx="205" cy="4.8" r="4.6"/><circle cx="205" cy="11.2" r="4.6"/></g></g><g><g fill="#2a1a0c" stroke="#2a1a0c" stroke-width="3.6" stroke-linejoin="round"><rect x="9" y="203.2" width="196" height="5.6" rx="2"/><circle cx="9" cy="202.8" r="4.6"/><circle cx="9" cy="209.2" r="4.6"/><circle cx="205" cy="202.8" r="4.6"/><circle cx="205" cy="209.2" r="4.6"/></g><g fill="#efe3c2"><rect x="9" y="203.2" width="196" height="5.6" rx="2"/><circle cx="9" cy="202.8" r="4.6"/><circle cx="9" cy="209.2" r="4.6"/><circle cx="205" cy="202.8" r="4.6"/><circle cx="205" cy="209.2" r="4.6"/></g></g><g><g fill="#2a1a0c" stroke="#2a1a0c" stroke-width="3.6" stroke-linejoin="round"><rect x="5.2" y="9" width="5.6" height="196" rx="2"/><circle cx="4.8" cy="9" r="4.6"/><circle cx="11.2" cy="9" r="4.6"/><circle cx="4.8" cy="205" r="4.6"/><circle cx="11.2" cy="205" r="4.6"/></g><g fill="#efe3c2"><rect x="5.2" y="9" width="5.6" height="196" rx="2"/><circle cx="4.8" cy="9" r="4.6"/><circle cx="11.2" cy="9" r="4.6"/><circle cx="4.8" cy="205" r="4.6"/><circle cx="11.2" cy="205" r="4.6"/></g></g><g><g fill="#2a1a0c" stroke="#2a1a0c" stroke-width="3.6" stroke-linejoin="round"><rect x="203.2" y="9" width="5.6" height="196" rx="2"/><circle cx="202.8" cy="9" r="4.6"/><circle cx="209.2" cy="9" r="4.6"/><circle cx="202.8" cy="205" r="4.6"/><circle cx="209.2" cy="205" r="4.6"/></g><g fill="#efe3c2"><rect x="203.2" y="9" width="5.6" height="196" rx="2"/><circle cx="202.8" cy="9" r="4.6"/><circle cx="209.2" cy="9" r="4.6"/><circle cx="202.8" cy="205" r="4.6"/><circle cx="209.2" cy="205" r="4.6"/></g></g></svg></div>
+  <div id="kills"><svg viewBox="0 0 24 24" aria-label="kills"><path fill="#f1e3c0" stroke="#2a1a0c" stroke-width="2" stroke-linejoin="round" paint-order="stroke" d="M12 2C6.9 2 3 5.7 3 10.4c0 2.7 1.3 5 3.3 6.5V20a1 1 0 0 0 1 1h1.7v-2h2v2h2v-2h2v2h1.7a1 1 0 0 0 1-1v-3.1c2-1.5 3.3-3.8 3.3-6.5C21 5.7 17.1 2 12 2z"/><circle cx="8.6" cy="11" r="2.3" fill="#2a1a0c"/><circle cx="15.4" cy="11" r="2.3" fill="#2a1a0c"/><path d="M12 13.4l-1.3 2.4h2.6z" fill="#2a1a0c"/></svg><span id="killcount">0</span></div>
   <div id="vignette"></div><div id="hurtDir"></div><div id="boomflash"></div>
   <div id="pops"></div>
   <div id="bars"></div>
@@ -852,6 +860,8 @@ const Sound = (() => {
     shellin: v => { burst(0.04, 1500, 0.6 * v, 'bandpass', 0, 5); burst(0.03, 3000, 0.35 * v, 'bandpass', 0.05, 6); },
     vest: v => { burst(0.16, 900, 0.5 * v, 'bandpass', 0, 1.5); burst(0.1, 2400, 0.35 * v, 'bandpass', 0.14, 3); tone(300, 600, 0.12, 0.2 * v, 0.28, 'triangle'); },
     thwack: v => { tone(260, 90, 0.1, 0.7 * v, 0, 'triangle'); burst(0.07, 1400, 0.6 * v, 'bandpass', 0, 2); },
+    hmph: v => { tone(150, 105, 0.17, 0.32 * v, 0, 'sawtooth'); burst(0.13, 480, 0.22 * v, 'bandpass', 0, 1.6); },     // a short satisfied grunt
+    creak: v => { tone(340, 250, 0.42, 0.06 * v, 0, 'sawtooth'); tone(352, 262, 0.42, 0.05 * v, 0.01, 'sawtooth'); burst(0.4, 1100, 0.1 * v, 'bandpass', 0, 6); },   // an old lid
     knock: v => { tone(210, 150, 0.07, 0.55 * v, 0, 'triangle'); burst(0.05, 700, 0.45 * v, 'bandpass', 0, 2.5); },   // knuckles on wood
     sniff: v => {                                     // snf snf: two quick breathy pulls through the nose
       for (const at of [0, 0.15]) { swell(0.05, 0.11, 3800, 0.22 * v, at); burst(0.08, 2400, 0.12 * v, 'bandpass', at + 0.01, 1.4); }
@@ -3340,13 +3350,38 @@ function solveArm(arm, S, goal) {
   const u = V.norm(V.sub(E, S)), f = V.norm(V.sub(W, E));
   const Ru = M3.frame(Rig.offset[arm.fore], [0, 0, -1], u, side);
   let Rf = M3.frame(Rig.offset[arm.hand], [0, 0, -1], f, side);
-  const restD = [arm.x, 0, 0], Rh = M3.frame(restD, [0, -1, 0], goal.dir, goal.palm);
+  // natural: the hand mostly carries on the line of the forearm (a number: how much of the asked-for angle to keep)
+  let hd = goal.dir, hp = goal.palm;
+  if (goal.natural !== undefined) { hd = V.norm(V.lerp(f, goal.dir || f, goal.natural)); hp = V.orth(goal.palm || [0, -1, 0], hd); }
+  const restD = [arm.x, 0, 0], Rh = M3.frame(restD, [0, -1, 0], hd, hp);
   // share the wrist twist with the forearm so the skin does not wring
   const a0 = V.orth(M3.vec(Rf, [0, 1, 0]), f), a1 = V.orth(M3.vec(Rh, [0, 1, 0]), f);
   const twist = Math.atan2(V.dot(V.cross(a0, a1), f), V.dot(a0, a1));
   Rf = M3.mul(M3.axis(f, clamp(twist, -2.2, 2.2) * 0.65), Rf);
   return [Ru, Rf, Rh];
 }
+
+// an arm posed by its joints, the way an animator keys it, instead of by where the hand should be.
+// All angles in radians, relative to the chest: ab lifts the arm out sideways from hanging (pi/2: straight out),
+// sw swings it forward (pi/2: pointing ahead, pi: straight up), tw turns the elbow out, el bends the elbow (forearm comes
+// forward), wf bends the wrist towards the palm, wr rolls the hand. Arcs and elbows come out natural by themselves.
+function fkArm(arm, chestR, k) {
+  const x = arm.x, c = v => M3.vec(chestR, v);
+  const swing = M3.rx(-(k.sw || 0));
+  let dir = M3.vec(swing, [x * Math.sin(k.ab || 0), -Math.cos(k.ab || 0), 0]);
+  let side = V.norm(V.orth(M3.vec(swing, [0, 0, -1]), dir));          // where the elbow points: behind
+  side = M3.vec(M3.axis(dir, x * (k.tw || 0)), side);
+  const el = k.el || 0, fdir = V.norm(V.sub(V.mul(dir, Math.cos(el)), V.mul(side, Math.sin(el)))), fside = V.norm(V.add(V.mul(side, Math.cos(el)), V.mul(dir, Math.sin(el))));
+  const Ru = M3.frame(Rig.offset[arm.fore], [0, 0, -1], c(dir), c(side));
+  const Rf = M3.frame(Rig.offset[arm.hand], [0, 0, -1], c(fdir), c(fside));
+  let palm = V.norm(M3.vec(M3.axis(fdir, x * (k.wr || 0)), V.cross(fdir, fside).map(v => -v * x)));   // palm towards his body when the arm hangs
+  const wf = k.wf || 0, hdir = V.norm(V.add(V.mul(fdir, Math.cos(wf)), V.mul(palm, Math.sin(wf))));
+  palm = V.norm(V.sub(V.mul(palm, Math.cos(wf)), V.mul(fdir, Math.sin(wf))));
+  const Rh = M3.frame([x, 0, 0], [0, -1, 0], c(hdir), c(palm));
+  return [Ru, Rf, Rh];
+}
+// the same, blended: a = fk keys, then mixed
+const fkMix = (a, b, w) => { const o = {}; for (const key of ['ab', 'sw', 'tw', 'el', 'wf', 'wr']) o[key] = (a[key] || 0) + ((b[key] || 0) - (a[key] || 0)) * w; return o; };
 
 // where the gun is this frame, in the fighter's own space
 function gunTransform(f, g, chestPos) {
@@ -3371,13 +3406,13 @@ function gunTransform(f, g, chestPos) {
   const rl = f.reload >= 0 ? smooth(0, 0.14, f.reload / g.reload) * (1 - smooth(0.84, 1, f.reload / g.reload)) : 0;
   R = M3.mul(R, M3.ry(0.62 * sp));                            // sprint: muzzle across the body
   R = M3.mul(R, M3.rx(0.38 * sp + 1.15 * down - 0.22 * rl - f.rise));
-  R = M3.mul(R, M3.rz(0.55 * rl + f.roll));
+  R = M3.mul(R, M3.mul(M3.ry(0.3 * rl), M3.rz(0.45 * rl + f.roll)));   // reloading: muzzle a little across, tipped towards him
   R = M3.mul(R, M3.mul(M3.rz(0.30 * work - 0.9 * down * (g.draw ? 1 : 0)), M3.rx(0.05 * bp.back)));
   R = M3.mul(R, M3.mul(M3.ry(0.75 * look1 - 0.35 * look2), M3.mul(M3.rx(-0.25 * look1 - 0.45 * look2), M3.rz(-1.0 * look1 + 1.15 * look2))));
   const peer = peerAmount(f);                                 // the gun sags while he stares into the magazine
-  R = M3.mul(R, M3.rx(0.34 * peer));
-  p = V.add(p, [-0.03 * peer, -0.09 * peer, -0.03 * peer]);
-  p = V.add(p, [0.03 * sp + 0.03 * rl, -0.07 * sp - 0.25 * down + 0.015 * rl, -0.05 * rl]);
+  R = M3.mul(R, M3.rx(0.14 * peer));
+  p = V.add(p, [-0.03 * peer, -0.05 * peer, -0.02 * peer]);
+  p = V.add(p, [0.03 * sp + 0.2 * rl, -0.07 * sp - 0.25 * down - 0.03 * rl, -0.03 * rl]);   // and brought in to the middle of his chest, where both hands reach
   p = V.mad(p, aim, -f.kick);
   p = V.add(p, [0.03 * (look1 + look2), 0.05 * (look1 + look2) + 0.012 * work, -0.04 * work]);
   return { R, p, aim, pitch, k: g.scale };
@@ -3463,7 +3498,7 @@ function poseFighter(f) {
         else if (i === l.foot) wr[i] = M3.mix(wr[i], leg.foot, J.w);
         if (!g && !punching) {
           const arm = J.arms[s];
-          if (i === a.up) { jumpIK[s] = solveArm(a, wp[i], arm); wr[i] = M3.mix(wr[i], jumpIK[s][0], J.w); }
+          if (i === a.up) { jumpIK[s] = arm.fk ? fkArm(a, wr[IDX.chest], arm.fk) : solveArm(a, wp[i], arm); wr[i] = M3.mix(wr[i], jumpIK[s][0], J.w); }
           else if (i === a.fore) wr[i] = M3.mix(wr[i], jumpIK[s][1], J.w);
           else if (i === a.hand) wr[i] = M3.mix(wr[i], jumpIK[s][2], J.w);
         }
@@ -3681,9 +3716,9 @@ const keys = new Set();
 const mouse = { fire: false, pressed: false, aim: false, drag: null };
 const game = { running: false, locked: false, lockWorked: false, aimToggle: false, enemiesShoot: true, godMode: false, kills: 0, deaths: 0, marker: 0, hurtFade: 0, note: 0, time: 0 };
 const ui = {};
-for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'skipcine', 'songfile', 'songname', 'songoff', 'msg', 'reloadbar', 'boomflash']) ui[id] = document.getElementById(id);
+for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'skipcine', 'songfile', 'songname', 'songoff', 'msg', 'reloadbar', 'boomflash', 'minimap', 'killcount']) ui[id] = document.getElementById(id);
 let hudDirty = true;
-function notify(text) { ui.note.textContent = text; ui.note.style.opacity = 1; game.note = 2.4; }
+function notify(text) { }                                    // the messages in the middle of the screen are switched off
 
 function setRunning(on) {
   game.running = on;
@@ -3753,7 +3788,6 @@ document.addEventListener('pointerlockchange', () => {
 });
 document.addEventListener('mousemove', e => {
   if (!game.running) return;
-  if (looting) return;
   const k = 0.0023 * (1 - 0.45 * player.ads) * (1 - 0.72 * scopeAmount());
   if (game.locked) look(e.movementX * k, e.movementY * k);
   else if (mouse.drag) { look((e.clientX - mouse.drag[0]) * 0.006, (e.clientY - mouse.drag[1]) * 0.005); mouse.drag = [e.clientX, e.clientY]; }
@@ -4065,6 +4099,7 @@ function drawProps(prog, textured) {
   }
 }
 function popWord(p, text, life) {
+  return;                                                      // the pop-up words are switched off
   const el = document.createElement('div'); el.className = 'pop'; el.textContent = text; ui.pops.appendChild(el);
   pops.push({ el, p: p.slice(), t: 0, life: life || 0.75, tilt: rand(-14, 14) });
 }
@@ -4085,6 +4120,21 @@ function solveLeg(leg, S, goal) {
 const restAt = name => Rig.rest[IDX[name]];
 let scratchPose = null;
 // S: hips, bend, twist, tilt, head, arms {R, L}, legs {R, L}; everything in the fighter's own space
+// an arm's three bone rotations from any kind of goal: by joints (fk), by where the hand goes (wrist), or a blend of two
+// (blend: { a, b, w }), mixed bone by bone so switching between them is smooth
+function armRots(a, shoulder, chestR, arm) {
+  if (arm.blend) {
+    const A = armRots(a, shoulder, chestR, arm.blend.a), B = armRots(a, shoulder, chestR, arm.blend.b), w = arm.blend.w;
+    return w <= 0.001 ? A : w >= 0.999 ? B : [M3.mix(A[0], B[0], w), M3.mix(A[1], B[1], w), M3.mix(A[2], B[2], w)];
+  }
+  return arm.fk ? fkArm(a, chestR, arm.fk) : solveArm(a, shoulder, arm);
+}
+// a blend of two arm goals; its finger curl is mixed too
+const armBlend = (a, b, w) => ({ blend: { a, b, w: clamp(w, 0, 1) }, curl: [a.curl[0] + (b.curl[0] - a.curl[0]) * clamp(w, 0, 1), a.curl[1] + (b.curl[1] - a.curl[1]) * clamp(w, 0, 1)] });
+// a relaxed arm, hanging by his side
+const relaxed = (ab, sw, el) => ({ fk: { ab: ab === undefined ? 0.13 : ab, sw: sw === undefined ? 0.06 : sw, el: el === undefined ? 0.3 : el, tw: 0.1 }, curl: [0.45, 0.5] });
+// a hand goal whose wrist mostly follows the forearm, so it never bends the wrong way
+const reach = (at, dir, palm, pole, curl, keep) => Object.assign(hand(at, dir, palm, pole, curl), { natural: keep === undefined ? 0.45 : keep });
 function scriptPose(f, S) {
   const P = scratchPose || (scratchPose = newPose());
   poseReset(P); poseAdd(P, 'Idle', f.time, 1);
@@ -4101,7 +4151,7 @@ function scriptPose(f, S) {
     for (const s of ['R', 'L']) {
       const a = ARMS[s], arm = S.arms && S.arms[s], l = LEGS[s], leg = (S.legs && S.legs[s]) || { ankle: restAt('foot_' + s) };
       if (arm) {
-        if (i === a.up) { ik[s] = solveArm(a, wp[i], arm); wr[i] = ik[s][0]; }
+        if (i === a.up) { ik[s] = armRots(a, wp[i], wr[IDX.chest], arm); wr[i] = ik[s][0]; }
         else if (i === a.fore) wr[i] = ik[s][1];
         else if (i === a.hand) wr[i] = ik[s][2];
         else if (i === a.fingers) wr[i] = M3.mul(wr[a.hand], M3.rz(a.x < 0 ? arm.curl[0] : -arm.curl[0]));
@@ -4133,6 +4183,25 @@ function hand(at, dir, palm, pole, curl) {
   const d = V.norm(dir), q = V.orth(palm, d);
   return { wrist: V.add(V.add(at, V.mul(d, -0.085)), V.mul(q, -0.036)), dir: d, palm: q, pole, curl: [curl === undefined ? 0.5 : curl, curl === undefined ? 0.5 : curl] };
 }
+// keyframes: [[time, value], ...] as one smooth curve that flows through them (Catmull-Rom), easing only at the very
+// start and end. Unlike track() it does not stop at every key, so the motion carries on like a real one.
+function flow(keys, t) {
+  const n = keys.length;
+  if (t <= keys[0][0]) return keys[0][1];
+  if (t >= keys[n - 1][0]) return keys[n - 1][1];
+  let i = 1; while (keys[i][0] < t) i++;
+  const k0 = keys[Math.max(0, i - 2)], k1 = keys[i - 1], k2 = keys[i], k3 = keys[Math.min(n - 1, i + 1)];
+  const u = (t - k1[0]) / (k2[0] - k1[0]);
+  // tangents scaled for uneven key spacing; zero at the first and last key, so it eases in and out there
+  const d1 = k2[0] - k1[0], m = (a, c, ta, tc) => (c - a) / (tc - ta) * d1;
+  const one = (a, b, c, d) => {
+    const m1 = k0 === k1 ? 0 : m(a, c, k0[0], k2[0]), m2 = k3 === k2 ? 0 : m(b, d, k1[0], k3[0]);
+    const u2 = u * u, u3 = u2 * u;
+    return (2 * u3 - 3 * u2 + 1) * b + (u3 - 2 * u2 + u) * m1 + (-2 * u3 + 3 * u2) * c + (u3 - u2) * m2;
+  };
+  if (Array.isArray(k1[1])) return k1[1].map((_, c) => one(k0[1][c], k1[1][c], k2[1][c], k3[1][c]));
+  return one(k0[1], k1[1], k2[1], k3[1]);
+}
 // keyframes: [[time, value], ...] with eased steps between them
 function track(keys, t) {
   if (t <= keys[0][0]) return keys[0][1];
@@ -4154,245 +4223,139 @@ function cue(L, at, fn) { if (L.prev < at && L.t >= at) fn(); }
 const localToWorld = (L, q) => V.add(L.spot, M3.vec(M3.ry(L.face), q));
 
 // ---------------------------------------------------------------- loot a knocked-out caveman
-// The body is a ragdoll the whole time. He pokes the belly (it wobbles), lifts an arm and lets go (it flops: dead),
-// hops on and sits on him like a bench, and bounces: junk pops out of the poor guy's mouth with every bounce, and on the
-// big one the gun shoots out and he catches it. Then he looks down the barrel at his own face, and bites it.
-const BODY = { hold: 3.7, end: 6.5, label: 'loot this caveman' };
-const BD = { poke: 0.6, arm: 1.15, drop: 1.55, hop: 1.78, sat: 2.12, bounces: [2.45, 2.85, 3.25], big: 3.55, catch: 4.1, off: 4.55, look: 4.75, bite: 5.4, huh: 5.95 };
+// He kneels by the body (a ragdoll the whole time) and pats him down. He finds the gun and pulls it out by the barrel,
+// because what else would you hold it by. A test swing, like a club. Hmm. He flips it round, and now it looks right.
+const BODY = { hold: 3.0, end: 4.3, label: 'loot this caveman' };
+const BD = { kneel: 0.3, down: 0.75, pat: 0.85, patEnd: 1.55, grab: 1.72, stood: 2.15, swing: 2.25, swingEnd: 2.78, puzzle: 2.98, toss: 3.12, caught: 3.42, ready: 3.85 };
+const SHOULDER_R = [-0.22, 1.42, -0.02];
 function bodyStep(L) {
   const t = L.t, v = L.victim, hips0 = restAt('hips'), rag = v.rag;
   const toLocal = w => M3.vec(M3.ry(-L.face), V.sub(w, L.spot));
-  const belly = bellyTop(v), bl = toLocal(belly);
-  const S = { arms: {}, legs: {} };
-  for (const [s, x] of [['R', -1], ['L', 1]]) S.arms[s] = idleArm(x);
-  // sitting on him: turned round, bum on his belly, feet on the ground in front
-  const seatH = Math.max(0.3, bl[1] + 0.08);
-  const sitP = localToWorld(L, [0, 0, 0.2]), sitR = M3.ry(L.face + Math.PI);
-  const sitHips = [0, seatH, -0.42];
-  let root = null;
-  if (rag) rag.pin = null;
-
-  if (t < BD.arm) {                                               // poke, poke, poke
-    const w = smooth(0.5, 0.65, t) * (1 - smooth(1.05, BD.arm, t));
-    const tap = t > BD.poke && t < BD.poke + 0.45 ? Math.max(0, Math.sin((t - BD.poke) / 0.15 * Math.PI)) : 0;
-    S.bend = 1.1 * w; S.hips = V.add(hips0, [0, -0.25 * w, -0.12 * w]); S.head = M3.rx(0.25 * w);
-    const finger = hand(V.add(bl, [-0.02, 0.03 + 0.12 * (1 - tap), -0.04]), [0, -0.9, 0.4], [0, 0.4, 0.9], [-1, -0.3, -0.4], 0.15);
-    S.arms.R = Object.assign(finger, { wrist: V.lerp(S.arms.R.wrist, finger.wrist, w) });
-  } else if (t < BD.hop) {                                        // lift his arm... let go. flop. dead.
-    if (L.vh === undefined && rag) {                              // whichever of his hands is nearer
-      const a = rag.p[RP.hand_L], b = rag.p[RP.hand_R];
-      L.vh = V.len(V.sub(a, L.spot)) < V.len(V.sub(b, L.spot)) ? RP.hand_L : RP.hand_R;
+  const pt = n => rag ? toLocal(rag.p[RP[n]]) : toLocal(bonePos(v, n));
+  const belly = toLocal(bellyTop(v)), chestP = V.add(pt('chest'), [0, 0.1, 0]), hipP = pt('hips');
+  const kneel = flow([[BD.kneel, 0], [BD.down, 1], [BD.grab, 1], [BD.stood, 0]], t);
+  const S = {
+    hips: V.add(hips0, [0.02 * kneel, -0.33 * kneel, -0.06 * kneel]),
+    bend: flow([[BD.kneel, 0], [BD.down, 0.6], [BD.patEnd, 0.7], [BD.grab, 0.65], [BD.stood, 0.05], [BD.swing, 0], [2.45, -0.15], [2.62, 0.35], [BD.swingEnd, 0.05], [BD.puzzle, 0.1], [BD.ready, 0]], t),
+    twist: flow([[BD.down, 0], [BD.patEnd, 0], [BD.grab, -0.15], [BD.stood, 0], [2.45, -0.3], [2.62, 0.25], [BD.swingEnd, 0], [BD.ready, 0]], t),
+    head: M3.mul(M3.rx(flow([[BD.kneel, 0], [BD.down, 0.35], [BD.patEnd, 0.45], [BD.grab, 0.35], [BD.stood, 0], [BD.swingEnd, 0], [BD.puzzle, 0.15], [BD.toss, -0.25], [BD.caught, 0], [BD.ready, 0]], t)),
+      M3.rz(flow([[BD.swingEnd, 0], [BD.puzzle, 0.35], [BD.toss, 0.3], [BD.caught, 0], [BD.ready, 0]], t))),
+    arms: {}, legs: {
+      R: { ankle: V.lerp(restAt('foot_R'), [-0.16, 0.07, -0.3], kneel), pole: [-0.2, -0.5, 1], footR: M3.rx(1.1 * kneel) },   // knee on the ground
+      L: { ankle: V.lerp(restAt('foot_L'), [0.18, 0.08, 0.32], kneel), pole: [0.3, 0.3, 1] }                                 // foot planted in front
     }
-    const reach = smooth(BD.arm, BD.arm + 0.15, t), lift = smooth(BD.arm + 0.12, 1.45, t), letGo = t >= BD.drop;
-    const from = rag ? toLocal(rag.p[L.vh]) : [0, 0.1, 0.5];
-    const hold = V.lerp(from, V.add(bl, [-0.05, 0.62, -0.12]), lift);       // as high as a floppy arm goes without lifting him
-    const w = reach * (1 - smooth(BD.drop + 0.05, BD.hop, t));
-    S.bend = 0.8 * w * (1 - lift) + 0.1; S.hips = V.add(hips0, [0, -0.15 * w * (1 - lift), 0]);
-    S.head = M3.mul(M3.rx(0.3 - 0.4 * lift), M3.rz(letGo ? 0.35 : 0));
-    const grab = hand(letGo ? V.add(bl, [-0.08, 0.75, -0.15]) : hold, [0, 0.3, 1], [1, 0, 0], [-1, -0.4, -0.3], letGo ? 0.1 : 1.2);
-    S.arms.R = Object.assign(grab, { wrist: V.lerp(S.arms.R.wrist, grab.wrist, w) });
-    if (!letGo && reach > 0.9 && rag) { rag.pin = { pt: L.vh, to: localToWorld(L, hold), k: 0.5 }; rag.sleep = false; }
-  }
-  // hops up and sits on him, turning round in the air
-  if (t >= BD.hop) {
-    const w = smooth(BD.hop, BD.sat, t), off = smooth(BD.catch + 0.05, BD.off, t);
-    const sit = w * (1 - off), arc = Math.sin(Math.PI * w) * (1 - off) + Math.sin(Math.PI * off);
-    let bounce = 0;
-    for (const [k, b] of BD.bounces.concat([BD.big]).entries()) { const a = b - (k === 3 ? 0.32 : 0.28); if (t >= a && t < b) bounce = Math.sin(Math.PI * (t - a) / (b - a)) * (k === 3 ? 0.42 : 0.24); }
-    const yaw = L.face + Math.PI * (t < BD.catch ? w : 1 - off);
-    root = { R: M3.ry(yaw), p: V.add(V.lerp(L.spot, sitP, sit), [0, 0.3 * arc, 0]) };
-    S.hips = V.add(V.lerp(hips0, sitHips, sit), [0, bounce, 0]);
-    S.bend = 0.25 * sit - 0.15 * (bounce > 0.05 ? 1 : 0);
-    const riding = sit * smooth(BD.sat, BD.sat + 0.15, t);
-    for (const [s, x] of [['R', -1], ['L', 1]]) {
-      S.legs[s] = { ankle: V.lerp(restAt('foot_' + s), [x * 0.22, 0.07 + 0.25 * bounce, 0.12], sit), pole: [x * 0.3, 0.3, 1] };
-      // hands up like a cowboy while he bounces; both up high for the catch
-      const ride = hand([x * (0.38 + 0.06 * Math.sin(t * 20 + x)), seatH + 1.05 + 0.6 * bounce, -0.25], [x * 0.3, 1, 0], [0, 0, 1], [x, -0.2, -0.4], 1.2);
-      const catchUp = hand([x * 0.15, seatH + 1.35, -0.3], [x * 0.2, 1, 0], [-x, 0, 0], [x, -0.2, -0.4], 0.8);
-      const up = smooth(BD.big - 0.1, BD.big + 0.1, t);
-      const goal = mixGoal(ride, catchUp, up);
-      S.arms[s] = mixGoal(S.arms[s], goal, riding * (1 - off));
+  };
+  const idle = relaxed(), patY = k => 0.09 * Math.max(0, Math.cos((t - BD.pat) / 0.17 * Math.PI + k * Math.PI));
+  const into = smooth(BD.kneel + 0.1, BD.down, t);
+  // patting him down, the hands taking turns
+  const patR = reach(V.add(belly, [-0.04, 0.02 + patY(0), 0]), [0, -0.6, 0.8], [0, -0.8, -0.6], [-1, -0.6, -0.2], 0.3);
+  const patL = reach(V.add(chestP, [0.05, 0.02 + patY(1), 0]), [0, -0.6, 0.8], [0, -0.8, -0.6], [1, -0.6, -0.2], 0.3);
+  S.arms.L = t < BD.grab ? armBlend(idle, patL, into) : armBlend(patL, relaxed(0.15, 0.1, 0.35), smooth(BD.grab - 0.15, BD.grab + 0.2, t));
+  // the gun
+  const id = L.gun, g = GUNS[id], mz = g.muzzle[2] * g.scale * 0.8;
+  const clubR = hp => { const c = V.norm(V.sub(hp, SHOULDER_R)); return { c, R: M3.frame([0, 0, 1], [0, 1, 0], V.mul(c, -1), Math.abs(c[1]) > 0.9 ? [0, 0, 1] : [0, 1, 0]) }; };
+  const readyP = [-0.2, 1.02, 0.38], readyR = M3.mul(M3.ry(0.15), M3.rx(0.08));
+  if (t < BD.pat + 0.6) S.arms.R = armBlend(idle, patR, into);
+  else if (t < BD.grab) S.arms.R = armBlend(patR, reach(V.add(hipP, [-0.05, 0.08, 0]), [0, -0.7, 0.7], [0, -1, 0], [-1, -0.5, -0.3], 1.1), smooth(BD.patEnd, BD.grab, t));
+  if (t >= BD.grab - 0.05) {
+    // where his right hand is: up from the hip as he stands, the swing, up to his face, then the toss and catch
+    const hp = flow([[BD.grab - 0.05, V.add(hipP, [-0.05, 0.08, 0])], [BD.stood, [-0.15, 1.0, 0.36]], [BD.swing, [-0.16, 1.05, 0.34]], [2.45, [-0.24, 1.78, -0.05]], [2.62, [-0.1, 0.86, 0.6]],
+      [BD.swingEnd, [-0.14, 1.02, 0.42]], [BD.puzzle, [-0.1, 1.3, 0.42]], [BD.toss, [-0.12, 1.12, 0.4]]], t);
+    let gp, R;
+    if (t < BD.puzzle) { const k = clubR(hp); R = k.R; gp = V.mad(hp, k.c, mz); }
+    else if (t < BD.toss) {                                         // turns it in his hand to look at it, ready to flip it
+      const k = clubR(hp), w = smooth(BD.puzzle, BD.toss, t), flipR = M3.mul(readyR, M3.rx(Math.PI));
+      R = M3.mix(k.R, flipR, w); gp = V.mad(hp, k.c, mz * (1 - w) + 0.12 * w);
+    } else {                                                        // up it goes, round it turns, caught by the handle
+      const w = smooth(BD.toss, BD.caught, t), from = V.mad(hp, clubR(hp).c, 0.12);
+      gp = V.add(V.lerp(from, readyP, w), [0, 0.38 * Math.sin(Math.PI * w), 0]);
+      R = M3.mul(readyR, M3.rx(Math.PI * (1 - w)));
     }
-    S.head = M3.rx(-0.2 * bounce - 0.5 * smooth(BD.big, BD.catch, t) * (1 - off));
-  }
-  // the gun: caught overhead, brought down as he hops off, then the inspection
-  if (t >= BD.catch) {
-    const id = L.gun, inspect = smooth(BD.look - 0.1, BD.look + 0.2, t), bite = smooth(BD.bite, BD.bite + 0.2, t), done = smooth(BD.huh, BD.huh + 0.3, t);
-    const off = smooth(BD.catch + 0.05, BD.off, t);
-    const over = [-0.2 * GUNS[id].scale, seatH + 1.3, -0.3], chest = [-0.22, 0.95, 0.35];
-    const barrel = [0.05, 1.48, 0.38 + 0.25 * GUNS[id].scale];     // pointing at his own face
-    const mouth = [-0.2 * GUNS[id].scale - (id === 'glock' ? 0 : 0.05), 1.36, 0.3];
-    const chew = t > BD.bite + 0.2 && t < BD.huh ? 0.05 * Math.max(0, Math.sin((t - BD.bite) * 18)) : 0;
-    let gp = V.lerp(over, chest, off), R = M3.mul(M3.ry(0.25), M3.rx(0.15));
-    if (t >= BD.look) { gp = V.lerp(V.lerp(chest, barrel, inspect), V.add(mouth, [0, 0, 0.04 - chew]), bite); R = M3.mix(M3.mix(R, M3.ry(Math.PI), inspect), M3.mul(M3.ry(Math.PI / 2), M3.rz(0.1)), bite); }
-    gp = V.lerp(gp, [-0.32, 0.86, 0.22], done);
-    R = M3.mix(R, M3.mul(M3.ry(0.25), M3.rx(0.15)), done);
-    const H = gunHands(id, { p: gp, R });
     S.gun = { id, p: gp, R };
-    S.arms.R = H.R;
-    S.arms.L = t < BD.off ? H.L : t < BD.huh ? mixGoal(H.L, idleArm(1), smooth(BD.off, BD.look, t)) : (() => { const s2 = scratchArm(1, t), w = smooth(BD.huh, BD.huh + 0.25, t) * (1 - smooth(6.3, 6.5, t)); return Object.assign(s2, { wrist: V.lerp(idleArm(1).wrist, s2.wrist, w) }); })();
-    if (t >= BD.look) S.head = M3.mul(M3.rx(-0.1 + chew * 3 - 0.15 * inspect * (1 - bite)), M3.rz(t >= BD.huh ? -0.3 * done : 0));
+    const H = gunHands(id, { p: gp, R });
+    if (t < BD.toss) S.arms.R = armBlend(S.arms.R || idle, reach(hp, V.norm(V.sub(hp, SHOULDER_R)), [0, 0, 1], [-1, -0.5, -0.3], 1.25, 0.3), smooth(BD.grab - 0.05, BD.grab + 0.1, t));
+    else if (t < BD.caught) S.arms.R = reach([-0.16, 1.05, 0.4], [0, 0.3, 1], [1, 0, 0], [-1, -0.5, -0.3], 0.3);     // open hand, waiting
+    else S.arms.R = H.R;
+    if (t >= BD.caught - 0.05 && id !== 'glock') S.arms.L = armBlend(S.arms.L, H.L, smooth(BD.caught - 0.05, BD.caught + 0.15, t));
   }
-  if (root) S.root = root;
+  if (rag) rag.pin = null;
   L.f.script = S;
 
-  // the poor guy: poked, dropped, bounced on
   const word = (q, text, life) => popWord(localToWorld(L, q), text, life);
-  const headPt = () => rag ? rag.p[RP.head] : V.add(belly, [0, 0, 0]);
-  for (let k = 0; k < 3; k++) cue(L, BD.poke + 0.075 + k * 0.15, () => { Sound.play('pop', 0.6); if (rag) ragPush(v, belly, [0, -1.6, 0], 0.35); if (k === 0) word([0, 1.5, 0.3], 'poke?', 0.6); });
-  cue(L, BD.drop, () => Sound.play('whoosh', 0.5));
-  cue(L, BD.drop + 0.18, () => { Sound.play('thud', 0.7); word([0, 1.55, 0.3], '...DEAD.', 0.8); });
-  cue(L, BD.hop, () => Sound.play('hup', 0.8));
-  cue(L, BD.sat, () => { Sound.play('thud', 0.9); if (rag) ragPush(v, belly, [0, -2.5, 0], 0.5); });
-  ['rock', 'fish', 'bone'].forEach((kind, k) => cue(L, BD.bounces[k], () => {
-    Sound.play('boing', 0.8); Sound.play('thud', 0.6);
-    if (rag) { ragPush(v, belly, [0, -3.8, 0], 0.5); ragPush(v, headPt(), [0, 2.6, 0], 0.3); }
-    const h = headPt(); spawnProp(kind, V.add(h, [0, 0.12, 0]), [rand(-1.2, 1.2), rand(4, 5.5), rand(-1.2, 1.2)]);
-    word([0.3 * (k % 2 ? 1 : -1), 1.9, 0.2], ['BOING', 'BLEH', 'HURK'][k], 0.5);
-  }));
-  cue(L, BD.big, () => {                                          // the big one: out comes the gun
-    Sound.play('boing', 1); Sound.play('pop', 1); cam.shake = Math.max(cam.shake, 0.5);
-    if (rag) { ragPush(v, belly, [0, -5, 0], 0.5); ragPush(v, headPt(), [0, 3.5, 0], 0.35); }
-    const h = V.add(headPt(), [0, 0.15, 0]), catchAt = V.add(sitP, M3.vec(sitR, [-0.2 * GUNS[L.gun].scale, seatH + 1.3, -0.3]));
-    L.drop = spawnProp('gun', h, lob(h, catchAt, BD.catch - BD.big), { gun: L.gun, life: BD.catch - BD.big + 0.02, spin: 12 });
-    word([0, 2.1, 0.2], 'PTOOO!', 0.6);
-  });
-  cue(L, BD.catch, () => { if (L.drop) L.drop.life = 0; Sound.play('rack', 0.7); word([0, 2.2, 0.2], 'HA!', 0.5); });
-  cue(L, BD.off, () => Sound.play('land', 0.7));
-  cue(L, BD.look + 0.1, () => { Sound.play('ooo', 0.8, 0); word([0.1, 1.95, 0.3], 'ooo', 0.6); });
-  for (const at of [BD.bite + 0.25, BD.bite + 0.5]) cue(L, at, () => { Sound.play('chomp', 0.9); word([at < BD.bite + 0.4 ? -0.4 : 0.35, 1.75, 0.3], 'CHOMP', 0.5); });
-  cue(L, BD.huh + 0.1, () => { Sound.play('huh', 1); word([0, 2.2, 0], '???', 0.85); });
+  for (let k = 0; k < 4; k++) cue(L, BD.pat + 0.085 + k * 0.17, () => { Sound.play('thud', 0.25); if (rag) ragPush(v, localToWorld(L, k % 2 ? chestP : belly), [0, -0.8, 0], 0.3); });
+  cue(L, BD.grab, () => Sound.play('magout', 0.6));
+  cue(L, 2.5, () => { Sound.play('whoosh', 0.8); word([0, 2.0, 0.3], 'OOGA?', 0.6); });
+  cue(L, BD.puzzle, () => { Sound.play('huh', 0.8); word([0, 1.9, 0.3], 'hmm', 0.5); });
+  cue(L, BD.toss, () => Sound.play('whoosh', 0.5));
+  cue(L, BD.caught, () => { Sound.play('rack', 0.7); Sound.play('hmph', 0.6); });
 }
 
-// ---------------------------------------------------------------- open a chest the caveman way
-// He knocks, politely. Puts his ear to it: hello? Nobody answers, so he climbs on top and stomps on the lid until it
-// bursts open and throws him off onto his bum. Junk everywhere; the prize sails out and lands on his head.
-const CHEST = { hold: 4.5, end: 6.5, label: 'open the chest' };
-const CH = { knock: 0.6, listen: 1.25, climb: 1.75, onTop: 2.15, stomps: [2.45, 2.8, 3.15], land: 3.75, bonk: 4.22, up: 4.32, stand: 4.75 };
+// ---------------------------------------------------------------- open a chest
+// He grabs the lock and tugs at it. Tug. Tug. Nothing. He scratches his head, then notices the lid, lifts it, has a
+// look inside, takes the prize out and has a good look at it.
+const CHEST = { hold: 3.45, end: 4.5, label: 'open the chest' };
+const CS = { lock: 0.3, tug: 0.75, tugEnd: 1.35, scratch: 1.45, scratchEnd: 1.95, grip: 2.25, lift: 2.62, peek: 2.8, inside: 3.12, out: 3.45, up: 3.75 };
 function chestStep(L) {
   const t = L.t, c = L.chest, hips0 = restAt('hips');
-  const S = { arms: {}, legs: {}, hips: hips0, bend: 0 };
-  for (const [s, x] of [['R', -1], ['L', 1]]) S.arms[s] = idleArm(x);
-  const TOP = 0.58, MID = 0.8, FRONT = 0.5;                       // the lid's height, the chest's middle and front, in his space
-  const at = (q, R) => ({ R: M3.mul(M3.ry(L.face), R || M3.id()), p: localToWorld(L, q) });
-  let root = null;
-
-  if (t < CH.listen) {                                            // knock knock
-    const w = smooth(0.5, 0.65, t) * (1 - smooth(1.15, 1.25, t));
-    const tap = t > CH.knock && t < 1.1 ? Math.max(0, Math.sin((t - CH.knock) / 0.15 * Math.PI)) : 0;
-    const fist = hand([-0.08, 0.5, FRONT - 0.06 - 0.07 * tap], [0, 0.2, 1], [0, 0, 1], [-1, -0.3, -0.4], 1.5);
-    S.arms.R = Object.assign(fist, { wrist: V.lerp(S.arms.R.wrist, fist.wrist, w) });
-    S.bend = 0.35 * w; S.hips = V.add(hips0, [0, -0.06 * w, 0]); S.head = M3.rx(0.1 * w);
-  } else if (t < CH.climb) {                                      // ear to the lid. hello? hello??
-    const w = smooth(CH.listen, 1.45, t) * (1 - smooth(1.62, CH.climb, t));
-    S.bend = 1.05 * w; S.hips = V.add(hips0, [0, -0.2 * w, -0.12 * w]); S.twist = 0.25 * w;
-    S.head = M3.mul(M3.rz(-0.85 * w), M3.rx(0.25 * w));
-    const cup = hand([0.12, 1.08 - 0.2 * w, 0.32], [-0.3, 0.6, 0.6], [-1, 0, 0], [1, -0.3, -0.5], 0.8);
-    S.arms.L = Object.assign(cup, { wrist: V.lerp(S.arms.L.wrist, cup.wrist, w) });
-  } else if (t < CH.onTop) {                                      // climbs up, knee first
-    const w = smooth(CH.climb, CH.onTop, t), arc = Math.sin(Math.PI * w);
-    root = at([0, TOP * smooth(0.15, 0.85, w) + 0.25 * arc, MID * smooth(0.05, 0.9, w)]);
-    S.bend = 0.6 * arc; S.hips = V.add(hips0, [0, -0.15 * arc, 0]);
-    for (const [s, x] of [['R', -1], ['L', 1]]) {
-      S.legs[s] = { ankle: V.add(restAt('foot_' + s), [0, (s === 'L' ? 0.35 : 0.12) * arc, (s === 'L' ? 0.25 : -0.1) * arc]), pole: [x * 0.3, 0, 1] };
-      S.arms[s] = hand([x * 0.3, 0.75 + 0.2 * arc, 0.4], [x * 0.2, -0.6, 0.8], [0, -1, 0], [x, -0.3, -0.6], 0.5);
+  const toLocal = w => M3.vec(M3.ry(-L.face), V.sub(w, L.spot));
+  const lidEdge = (x, open) => toLocal(V.add(V.add(c.pos, [0, 0.44, -0.30]), M3.vec(M3.rx(-1.9 * open), [x, 0.07, 0.6])));
+  const lock = toLocal(V.add(c.pos, [0, 0.33, 0.31]));
+  const open = flow([[CS.grip, 0], [CS.lift, 0.55]], t);
+  if (t >= CS.grip && t < CS.lift) c.held = open;
+  else if (t >= CS.lift && c.held !== null && c.held !== undefined) { c.held = null; c.forced = true; c.openV = 4; }
+  const tugs = t > CS.tug && t < CS.tugEnd ? Math.max(0, Math.sin((t - CS.tug) / 0.2 * Math.PI)) : 0;
+  const crouch = flow([[CS.lock, 0], [CS.tug, 0.45], [CS.tugEnd, 0.45], [CS.scratch, 0], [CS.scratchEnd, 0], [CS.grip, 1], [CS.lift, 0.6], [CS.inside, 0.8], [CS.out, 0.6], [CS.up, 0], [CHEST.end, 0]], t);
+  const S = {
+    hips: V.add(hips0, [0, -0.36 * crouch, -0.12 * crouch - 0.06 * tugs]),
+    bend: flow([[CS.lock, 0], [CS.tug, 0.55], [CS.tugEnd, 0.5], [CS.scratch, 0], [CS.scratchEnd, 0], [CS.grip, 0.55], [CS.lift, 0.25], [CS.peek, 0.7], [CS.inside, 0.8], [CS.out, 0.5], [CS.up, 0.05], [CHEST.end, 0]], t) - 0.25 * tugs,
+    head: M3.mul(M3.rx(flow([[CS.lock, 0], [CS.tug, 0.2], [CS.tugEnd, 0.2], [CS.scratch, 0], [CS.scratchEnd, 0], [CS.grip, 0.15], [CS.lift, -0.05], [CS.peek, 0.4], [CS.out, 0.3], [CS.up, -0.1], [CHEST.end, 0]], t)),
+      M3.rz(flow([[CS.tugEnd, 0], [CS.scratch, 0.3], [CS.scratchEnd, 0.25], [CS.grip, 0], [CHEST.end, 0]], t))),
+    arms: {}, legs: {}
+  };
+  for (const [s, x] of [['R', -1], ['L', 1]]) S.legs[s] = { ankle: V.add(restAt('foot_' + s), [x * 0.06 * crouch, 0, -0.04 * crouch]), pole: [x * 0.45, 0, 1] };
+  const idle = relaxed();
+  const onLock = x => reach(V.add(lock, [x * 0.05, 0, -0.03 - 0.05 * tugs]), [x * 0.2, 0, 1], [-x, 0, 0], [x, -0.6, -0.3], 1.2);
+  const onLid = x => reach(V.add(lidEdge(x * 0.28, open), [0, -0.02, -0.02]), [x * 0.1, 0.1, 1], [0, 1, 0], [x, -0.6, -0.3], 1.0, 0.35);
+  for (const [s, x] of [['R', -1], ['L', 1]]) {
+    let arm;
+    if (t < CS.tugEnd) arm = armBlend(idle, onLock(x), smooth(CS.lock, CS.tug, t));
+    else if (t < CS.scratchEnd) {
+      const back = armBlend(onLock(x), idle, smooth(CS.tugEnd, CS.scratch, t));
+      arm = s === 'R' ? armBlend(back, Object.assign(scratchArm(-1, t), { natural: 0.5 }), smooth(CS.scratch, CS.scratch + 0.15, t) * (1 - smooth(CS.scratchEnd - 0.15, CS.scratchEnd, t))) : back;
+    } else if (t < CS.lift) arm = armBlend(idle, onLid(x), smooth(CS.scratchEnd, CS.grip, t));
+    else if (s === 'L') arm = armBlend(onLid(x), reach([0.24, 0.5, 0.5], [0, -0.5, 1], [0, -1, 0], [1, -0.6, -0.3], 0.8), smooth(CS.lift, CS.peek, t));   // a hand on the front
+    else {
+      const dig = t > CS.peek + 0.1 && t < CS.inside ? [0.06 * Math.sin(t * 13), 0.04 * Math.abs(Math.sin(t * 9)), 0.05 * Math.cos(t * 11)] : [0, 0, 0];
+      arm = armBlend(onLid(x), reach(V.add(flow([[CS.lift, [-0.12, 0.75, 0.45]], [CS.peek, [-0.1, 0.6, 0.62]], [CS.inside, [-0.08, 0.36, 0.8]]], t), dig), [0, -0.7, 0.7], [0, -0.7, -0.7], [-1, -0.6, -0.2], 0.9), smooth(CS.lift, CS.peek, t));
     }
-  } else if (t < CH.stomps[2] + 0.02) {                           // stomp. stomp. STOMP.
-    let hop = 0;
-    for (let k = 0; k < 3; k++) { const a = CH.stomps[k] - 0.3, b = CH.stomps[k]; if (t >= a && t < b) hop = Math.sin(Math.PI * (t - a) / (b - a)) * (k === 2 ? 0.45 : 0.3); }
-    const squash = CH.stomps.some(b => t >= b - 0.02 && t < b + 0.12) ? 1 : 0;
-    root = at([0, TOP + hop, MID]);
-    S.hips = V.add(hips0, [0, -0.14 * squash + 0.04 * hop, 0]); S.bend = 0.2 * squash - 0.1 * hop;
-    S.head = M3.rx(-0.25 * hop);
-    for (const [s, x] of [['R', -1], ['L', 1]]) {
-      const lift = (s === 'L' ? 1 : 0.6) * hop;
-      S.legs[s] = { ankle: V.add(restAt('foot_' + s), [x * 0.04, 0.5 * lift, 0.08 * lift]), pole: [x * 0.5, 0, 1] };
-      S.arms[s] = hand([x * (0.42 + 0.1 * hop), 1.55 + 0.4 * hop + 0.05 * Math.sin(t * 30 + x), 0.05], [x * 0.3, 1, 0], [0, 0, 1], [x, -0.2, -0.5], 1.4);
-    }
-  } else if (t < CH.land) {                                       // the lid bursts open and throws him off, backwards
-    const w = (t - CH.stomps[2]) / (CH.land - CH.stomps[2]), arc = Math.sin(Math.PI * w);
-    const H = [0, (TOP + hips0[1]) * (1 - w) + 0.24 * w + 1.05 * arc, MID * (1 - smooth(0, 1, w)) + 0.12 * smooth(0, 1, w)];
-    const spin = M3.rx(-1.15 * Math.sin(Math.PI * 0.5 * Math.min(1, w * 1.2)) * (1 - smooth(0.75, 1, w)) - 0.25 * smooth(0.75, 1, w));
-    root = { R: M3.mul(M3.ry(L.face), spin), p: localToWorld(L, V.sub(H, M3.vec(spin, hips0))) };
-    S.bend = -0.3 * arc;
-    for (const [s, x] of [['R', -1], ['L', 1]]) {
-      S.legs[s] = { ankle: V.add(restAt('foot_' + s), [x * 0.15 * arc, 0.42 * arc, 0.45 * arc]), pole: [x * 0.3, 0.6, 1] };
-      S.arms[s] = hand([x * (0.6 + 0.08 * Math.sin(t * 40 + x)), 1.6 + 0.1 * Math.cos(t * 33 + x), 0.0], [x * 0.4, 1, 0], [0, 0, 1], [x, -0.2, -0.5], 0.2);
-    }
+    S.arms[s] = arm;
   }
-  // on his bum, seeing stars, until the prize comes down on his head; then he gets up with it
-  const sitting = t >= CH.land - 0.02 && t < CH.stand;
-  if (sitting) {
-    const getUp = smooth(CH.up, CH.stand, t);
-    const H = V.lerp([0, 0.2, 0.08], hips0, getUp), dazed = 1 - getUp;
-    S.hips = V.sub(H, [0, 0, 0]); S.bend = -0.25 * dazed + 0.3 * Math.sin(Math.PI * getUp);
-    S.head = M3.mul(M3.rz(Math.sin(t * 9) * 0.3 * dazed), M3.rx(Math.cos(t * 9) * 0.15 * dazed));
-    for (const [s, x] of [['R', -1], ['L', 1]]) {
-      S.legs[s] = { ankle: V.lerp([x * 0.2, 0.07, 0.62], restAt('foot_' + s), getUp), pole: [x * 0.3, 1, 0.4] };
-      S.arms[s] = hand(V.lerp([x * 0.32, 0.1, -0.28], [x * 0.22, 0.85, 0.3], smooth(CH.bonk, CH.stand, t)), [x * 0.2, -1, -0.3], [0, -1, 0], [x, 0, -0.4], 0.4);
+  // the prize: out of the chest, held up to have a look, then held ready
+  if (t >= CS.inside) {
+    const id = L.gun, vest = id === 'vest';
+    const pos = flow([[CS.inside, [-0.08, 0.38, 0.8]], [CS.out, [-0.1, 0.8, 0.55]], [CS.up, [-0.08, 1.3, 0.42]], [CS.up + 0.3, [-0.08, 1.32, 0.42]], [CHEST.end - 0.2, vest ? [0, 1.1, 0.35] : [-0.2, 1.02, 0.38]]], t);
+    if (vest) {
+      S.vest = { p: pos, R: M3.rx(-0.1) };
+      S.arms.R = armBlend(S.arms.R, reach(V.add(pos, [-0.2, 0.06, 0]), [0.1, 1, 0.1], [1, 0, 0], [-1, -0.3, -0.3], 1.1), smooth(CS.inside, CS.out, t));
+      S.arms.L = armBlend(S.arms.L, reach(V.add(pos, [0.2, 0.06, 0]), [-0.1, 1, 0.1], [-1, 0, 0], [1, -0.3, -0.3], 1.1), smooth(CS.out, CS.up, t));
+    } else {
+      const side = M3.mul(M3.ry(Math.PI / 2), M3.rz(0.15)), readyR = M3.mul(M3.ry(0.15), M3.rx(0.08));
+      const R = t < CS.up + 0.3 ? side : M3.mix(side, readyR, smooth(CS.up + 0.3, CHEST.end - 0.2, t));
+      const H = gunHands(id, { p: pos, R });
+      S.gun = { id, p: pos, R }; S.arms.R = H.R;
+      if (id !== 'glock') S.arms.L = armBlend(S.arms.L, H.L, smooth(CS.out, CS.up, t));
+      else S.arms.L = armBlend(S.arms.L, relaxed(), smooth(CS.out, CS.up, t));
     }
-    root = at([0, 0, 0]);
-  }
-  if (root) S.root = root;
-
-  // the prize, flying out of the chest onto his head, then into his hands
-  if (t >= CH.land && t < CH.stand) {
-    const fly = smooth(CH.land, CH.bonk, t), head = [0, 1.12 + 0.04 * Math.max(0, Math.sin((t - CH.bonk) * 30)) * (t > CH.bonk ? 1 : 0), 0.05];
-    const from = [0, TOP, MID], pos = t < CH.bonk ? V.add(V.lerp(from, head, fly), [0, 1.0 * Math.sin(Math.PI * fly), 0]) : V.lerp(head, [-0.2, 0.8, 0.35], smooth(CH.up, CH.stand, t));
-    const R = M3.mul(M3.ry(Math.PI / 2), M3.rx(t < CH.bonk ? fly * 9 : 0));
-    if (L.gun === 'vest') S.vest = { p: pos, R: M3.rx(t < CH.bonk ? fly * 7 : -0.12) }; else S.gun = { id: L.gun, p: pos, R };
-  }
-
-  // and hold the prize up for everyone to see
-  if (t >= 4.75 && L.gun === 'vest') {
-    const take = smooth(4.75, 5.0, t), w = smooth(4.85, 5.2, t), hop = t > 5.15 && t < 6.15 ? Math.abs(Math.sin((t - 5.15) * Math.PI * 2)) : 0;
-    const gp = V.lerp([0, 0.8, 0.4], [0, 1.9 + hop * 0.04, 0.14], w);
-    S.vest = { p: gp, R: M3.mul(M3.rz(Math.sin(t * 9) * 0.06), M3.rx(-0.12)) };
-    for (const [s, x] of [['R', -1], ['L', 1]]) {
-      const goal = hand([x * 0.205, gp[1] - 0.04, gp[2]], [-x * 0.1, 1, 0.1], [-x, 0, 0], [x, -0.3, -0.3], 1.1);
-      S.arms[s] = Object.assign(goal, { wrist: V.lerp(S.arms[s].wrist, goal.wrist, take) });
-    }
-    S.bend = S.bend * (1 - w) - 0.2 * w; S.head = M3.rx(-0.3 * w); S.hips = V.lerp(S.hips, hips0, take);
-    S.root = { R: M3.ry(L.face), p: V.add(L.spot, [0, hop * 0.14, 0]) };
-    for (const s of ['R', 'L']) S.legs[s] = { ankle: V.add(restAt('foot_' + s), [0, hop * 0.07, 0]) };
-  } else if (t >= 4.75) {
-    const id = L.gun, take = smooth(4.75, 5.0, t), w = smooth(4.85, 5.2, t), hop = t > 5.15 && t < 6.15 ? Math.abs(Math.sin((t - 5.15) * Math.PI * 2)) : 0;
-    const R = M3.mul(M3.ry(Math.PI / 2), M3.rx(-0.08 + Math.sin(t * 9) * 0.1));
-    const gp = V.lerp([-0.2, 0.8, 0.35], [id === 'glock' ? -0.12 : -0.25 * GUNS[id].scale, 1.86 + hop * 0.04, 0.12], w);
-    const H = gunHands(id, { p: gp, R });
-    S.gun = { id, p: gp, R };
-    const other = id === 'glock' ? hand([0.34, 0.86, 0.06], [-0.4, -1, 0], [-1, 0, 0], [1, 0, -0.2], 1.1) : H.L;
-    for (const [s, goal] of [['R', H.R], ['L', other]]) S.arms[s] = Object.assign(goal, { wrist: V.lerp(S.arms[s].wrist, goal.wrist, take) });
-    S.bend = S.bend * (1 - w) - 0.2 * w; S.head = M3.rx(-0.3 * w); S.hips = V.lerp(S.hips, hips0, take);
-    S.root = { R: M3.ry(L.face), p: V.add(L.spot, [0, hop * 0.14, 0]) };
-    for (const s of ['R', 'L']) S.legs[s] = { ankle: V.add(restAt('foot_' + s), [0, hop * 0.07, 0]) };
   }
   L.f.script = S;
 
-  const lid = V.add(c.pos, [0, 0.62, 0.15]), word = (q, text, life) => popWord(localToWorld(L, q), text, life);
-  for (let k = 0; k < 3; k++) cue(L, CH.knock + 0.075 + k * 0.15, () => { Sound.play('knock', 0.9); c.wobble = Math.max(c.wobble, 0.15); if (k === 0) word([0, 1.6, 0.4], 'knock knock?', 0.7); });
-  cue(L, CH.listen + 0.25, () => { Sound.play('huh', 0.8); word([0.2, 1.4, 0.3], 'hello??', 0.8); });
-  cue(L, CH.climb + 0.05, () => Sound.play('hup', 0.8));
-  CH.stomps.forEach((at, k) => cue(L, at, () => {
-    Sound.play('thud', 1); Sound.play('bonk', 0.5); c.wobble = 1; cam.shake = Math.max(cam.shake, 0.5 + 0.25 * k);
-    puff(lid, 6, [0.6, 0.45, 0.25, 0.8], 1.0, 0.04, 0.4, 4);
-    word([0.4 * (k % 2 ? 1 : -1), 1.25, 0.8], ['STOMP', 'STOMP!', 'STOMP!!'][k], 0.5);
-  }));
-  cue(L, CH.stomps[2] + 0.01, () => {                              // KA-BOING: the lid gives
-    c.forced = true; c.openV += 14; Sound.play('boing', 1); Sound.play('whoosh', 1); cam.shake = 1;
-    word([0, 1.9, 0.8], 'BOING!', 0.8); puff(lid, 14, [0.6, 0.45, 0.25, 0.8], 1.8, 0.05, 0.5, 4);
-    ['rock', 'bone', 'fish', 'meat', 'rock'].forEach((kind, k) => {
-      const from = V.add(c.pos, [rand(-0.2, 0.2), 0.55, 0]), land = V.add(c.pos, [(k % 2 ? 1 : -1) * rand(0.8, 1.8), 0.07, rand(-0.3, 1.8)]);
-      spawnProp(kind, from, lob(from, land, rand(0.7, 1.0)));
-    });
-  });
-  cue(L, CH.land, () => { Sound.play('thud', 1); Sound.play('ugh', 0.7); puff(L.spot.slice(), 12, [0.5, 0.47, 0.42, 0.7], 1.1, 0.06, 0.5, 1.5); });
-  cue(L, CH.bonk, () => { Sound.play('bonk', 1); word([0.3, 1.6, 0.1], 'BONK!', 0.6); });
-  cue(L, CH.stand + 0.1, () => { Sound.play('tada', 0.9); Sound.play('ooga', 0.9); word([0, 2.05, -0.8], 'OOGA!!', 1.1); });
-
-  // stars while he sits there dazed
-  const see = smooth(CH.land, CH.land + 0.1, t) * (1 - smooth(CH.up, CH.up + 0.15, t));
-  if (see > 0) stars.push({ f: L.f, w: see });
+  const word = (q, text, life) => popWord(localToWorld(L, q), text, life);
+  for (let k = 0; k < 3; k++) cue(L, CS.tug + 0.1 + k * 0.2, () => { Sound.play('click', 0.7); Sound.play('knock', 0.4); c.wobble = Math.max(c.wobble, 0.35); if (k === 1) word([0, 1.5, 0.4], 'hnng', 0.5); });
+  cue(L, CS.scratch + 0.1, () => { Sound.play('huh', 0.8); word([0, 1.95, 0.1], '?', 0.6); });
+  cue(L, CS.grip + 0.05, () => Sound.play('creak', 0.9));
+  cue(L, CS.peek, () => Sound.play('whoosh', 0.35));
+  cue(L, CS.out, () => Sound.play(L.gun === 'vest' ? 'vest' : 'rack', 0.6));
+  cue(L, CS.up + 0.05, () => { Sound.play('ooo', 0.6, 0.3); word([0, 1.75, 0.4], 'ooh', 0.6); });
 }
 
 // ---------------------------------------------------------------- starting, holding, finishing
@@ -4441,7 +4404,7 @@ function startLoot(target) {
 function releaseTarget(L) {
   if (L.victim && L.victim.rag) L.victim.rag.pin = null;
   if (L.victim && L.victim.dead >= 0) { L.victim.beingLooted = false; L.victim.script = null; L.victim.scriptW = 0; if (L.given) { L.victim.looted = true; L.victim.dead = 1.3; } else L.victim.dead = Math.min(L.victim.dead, LOOT_WINDOW - 4); }
-  if (L.chest) L.chest.forced = false;
+  if (L.chest) { L.chest.forced = false; L.chest.held = null; }
 }
 function endLoot() {
   const L = looting; if (!L) return;
@@ -4470,7 +4433,7 @@ function lootStep(dt) {
   const pressed = holding && !lootHeld;
   lootHeld = holding;
   stars.length = 0;
-  lootCam = clamp(lootCam + (looting && looting.cancel < 0 && looting.t < looting.def.end - 0.45 ? dt / 0.65 : -dt / 0.55), 0, 1);
+  lootCam = 0;                                                 // the camera stays yours while he does it
   if (!looting) {
     const target = pressed ? lootTarget() : null;
     if (!target) {
@@ -4510,8 +4473,6 @@ function lootStep(dt) {
   } else f.speed = 0;
   const gait = f.speed > 0.2 ? 'Walk' : 'Idle';
   for (const n of CLIP_NAMES) f.weights[n] = n === gait ? 1 : 0;
-  cam.yaw += wrap(L.face - Math.PI - cam.yaw) * Math.min(1, dt * 5);
-  cam.pitch += (0.18 - cam.pitch) * Math.min(1, dt * 5);
 
   (L.kind === 'body' ? bodyStep : chestStep)(L);
   const out = 1 - smooth(L.def.end - 0.28, L.def.end, t);
@@ -4553,9 +4514,10 @@ function hudLoot(dt) {
   }
 }
 // ======================================================================= jumping
-// a big cartoon caveman jump: squat with the arms swung back, spring up with both arms flung over his head, knees
-// tucked up high at the top, arms out wide on the way down, and a wide, knees-out landing. Running, it is a big striding leap.
-const JUMP = { speed: 3.9, gravity: 12.5, pre: 0.13, preMoving: 0.05, land: 0.3, landMoving: 0.17 };
+// A natural jump: a quick dip with the arms swinging back, a push off with the arms swinging forward and up to chest
+// height, the knees drawn up a little at the top, legs reaching for the ground, and a soft knees-bent landing.
+// Running, it is a stride: lead knee up, back leg trailing, arms swinging the other way.
+const JUMP = { speed: 3.9, gravity: 12.5, pre: 0.12, preMoving: 0.05, land: 0.3, landMoving: 0.18 };
 JUMP.air = 2 * JUMP.speed / JUMP.gravity;
 function startJump(f) {
   if (f.jump >= 0 || f.dead >= 0) return;
@@ -4577,58 +4539,50 @@ function jumpStep(f, dt) {
   if (crossed(T.down)) {
     Sound.play('land', mine ? 0.8 : 0.2); puff([f.pos[0], f.pos[1] + 0.04, f.pos[2]], 12, [0.52, 0.50, 0.46, 0.65], 1.0, 0.065, 0.45, 1);
     f.riseV -= 2.2;                                            // the gun dips with the landing
-    if (mine) cam.shake = Math.max(cam.shake, 0.4);
+    if (mine) cam.shake = Math.max(cam.shake, 0.3);
   }
   if (f.jump >= T.end) f.jump = -1;
 }
 // how the body is shaped this frame: null when not jumping
 function jumpShape(f) {
   if (f.jump < 0 || f.dead >= 0) return null;
-  const T = jumpTimes(f), t = f.jump, A = JUMP.air, P = T.pre, D = T.down, u = clamp((t - P) / A, 0, 1);
-  const air = t >= P && t < D, moving = f.jumpMoving, way = f.jumpBack ? -1 : 1;
-  // how low he is: the squat before, the stretch as he leaves, the squash when he lands
-  const squat = t < P ? smooth(0, P, t) : 0;
-  const stretch = air ? 1 - smooth(0.0, 0.28, u) : 0;
-  const land = t >= D ? track([[D, 0], [D + 0.06, 1], [D + T.land * 0.6, 0.35], [T.end, 0]], t) : 0;
-  const tuck = air ? smooth(0.12, 0.42, u) * (1 - smooth(0.62, 0.92, u)) : 0;
-  const reach = air ? smooth(0.6, 0.95, u) : 0;                      // legs stretch down for the ground
-  const w = smooth(0, 0.04, t) * (1 - smooth(T.end - 0.1, T.end, t));
-  const low = moving ? 0.5 : 1;
+  const T = jumpTimes(f), t = f.jump, A = JUMP.air, P = T.pre, D = T.down, E = T.end, moving = f.jumpMoving, way = f.jumpBack ? -1 : 1;
+  const w = smooth(0, 0.04, t) * (1 - smooth(E - 0.08, E, t));
+  const at = k => P + A * k;                                       // a moment in the air, 0 to 1
   const shape = {
-    w, drop: (-0.2 * squat - 0.2 * land) * low + 0.03 * stretch,
-    bend: (0.45 * squat + 0.35 * land) * low - 0.18 * stretch + (moving ? 0.25 : 0.12) * tuck,
-    head: (-0.1 * squat - 0.1 * land) * low + 0.25 * stretch,
+    w,
+    drop: flow([[0, 0], [P, moving ? -0.05 : -0.12], [at(0.12), 0.02], [at(0.85), 0.01], [D, 0], [D + 0.07, moving ? -0.07 : -0.13], [E, 0]], t),
+    bend: flow([[0, 0], [P, moving ? 0.15 : 0.3], [at(0.15), 0.02], [at(0.5), 0.1], [D, 0.05], [D + 0.07, moving ? 0.2 : 0.32], [E, 0]], t),
+    head: flow([[0, 0], [P, -0.08], [at(0.2), 0.06], [at(0.8), -0.04], [D + 0.07, -0.1], [E, 0]], t),
     legs: {}, arms: {}
   };
-  const wig = Math.sin(t * 34) * tuck;                                // a little flail at the top
   for (const [s, x] of [['R', -1], ['L', 1]]) {
     const rest = Rig.rest[IDX['foot_' + s]], lead = s === 'L';
-    let ankle, foot, pole = [x * 0.45, 0, 1];
-    if (moving) {                                                   // the leap: lead knee up and forward, the other leg trailing behind
-      const fwd = lead ? 0.34 : -0.36, up = lead ? 0.3 : 0.26;
-      ankle = V.add(rest, [0, up * tuck + 0.03 * reach, way * fwd * Math.max(tuck, 0.4 * reach) - 0.05 * stretch]);
-      foot = M3.rx(0.6 * stretch + (lead ? -0.1 : 0.9) * tuck);
-      pole = [x * 0.2, 0, 1];
-    } else {                                                        // the cannonball: both knees right up, feet under his bum
-      ankle = V.add(rest, [x * (0.05 * tuck + 0.09 * land + 0.03 * squat), 0.34 * tuck - 0.02 * stretch, 0.1 * tuck - 0.05 * stretch]);
-      foot = M3.rx(0.7 * stretch + 0.25 * tuck);
+    let up, fwd, toe;
+    if (moving) {                                                  // stride
+      up = flow([[P, 0], [at(0.3), lead ? 0.26 : 0.18], [at(0.6), lead ? 0.24 : 0.2], [at(0.95), lead ? 0.06 : 0.1], [D, 0]], t);
+      fwd = way * flow([[P, 0], [at(0.3), lead ? 0.28 : -0.3], [at(0.7), lead ? 0.24 : -0.22], [D, lead ? 0.08 : -0.06], [E, 0]], t);
+      toe = flow([[P, 0.5], [at(0.3), lead ? -0.1 : 0.9], [at(0.8), 0.1], [D, 0], [E, 0]], t);
+    } else {                                                       // knees drawn up a little, one more than the other
+      up = flow([[P, 0], [at(0.12), -0.02], [at(0.45), lead ? 0.2 : 0.15], [at(0.62), lead ? 0.18 : 0.14], [at(0.92), 0.02], [D, 0]], t);
+      fwd = flow([[P, 0], [at(0.45), lead ? 0.08 : 0.03], [at(0.9), 0.02], [D, 0]], t);
+      toe = flow([[0, 0], [P, 0], [at(0.12), 0.7], [at(0.45), 0.25], [at(0.85), 0.25], [D, 0]], t);
     }
-    shape.legs[s] = { ankle, foot, pole };
-    // the arms (only when his hands are free)
+    const spread = flow([[0, 0], [D, 0], [D + 0.07, 0.04], [E, 0]], t);
+    shape.legs[s] = { ankle: V.add(rest, [x * spread, up, fwd]), foot: M3.rx(toe), pole: [x * 0.3, 0, 1] };
+    // arms, by their joints: relaxed, back on the dip, swung forward and up as he goes, out a little at the top, forward and
+    // bent for the landing. Running, they swing opposite the legs.
+    const K = (ab, sw, el, wf) => ({ ab, sw, el, wf, tw: 0.15 });
     let keys;
     if (moving) {
-      const fore = (lead ? -1 : 1) * way;                           // arms swing opposite the legs
-      keys = [[0, [x * 0.44, 0.68, 0.03]], [P, [x * 0.44, 0.7, 0.03]], [P + A * 0.25, [x * 0.34, 1.62, 0.36 * fore - 0.05]], [P + A * 0.7, [x * 0.62, 1.45, 0.2 * fore]],
-        [D, [x * 0.7, 1.15, 0.1]], [D + 0.07, [x * 0.5, 0.78, 0.2]], [T.end, [x * 0.44, 0.68, 0.03]]];
+      const o = (lead ? -1 : 1) * way;                                // the arm opposite the lead leg goes forward
+      keys = [[0, K(0.15, 0.05, 0.4, 0)], [P, K(0.18, 0.1 * o, 0.55, 0)], [at(0.22), K(0.3, 0.75 * o + 0.1, 0.8, 0.1)], [at(0.6), K(0.55, 0.35 * o + 0.1, 0.6, 0)], [D, K(0.6, 0.15, 0.45, 0)], [D + 0.08, K(0.3, 0.35, 0.7, 0)], [E, K(0.15, 0.05, 0.4, 0)]];
     } else {
-      keys = [[0, [x * 0.44, 0.68, 0.03]], [P, [x * 0.36, 0.66, -0.34]], [P + A * 0.18, [x * 0.24, 2.02, 0.1]], [P + A * 0.5, [x * 0.46, 1.98, 0.02]],
-        [P + A * 0.82, [x * 0.8, 1.38, 0.08]], [D + 0.06, [x * 0.42, 0.8, 0.34]], [T.end, [x * 0.44, 0.68, 0.03]]];
+      keys = [[0, K(0.15, 0.05, 0.3, 0)], [P, K(0.22, -0.6, 0.25, -0.1)], [at(0.14), K(0.3, 0.95, 0.45, 0.1)], [at(0.42), K(0.75, 0.3, 0.4, 0)], [at(0.82), K(0.8, 0.15, 0.3, 0)], [D + 0.07, K(0.35, 0.4, 0.65, 0.1)], [E, K(0.15, 0.05, 0.3, 0)]];
     }
-    const wrist = V.add(track(keys, t), [0, 0.05 * wig * x, 0.04 * wig]);
-    const upness = clamp((wrist[1] - 1.0) / 0.7, 0, 1);
-    const along = V.sub(wrist, [x * 0.22, 1.42, -0.02]);              // the hand carries on the line of the arm
-    const dir = V.len(along) > 0.15 ? V.norm(along) : V.norm(V.lerp([x * 0.35, -0.9, 0.2], [x * 0.25, 1, 0.05], upness));
-    shape.arms[s] = { wrist, dir, palm: V.norm(V.lerp([-x, 0, 0.2], [0, 0, 1], upness)), pole: [x, -0.3, -0.6], curl: [0.25 + 0.3 * tuck, 0.25 + 0.3 * tuck] };
+    const fk = {};
+    for (const key of ['ab', 'sw', 'el', 'wf', 'tw']) fk[key] = flow(keys.map(([kt, kv]) => [kt, kv[key]]), t);
+    shape.arms[s] = { fk, curl: [0.75, 0.8] };
   }
   return shape;
 }
@@ -5278,7 +5232,7 @@ function tickBomb(b, left, fuse, c) {
 // ---------------------------------------------------------------- your own C4
 // 5 to hold it, click to kneel and plant it (on a knocked-out caveman's belly if one is right there),
 // G to drop it, E to pick one up. You start with one and shake another out of every body you loot.
-const C4_FUSE = 5, C4_MAX = 3, PLANT = 0.75;
+const C4_FUSE = 5, C4_MAX = 3, PLANT = 2.1;
 const C4_HOLD = [0, 0.95, 0.38];
 const planted = [];
 player.c4 = 1; player.holdC4 = false; player.plantT = -1;
@@ -5290,7 +5244,7 @@ function holdC4(f) {
 function giveC4(f, n) { f.c4 = Math.min(C4_MAX, (f.c4 || 0) + (n || 1)); hudDirty = true; }
 // where it goes: a body's belly if there is one close in front, otherwise the ground in front of you
 function plantSpot(f) {
-  const fwd = [Math.sin(f.yaw), 0, Math.cos(f.yaw)], at = V.mad(f.pos, fwd, 0.62);
+  const fwd = [Math.sin(f.yaw), 0, Math.cos(f.yaw)], at = V.mad(f.pos, fwd, 0.74);
   for (const b of bots) {
     if (b.dead < 1 || b.send) continue;
     const belly = bellyTop(b);
@@ -5303,46 +5257,78 @@ function startPlant(f) {
   f.plantT = 0; f.plantAt = plantSpot(f); f.plantYaw = f.yaw;
 }
 // runs inside playerStep: the carrying pose, and the plant itself
+// planting: kneel, set it down, steady it with one hand and punch a code into the keypad with the other, press to arm
+// it (only then does the clock start), give it two pats like a good pet, get up
+const PL = { kneel: 0.3, set: 0.55, keys: [0.86, 1.0, 1.13, 1.27], arm: 1.45, pats: [1.62, 1.76], up: 1.92 };
 function c4Step(f, dt) {
   f.carry = null;
-  if (!f.holdC4 || f.dead >= 0 || looting) { if (f.plantT >= 0) { f.plantT = -1; f.script = null; f.scriptW = 0; } return; }
+  if (!f.holdC4 || f.dead >= 0 || looting) { if (f.plantT >= 0) { f.plantT = -1; f.script = null; f.scriptW = 0; if (f.plantBomb && !f.plantBomb.armed) f.plantBomb.armed = true; f.plantBomb = null; } return; }
   if (f.plantT < 0) { f.carry = holdGoals(C4_HOLD); f.c4Hold = C4_HOLD; return; }
-  const t = f.plantT += dt, hips0 = Rig.rest[IDX.hips];
+  const t0 = f.plantT, t = f.plantT += dt, hips0 = Rig.rest[IDX.hips], crossed = at => t0 < at && t >= at;
   const local = M3.vec(M3.ry(-f.yaw), V.sub(f.plantAt.p, f.pos));
-  const down = smooth(0, 0.3, t) * (1 - smooth(PLANT - 0.2, PLANT, t)), lower = smooth(0.08, 0.42, t);
-  const c = V.lerp(C4_HOLD, local, lower);
-  f.c4Hold = t < 0.45 ? c : null;
-  const G = holdGoals(t < 0.45 ? c : V.add(local, [0, 0.08 * smooth(0.45, 0.6, t), 0]));
-  f.script = { hips: V.add(hips0, [0, -0.45 * down, -0.1 * down]), bend: 0.8 * down, head: M3.rx(-0.4 * down), arms: G };
+  const key = V.add(local, M3.vec(M3.ry(f.plantYaw - f.yaw + Math.PI / 2), V.add(C4.panelAt, [0, 0, -0.05])));   // the keypad, in his space
+  const kneel = flow([[0, 0], [PL.kneel, 1], [PL.up - 0.15, 1], [PLANT, 0]], t);
+  const lower = smooth(0.08, PL.set, t), c = V.lerp(C4_HOLD, local, lower);
+  f.c4Hold = t < PL.set ? c : null;
+  const S = {
+    hips: V.add(hips0, [0.02 * kneel, -0.33 * kneel, -0.06 * kneel]),
+    bend: flow([[0, 0], [PL.kneel, 0.5], [PL.set, 0.65], [PL.keys[0], 0.55], [PL.arm, 0.6], [PL.pats[1], 0.55], [PL.up, 0.1], [PLANT, 0]], t),
+    head: M3.rx(flow([[0, 0], [PL.set, 0.4], [PL.arm, 0.45], [PL.arm + 0.12, 0.2], [PL.up, 0], [PLANT, 0]], t)),
+    arms: {}, legs: {
+      R: { ankle: V.lerp(restAt('foot_R'), [-0.16, 0.07, -0.3], kneel), pole: [-0.2, -0.5, 1], footR: M3.rx(1.1 * kneel) },
+      L: { ankle: V.lerp(restAt('foot_L'), [0.18, 0.08, 0.32], kneel), pole: [0.3, 0.3, 1] }
+    }
+  };
+  const G = holdGoals(t < PL.set ? c : local);
+  const steady = reach(V.add(local, [0.11, 0.1, 0.02]), [0, -0.6, 0.8], [0, -1, 0], [1, -0.6, -0.3], 0.5);           // left hand flat on the far end
+  // right hand: lets go, finger to the keypad, four taps, one firm press, then two pats on top
+  let tap = 0;
+  for (const at of PL.keys) tap = Math.max(tap, Math.max(0, Math.sin((t - at + 0.06) / 0.12 * Math.PI)) * (t > at - 0.06 && t < at + 0.06 ? 1 : 0));
+  const press = Math.max(0, Math.sin((t - PL.arm + 0.09) / 0.18 * Math.PI)) * (t > PL.arm - 0.09 && t < PL.arm + 0.09 ? 1 : 0);
+  let pat = 0;
+  for (const at of PL.pats) pat = Math.max(pat, Math.max(0, Math.sin((t - at + 0.07) / 0.14 * Math.PI)) * (t > at - 0.07 && t < at + 0.07 ? 1 : 0));
+  const finger = reach(V.add(key, [0.01 * Math.sin(t * 23), 0.035 + 0.05 * (1 - tap) * (1 - press) - 0.01 * press, 0]), [0.25, -0.55, 0.8], [0.3, -0.2, -1], [-1, -1, -0.1], 1.1, 0.55);
+  const patGoal = reach(V.add(local, [-0.03, 0.12 + 0.08 * (1 - pat), 0]), [0, -0.7, 0.7], [0, -1, 0], [-1, -0.6, -0.2], 0.2);
+  let R;
+  if (t < PL.set + 0.08) R = G.R;
+  else if (t < PL.arm + 0.1) R = armBlend(G.R, finger, smooth(PL.set + 0.08, PL.keys[0] - 0.1, t));
+  else if (t < PL.pats[1] + 0.08) R = armBlend(finger, patGoal, smooth(PL.arm + 0.1, PL.pats[0] - 0.06, t));
+  else R = armBlend(patGoal, relaxed(), smooth(PL.pats[1] + 0.08, PLANT, t));
+  const Lh = t < PL.set + 0.08 ? G.L : t < PL.pats[1] ? armBlend(G.L, steady, smooth(PL.set + 0.08, PL.set + 0.25, t)) : armBlend(steady, relaxed(), smooth(PL.pats[1], PLANT, t));
+  S.arms.R = R; S.arms.L = Lh;
+  f.script = S;
   f.scriptW = smooth(0, 0.12, t) * (1 - smooth(PLANT - 0.15, PLANT, t));
-  if (t >= 0.45 && !f.plantDone) {                              // it's down: arm it
-    f.plantDone = true; f.c4--;
-    planted.push({ p: f.plantAt.p.slice(), R: M3.ry(f.plantYaw), t: 0, owner: f });
-    Sound.play('set', 0.8); Sound.play('armed', 0.9, 0, 0);
-    popWord(V.add(f.plantAt.p, [0, 0.7, 0]), 'BEEP BEEP', 0.8);
-    hudDirty = true;
+  if (crossed(PL.set)) {                                         // it's down
+    f.c4--;
+    f.plantBomb = { p: f.plantAt.p.slice(), R: M3.ry(f.plantYaw), t: 0, owner: f, armed: false };
+    planted.push(f.plantBomb);
+    Sound.play('set', 0.8); hudDirty = true;
   }
+  PL.keys.forEach((at, k) => { if (crossed(at)) { Sound.play('key', 0.8, k); if (f.plantBomb) f.plantBomb.beepAt = game.time; } });
+  if (crossed(PL.arm) && f.plantBomb) { f.plantBomb.armed = true; f.plantBomb.t = 0; f.plantBomb.beepAt = game.time; Sound.play('armed', 0.9, 0, 0); }
+  for (const at of PL.pats) if (crossed(at)) Sound.play('thud', 0.3);
   if (t >= PLANT) {
-    f.plantT = -1; f.plantDone = false; f.script = null; f.scriptW = 0;
+    f.plantT = -1; f.script = null; f.scriptW = 0; f.plantBomb = null;
     if (!f.c4) f.holdC4 = false;
     hudDirty = true;
   }
 }
 function plantedStep(dt) {
   for (let i = planted.length - 1; i >= 0; i--) {
-    const b = planted[i]; b.t += dt;
+    const b = planted[i];
+    if (!b.armed) continue;                                      // still having its code typed in
+    b.t += dt;
     const left = C4_FUSE - b.t;
     tickBomb(b, left, C4_FUSE, b.p);
     if (left <= 0) {
       planted.splice(i, 1);
       const c = V.add(b.p, [0, 0.08, 0]);
       explode(c, b.owner);
-      popWord(V.add(c, [0, 1.6, 0]), 'KABOOM!!', 1.6);
     }
   }
 }
 function drawPlanted(prog) {
-  for (const b of planted) drawC4(prog, b.p, b.R, true, Math.max(0, 1 - (game.time - (b.beepAt || -9)) / 0.12));
+  for (const b of planted) drawC4(prog, b.p, b.R, true, Math.max(b.armed ? 0 : -0.25, 1 - (game.time - (b.beepAt || -9)) / 0.12));
   const f = player;
   if (f.holdC4 && f.c4Hold && f.dead < 0 && !looting && !f.gone) {
     const R = M3.mul(M3.ry(f.yaw), M3.rx(f.tilt || 0));
@@ -5748,17 +5734,16 @@ function rayBody(origin, dir, maxT) {
   }
   return best;
 }
-// ======================================================================= the caveman reload
-// He has no idea how this works. He yanks the magazine out, sniffs it, bites it like a coin to see if it is any good,
-// shakes it by his ear, decides it is broken and throws it over his shoulder. He gets a fresh one, tries to jam it in
-// sideways, stares, turns it round, slams it in, smacks the gun twice to make it work, and racks it.
-// Shells and grenades get the sniff and the bite too, then go in one at a time. Times are fractions of the reload.
-const RL = { reach: 0.07, out: 0.13, up: 0.2, sniff: 0.29, bite: 0.38, shake: 0.45, toss: 0.5, belt: 0.57, wrong: 0.65, flip: 0.71, seat: 0.78, smack: 0.86, rack: 0.93 };
-const LITTER = 10, BIG = 1.5;                                                   // seconds a thrown magazine stays on the floor
+// ======================================================================= the reload
+// He pulls the magazine out and, not being sure what it is, holds it up to his eye and peers into it like a telescope.
+// Ooo? Nothing to see. He shrugs, lets it drop, takes a fresh one off his hip and reloads properly.
+// Shells go in one at a time from his hip. Times are fractions of the reload.
+const RL = { reach: 0.07, out: 0.16, eye: 0.26, peer: 0.38, drop: 0.43, pouch: 0.56, grab: 0.61, up: 0.73, line: 0.79, seat: 0.85, rack: 0.93 };
+const LITTER = 10, BIG = 1.5;                                                   // seconds a dropped magazine stays on the floor
 
 const reloadAt = f => f.reload >= 0 && f.weapon ? f.reload / GUNS[f.weapon].reload : -1;
-// how much he is busy with the thing in his hand rather than the gun (the gun sags, his head cocks)
-const peerAmount = f => { const t = reloadAt(f); return t < 0 ? 0 : smooth(RL.out, RL.up, t) * (1 - smooth(RL.shake, RL.toss, t)); };
+// how much he is busy peering into it (the gun sags, his head cocks towards it)
+const peerAmount = f => { const t = reloadAt(f); return t < 0 || !GUNS[f.weapon] || GUNS[f.weapon].item.kind !== 'mag' ? 0 : smooth(RL.out, RL.eye, t) * (1 - smooth(RL.peer, RL.drop, t)); };
 // the slide on the shotgun: 0 forward, 1 pulled right back
 function pumpAmount(f, g) {
   if (!g.pumpAction) return 0;
@@ -5770,86 +5755,78 @@ const leftGrip = (f, g) => g.pumpAction ? Object.assign({}, g.left, { at: V.add(
 
 function mixGoal(a, b, w) {
   const dir = V.norm(V.lerp(a.dir, b.dir, w));
-  return { wrist: V.lerp(a.wrist, b.wrist, w), dir, palm: V.orth(V.lerp(a.palm, b.palm, w), dir), pole: b.pole, curl: [a.curl[0] + (b.curl[0] - a.curl[0]) * w, a.curl[1] + (b.curl[1] - a.curl[1]) * w] };
+  const o = { wrist: V.lerp(a.wrist, b.wrist, w), dir, palm: V.orth(V.lerp(a.palm, b.palm, w), dir), pole: b.pole, curl: [a.curl[0] + (b.curl[0] - a.curl[0]) * w, a.curl[1] + (b.curl[1] - a.curl[1]) * w] };
+  if (a.natural !== undefined || b.natural !== undefined) o.natural = (a.natural === undefined ? 1 : a.natural) + ((b.natural === undefined ? 1 : b.natural) - (a.natural === undefined ? 1 : a.natural)) * w;
+  return o;
 }
 // where the free hand is during a reload, and what it is holding. everything is in the fighter's own space
 function reloadPose(f, g, G, rest, chest) {
-  const t = reloadAt(f), I = g.item, u = (a, b) => smooth(a, b, t), mag = I.kind === 'mag';
+  const t = reloadAt(f), I = g.item, mag = I.kind === 'mag', u = (a, b) => smooth(a, b, t);
   const shift = V.sub(chest, Rig.rest[IDX.chest]);
-  const eye = V.add([-0.01, 1.53, 0.12], shift);
-  const nose = V.add(eye, [0, -0.05, 0.14]), mouth = V.add(eye, [0, -0.12, 0.13]), ear = V.add(eye, [0.17, -0.02, -0.02]);
-  const atGun = onGun(G, I.grab), pulled = onGun(G, V.add(I.grab, I.pull));
+  const atGun = onGun(G, I.grab), pulled = onGun(G, V.add(I.grab, V.mul(I.pull, 0.3))), below = onGun(G, V.add(I.grab, V.mul(I.pull, 1.1)));
+  const pouch = V.add([0.27, 0.86, 0.1], shift), side = V.add([0.36, 1.0, 0.26], shift);
+  const eye = V.add([0.03, 1.54, 0.13], shift), scope = V.add(eye, [0.01, -0.01, 0.17]);     // his left eye, and the magazine held up to it
   const gunDir = V.norm(M3.vec(G.R, [-0.5, 0.35, 0.8])), gunPalm = V.norm(M3.vec(G.R, [-0.4, 0.8, 0]));
-  const upDir = V.norm([-0.35, 0.9, 0.25]), upPalm = [-1, -0.1, 0];
-  // the hand cupped round whatever is at q; k turns it from the gun's angle to holding something up to his face
-  const holding = (q, k) => {
-    const dir = V.norm(V.lerp(gunDir, upDir, k)), palm = V.orth(V.lerp(gunPalm, upPalm, k), dir);
-    return { wrist: V.add(V.add(q, V.mul(dir, -0.09)), V.mul(palm, -0.037)), dir, palm, pole: [0.8, -1, 0.1], curl: [0.9, 0.95] };
+  const hipDir = V.norm([0.1, -0.85, 0.5]), hipPalm = [-1, 0, 0];
+  const holding = (q, k, curl) => {
+    const dir = V.norm(V.lerp(gunDir, hipDir, k)), palm = V.orth(V.lerp(gunPalm, hipPalm, k), dir);
+    return { wrist: V.add(V.add(q, V.mul(dir, -0.09)), V.mul(palm, -0.037)), dir, palm, pole: [0.9, -1, -0.2], curl: [curl === undefined ? 0.9 : curl, curl === undefined ? 0.95 : curl], natural: 0.55 };
   };
-  // held up to his face, open end towards him
-  const toFace = V.norm(V.sub(nose, V.add(nose, [-0.12, -0.05, 0.22])));
-  const faceR = M3.frame(I.mouth, [1, 0, 0], toFace, [1, 0, 0]);
-  const sideways = M3.mul(G.R, M3.rx(Math.PI / 2));                 // the new one, the wrong way round: lying along the barrel
-  const wind = V.add(eye, [0.28, 0.2, -0.22]), belt = V.add(chest, [0.24, -0.2, 0.08]);
-  const smackAt = onGun(G, [0.075, 0.02, 0.06]);
+  // held up to his eye from below, like a telescope
+  const atEye = q => ({ wrist: V.add(q, [0.02, -0.12, -0.01]), dir: V.norm([-0.1, 1, 0.15]), palm: [-1, 0, 0.2], pole: [1, -0.8, -0.3], curl: [1.0, 1.05], natural: 0.6 });
+  const toEye = V.norm(V.sub(eye, scope)), eyeR = M3.frame(I.mouth, [1, 0, 0], toEye, [1, 0, 0]);
+  const tipped = a => M3.mul(G.R, M3.rx(a));
 
-  let p = null, k = 0, R = G.R, show = false, hand = null;
-  if (t < RL.reach) hand = mixGoal(rest, holding(atGun, 0), u(0, RL.reach));
-  else if (t < RL.out) { p = V.lerp(atGun, pulled, u(RL.reach, RL.out)); show = true; }                       // yank
-  else if (t < RL.up) { const w = u(RL.out, RL.up); p = V.lerp(pulled, nose, w); R = M3.mix(G.R, faceR, w); k = w; show = true; }
-  else if (t < RL.sniff) {                                                                                  // snf snf
-    const w = (t - RL.up) / (RL.sniff - RL.up);
-    p = V.add(nose, [0.02 * Math.sin(w * 30), 0.012 * Math.sin(w * 47), 0]); R = faceR; k = 1; show = true;
-  } else if (t < RL.bite) {                                                                                 // a bite, like a coin
-    const w = (t - RL.sniff) / (RL.bite - RL.sniff), chomp = Math.max(0, Math.sin(w * Math.PI * 2)) * 0.03;
-    p = V.lerp(nose, V.add(mouth, [0, 0, -chomp]), smooth(0, 0.3, w)); R = M3.mul(faceR, M3.rz(0.4 * smooth(0, 0.3, w))); k = 1; show = true;
-  } else if (t < RL.shake) {                                                                                // shake it by his ear: rattle?
-    const w = (t - RL.bite) / (RL.shake - RL.bite);
-    p = V.add(V.lerp(mouth, ear, smooth(0, 0.35, w)), [0, 0.035 * Math.sin(w * 40) * smooth(0.25, 0.4, w), 0]); R = faceR; k = 1; show = true;
-  } else if (t < RL.toss) { const w = u(RL.shake, RL.toss); p = V.lerp(ear, wind, w); R = M3.mul(faceR, M3.rx(-1.2 * w)); k = 1; show = true; }   // nah: over the shoulder
-  else if (t < RL.belt) { const w = u(RL.toss, RL.belt); p = V.lerp(wind, belt, w); k = 1 - w; }
-  else if (!mag) {                                                                                         // shells and grenades go in one at a time
-    if (t < RL.smack) {
-      const v = (t - RL.belt) / (RL.smack - RL.belt), i = Math.min(2, Math.floor(v * 3)), w = v * 3 - i;
-      if (w < 0.55) { p = V.lerp(belt, atGun, smooth(0, 0.55, w)); show = true; }
-      else p = i === 2 || w < 0.7 ? atGun : V.lerp(atGun, belt, smooth(0.7, 1, w));
-    } else hand = mixGoal(holding(atGun, 0), rest, u(RL.smack, 0.91));
-  } else if (t < RL.wrong) {                                                                               // jams it in sideways. it won't go.
-    const w = u(RL.belt, RL.wrong - 0.02), bump = t > RL.wrong - 0.03 ? 0.012 * Math.sin((t - RL.wrong) * 260) : 0;
-    p = V.add(V.lerp(belt, pulled, w), [0, bump, 0]); R = M3.mix(G.R, sideways, smooth(0, 0.5, w)); show = true;
-  } else if (t < RL.flip) {                                                                                // stares... turns it round
-    const w = (t - RL.wrong) / (RL.flip - RL.wrong), spin = smooth(0.3, 0.9, w);
-    p = V.add(pulled, [0, -0.05 * Math.sin(Math.PI * spin), 0]);
-    R = M3.mul(G.R, M3.rx(Math.PI / 2 * (1 - spin))); show = true;
-  } else if (t < RL.seat) { const w = u(RL.flip, RL.seat - 0.02); p = V.lerp(pulled, atGun, w * w); show = true; }   // SLAM
-  else if (t < RL.smack) {                                                                                 // smack, smack: that will make it work
-    const w = (t - RL.seat) / (RL.smack - RL.seat), hit = Math.abs(Math.sin(w * Math.PI * 2));
-    const off = V.mad(smackAt, V.norm(M3.vec(G.R, [1, 0.2, 0])), 0.1 * (1 - hit));
-    hand = { wrist: off, dir: V.norm(M3.vec(G.R, [-0.2, 0.3, 1])), palm: V.norm(M3.vec(G.R, [-1, 0, 0])), pole: [0.8, -1, 0.1], curl: [0.2, 0.2] };
-  } else if (g.boltAction || g.pumpAction || g.drumLoad) hand = mixGoal(holding(atGun, 0), rest, u(RL.smack, g.boltAction ? 1 : 0.91));
-  else {                                                                                                   // pull the charging handle
+  let goal = null, item = null;
+  if (t < RL.reach) goal = mixGoal(rest, holding(atGun, 0), u(0, RL.reach));
+  else if (!mag) {                                                // shells: from his hip to the loading port, three times
+    if (t < RL.seat) {
+      const v = (t - RL.reach) / (RL.seat - RL.reach), n = Math.min(2, Math.floor(v * 3)), w = v * 3 - n;
+      const q = flow([[0, atGun], [0.28, side], [0.45, pouch], [0.58, pouch], [0.78, below], [1, atGun]], w);
+      const k = flow([[0, 0], [0.3, 0.6], [0.45, 1], [0.58, 1], [0.8, 0.1], [1, 0]], w);
+      goal = holding(q, k);
+      if (w > 0.5) item = { p: q, R: tipped(0.3 * (1 - smooth(0.8, 1, w))) };
+    } else goal = mixGoal(holding(atGun, 0), rest, u(RL.seat, 0.91));
+  } else if (t < RL.out) {                                        // thumb the catch, pull it down and out
+    const w = u(RL.reach, RL.out);
+    item = { p: V.lerp(atGun, below, w), R: tipped(0.3 * w) };
+    goal = holding(item.p, 0);
+  } else if (t < RL.drop) {                                       // up to his eye: a good long look inside. ooo?
+    const w = u(RL.out, RL.eye), shrug = u(RL.peer, RL.drop);
+    const wobble = t > RL.eye && t < RL.peer ? [0.012 * Math.sin(t * 60), 0.008 * Math.sin(t * 47), 0] : [0, 0, 0];
+    const q = V.add(V.lerp(V.lerp(below, scope, w), V.add(scope, [0.12, -0.2, 0.1]), shrug), wobble);
+    item = { p: q, R: M3.mix(tipped(0.3), eyeR, w) };
+    goal = mixGoal(holding(below, 0), atEye(q), w);
+  } else if (t < RL.up) {                                         // nothing in there. let go of it; get a fresh one; bring it up
+    const q = flow([[RL.drop, V.add(scope, [0.12, -0.2, 0.1])], [0.49, side], [RL.pouch, pouch], [RL.grab, pouch], [0.67, side], [RL.up, below]], t);
+    const k = flow([[RL.drop, 0.4], [0.49, 0.6], [RL.pouch, 1], [RL.grab, 1], [0.67, 0.55], [RL.up, 0]], t);
+    goal = t < 0.47 ? mixGoal(atEye(V.add(scope, [0.12, -0.2, 0.1])), holding(q, k, 0.35), u(RL.drop, 0.47)) : holding(q, k, t < RL.pouch ? 0.35 : 0.9);
+    if (t >= RL.grab) item = { p: q, R: tipped(flow([[RL.grab, 1.0], [0.67, 0.7], [RL.up, 0.35]], t)) };
+  } else if (t < RL.seat) {                                       // line it up and push it home
+    const q = flow([[RL.up, below], [RL.line, pulled], [RL.seat, atGun]], t);
+    item = { p: q, R: tipped(0.35 * (1 - u(RL.up, RL.line))) };
+    goal = holding(q, 0);
+  } else if (g.boltAction || g.pumpAction || g.drumLoad) goal = mixGoal(holding(atGun, 0), rest, u(RL.seat, g.boltAction ? 1 : 0.91));
+  else {                                                          // pull the charging handle
     const knob = holding(onGun(G, g.boltPoint), 0), back = holding(onGun(G, V.add(g.boltPoint, [0, 0, -g.boltTravel])), 0);
-    hand = t < 0.93 ? mixGoal(holding(atGun, 0), knob, u(RL.smack, 0.93)) : t < 0.975 ? mixGoal(knob, back, u(0.93, 0.955)) : mixGoal(back, rest, u(0.975, 1));
+    goal = t < 0.93 ? mixGoal(holding(atGun, 0), knob, u(RL.seat, 0.93)) : t < 0.975 ? mixGoal(knob, back, u(0.93, 0.955)) : mixGoal(back, rest, u(0.975, 1));
   }
-  return { hand: hand || holding(p, k), item: show ? { p, R, out: V.mul(toFace, 0.045 * k) } : null };
+  return { hand: goal, item: item ? { p: item.p, R: item.R, out: [0, 0, 0] } : null };
 }
 
-// the bits of a reload that happen once: sounds, words, the throw
+// the bits of a reload that happen once: sounds, the "ooo?", the dropped magazine
 function reloadCues(f, g, t0, t) {
   const loud = f.isPlayer ? 0.9 : 0.2, crossed = at => t0 < at && t >= at, mag = g.item.kind === 'mag';
-  const near = f.isPlayer || V.len(V.sub(f.pos, player.pos)) < 22;
+  const near = f.isPlayer || V.len(V.sub(f.pos, player.pos)) < 18;
   const cue = (at, s, v) => { if (crossed(at)) Sound.play(s, loud * (v || 1)); };
-  const word = (at, text, life) => { if (crossed(at) && near) popWord(V.add(bonePos(f, 'head'), [0, 0.42, 0]), text, life); };
-  cue(RL.reach, mag ? 'magout' : 'shellin');
-  cue(RL.up + 0.01, 'sniff'); word(RL.up + 0.01, 'snf snf?', g.reload * (RL.sniff - RL.up) + 0.2);
-  cue(RL.sniff + (RL.bite - RL.sniff) * 0.25, 'chomp'); word(RL.sniff + (RL.bite - RL.sniff) * 0.25, 'CRONCH', 0.45);
-  for (let i = 0; i < 3; i++) cue(RL.bite + (RL.shake - RL.bite) * (0.4 + i * 0.18), 'click', 0.6);
-  if (crossed(RL.toss)) { tossItem(f, g); Sound.play('whoosh', loud * 0.5); }
   if (mag) {
-    cue(RL.wrong - 0.02, 'bonk', 0.5); word(RL.wrong - 0.02, '?', 0.5);
-    cue(RL.seat - 0.02, 'magin'); cue(RL.seat - 0.015, 'thud', 0.6);
-    for (const w of [0.25, 0.75]) cue(RL.seat + (RL.smack - RL.seat) * w, 'punch', 0.45);
-  } else for (let i = 0; i < 3; i++) if (crossed(RL.belt + (RL.smack - RL.belt) * (i + 0.55) / 3)) { Sound.play('shellin', loud); if (g.drumLoad) f.drumT += Math.PI / 3; }
+    cue(RL.reach + 0.02, 'magout');
+    if (crossed(RL.eye) && near) { Sound.play('ooo', f.isPlayer ? 0.7 : 0.3, 0.2); popWord(V.add(bonePos(f, 'head'), [0, 0.42, 0]), 'ooo?', g.reload * (RL.peer - RL.eye) + 0.2); }
+    if (crossed(RL.drop)) tossItem(f, g);                          // it just drops out of his hand
+    cue(RL.grab, 'click', 0.7);
+    cue(RL.seat - 0.01, 'magin');
+    if (crossed(RL.seat)) f.riseV += 1.2;                         // the gun jumps a little as it goes home
+  } else for (let i = 0; i < 3; i++) if (crossed(RL.reach + (RL.seat - RL.reach) * (i + 0.97) / 3)) { Sound.play('shellin', loud); if (g.drumLoad) f.drumT += Math.PI / 3; }
   if (g.boltAction) { cue(0.885, 'boltup'); cue(0.915, 'boltback'); cue(0.955, 'boltfwd'); }
   else if (g.pumpAction) { cue(0.92, 'pumpback'); cue(0.965, 'pumpfwd'); }
   else if (g.drumLoad) cue(0.93, 'rack');
@@ -5900,9 +5877,9 @@ function drawItem(prog, textured, it) {
 function tossItem(f, g) {
   const it = f.item;
   if (!it) return;
-  const kind = g.item.kind, v = M3.vec(M3.ry(f.yaw), [rand(0.4, 1.0), rand(1.6, 2.6), rand(-1.4, -2.2)]);   // over his shoulder
+  const kind = g.item.kind, v = M3.vec(M3.ry(f.yaw), [rand(0.1, 0.4), rand(-0.6, -0.2), rand(0.1, 0.4)]);   // let go of: it just drops
   const at = kind === 'mag' ? V.add(it.p, M3.vec(it.S, V.sub(g.magMid, g.item.grab))) : it.p;
-  spawnProp(kind, at, v, { gun: it.gun, life: LITTER, scale: kind === 'mag' ? 1 : BIG, spin: rand(6, 11), R: it.R.slice() });
+  spawnProp(kind, at, v, { gun: it.gun, life: LITTER, scale: kind === 'mag' ? 1 : BIG, spin: rand(1.5, 4), R: it.R.slice() });
 }
 
 // ======================================================================= grenades
@@ -6449,6 +6426,119 @@ function bikesStep(dt) {
     if (before !== b.lean && !ridden) b.spin += dt * 0.6;
   }
 }
+// ======================================================================= the minimap
+// Top right, square, in a plain frame, turning with your view so straight ahead is always up. The island is painted
+// once in flat colours with hard edges: grass in three tones, sand, rock and a little snow with the relief shaded in
+// three steps, two tones of water with a pale line on the coast, a flat disc for every tree, rocks, houses and bridges.
+// A grid and the four directions go over it, then your planted C4 and you. Enemies and chests are not shown.
+const MINI = { size: 180, range: 85 };                          // pixels across, metres from the middle to the edge
+let miniLand = null;                                            // { img, half, px } for the island, made the first time it's needed
+function miniIsland() {
+  if (miniLand) return miniLand;
+  const half = Math.min(GRID.half, 520), n = 1560, px = n / (2 * half), img = document.createElement('canvas');
+  img.width = img.height = n;
+  const g = img.getContext('2d'), data = g.createImageData(n, n), d = data.data;
+  const H = new Float32Array(n * n);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) H[j * n + i] = groundAt((i + 0.5) / px - half, (j + 0.5) / px - half);
+  // soft patchy noise (value noise at three scales), so the grass is not one flat colour
+  const G = 64, cells = new Float32Array(G * G); let seed = 11;
+  for (let i = 0; i < cells.length; i++) { seed = (seed * 16807) % 2147483647; cells[i] = seed / 2147483647; }
+  const val = (x, z) => { const fx = Math.floor(x), fz = Math.floor(z), u = x - fx, v = z - fz, s = t => t * t * (3 - 2 * t), at = (a, b) => cells[((b % G + G) % G) * G + ((a % G + G) % G)];
+    return at(fx, fz) * (1 - s(u)) * (1 - s(v)) + at(fx + 1, fz) * s(u) * (1 - s(v)) + at(fx, fz + 1) * (1 - s(u)) * s(v) + at(fx + 1, fz + 1) * s(u) * s(v); };
+  const patch = (x, z) => val(x / 70, z / 70) * 0.55 + val(x / 26, z / 26 + 9) * 0.3 + val(x / 9, z / 9 + 31) * 0.15;
+  const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  const SAND = [208, 192, 142], GRASS = [[112, 152, 68], [96, 138, 60], [82, 122, 54]], DIRT = [142, 120, 84], ROCK = [[132, 128, 118], [108, 104, 96]], SNOW = [204, 208, 214];
+  const wetAt = (i, j) => H[Math.min(n - 1, Math.max(0, j)) * n + Math.min(n - 1, Math.max(0, i))] < SEA.level;
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const k = (j * n + i) * 4, h = H[j * n + i], x = (i + 0.5) / px - half, z = (j + 0.5) / px - half;
+    const hx = H[j * n + Math.min(n - 1, i + 1)] - H[j * n + Math.max(0, i - 1)], hz = H[Math.min(n - 1, j + 1) * n + i] - H[Math.max(0, j - 1) * n + i];
+    const slope = Math.hypot(hx, hz) * px / 2;                       // rise over run
+    let c;
+    if (h < SEA.level) {                                             // water: two flat tones, and a thin pale line where it meets the land
+      c = SEA.level - h > 1.6 ? [44, 98, 142] : [76, 148, 170];
+      if (!wetAt(i + 1, j) || !wetAt(i - 1, j) || !wetAt(i, j + 1) || !wetAt(i, j - 1)) c = [222, 232, 226];
+    } else {
+      const above = h - SEA.level, pt = patch(x, z);
+      if (above < 1.0) c = SAND;
+      else {
+        c = GRASS[pt < 0.4 ? 2 : pt < 0.6 ? 1 : 0];                                          // grass in three flat tones, patch by patch
+        if (slope > 0.55) c = DIRT;                                                           // bare earth on the steep bits
+        if (h > 11 || slope > 1.0) c = ROCK[slope > 1.0 ? 1 : 0];                             // rock up the hill
+        if (h > 31) c = SNOW;                                                                 // and a little snow on the very top
+      }
+      const sh = 1 - (hx + hz) * 0.5 * px;                          // light from the top left, in three steps
+      const f = sh < 0.9 ? 0.8 : sh > 1.08 ? 1.12 : 1;
+      c = c.map(v => v * f);
+    }
+    d[k] = clamp(c[0], 0, 255); d[k + 1] = clamp(c[1], 0, 255); d[k + 2] = clamp(c[2], 0, 255); d[k + 3] = 255;
+  }
+  g.putImageData(data, 0, 0);
+  // what stands on the island
+  const at = (x, z) => [(x + half) * px, (z + half) * px];
+  const dot = (x, y, r, col) => { g.fillStyle = col; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); };   // a tree top: one flat disc
+  for (const l of leaves) { const [x, y] = at(l[0], l[2]); dot(x, y, Math.max(2, l[3] * 1.05 * px), 'rgb(40,86,40)'); }
+  for (const o of solids) if (!o.hull && o.h > 1.5 && o.h / o.r < 10) { const [x, y] = at(o.x, o.z); dot(x, y, Math.max(1.6, o.r / 0.24 * 0.95 * px), 'rgb(66,116,48)'); }   // palms: lighter
+  const poly = (hull, fill, line, w, lit) => {
+    g.beginPath(); hull.forEach((q, i) => { const [x, y] = at(q[0], q[1]); if (i) g.lineTo(x, y); else g.moveTo(x, y); }); g.closePath();
+    g.fillStyle = fill; g.fill(); g.strokeStyle = line; g.lineWidth = w; g.lineJoin = 'round'; g.stroke();
+  };
+  for (const o of solids) {
+    if (!o.hull || (o.h === HOUSE_TALL && o.tris && o.tris.length === 2)) continue;   // house walls: drawn as whole houses below
+    if (o.thin) poly(o.hull, 'rgb(150,108,62)', 'rgb(60,40,20)', 1);                   // bridges: planks
+    else if (o.wall) poly(o.hull, 'rgb(112,104,96)', 'rgb(44,40,36)', 1.1);              // cave walls
+    else poly(o.hull, 'rgb(150,146,138)', 'rgb(60,56,50)', 1);                         // rocks
+  }
+  for (const q of HOUSES) {                                                              // houses: a roof with a ridge line
+    const corners = [[-3.8, -3.2], [3.8, -3.2], [3.8, 3.2], [-3.8, 3.2]].map(([a, b]) => houseWorld(q, a, b));
+    poly(corners, 'rgb(166,84,54)', 'rgb(60,26,16)', 1.6);
+    const a = at(...houseWorld(q, -3.8, 0).filter((_, i) => true).slice(0, 2)), b = at(...houseWorld(q, 3.8, 0).slice(0, 2));
+    g.strokeStyle = 'rgb(112,50,32)'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+  }
+  return (miniLand = { img, half, px });
+}
+function drawMinimap() {
+  const cv = ui.minimap; if (!cv) return;
+  const g = cv.getContext('2d'), S = MINI.size, r = S / 2, scale = r / MINI.range;
+  const me = player.pos, yaw = cam.yaw + Math.PI;                // the way the camera looks
+  const theta = -Math.PI / 2 - Math.atan2(Math.cos(yaw), Math.sin(yaw));   // turns the world so that way is up
+  const toMap = p => { const dx = p[0] - me[0], dz = p[2] - me[2], c = Math.cos(theta), s = Math.sin(theta); return [r + (dx * c - dz * s) * scale, r + (dx * s + dz * c) * scale]; };
+  g.clearRect(0, 0, S, S);
+  g.save();
+  g.translate(r, r); g.rotate(theta);
+  g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+  if (world.map === 'island') {
+    const L = miniIsland(), k = scale / L.px;
+    g.fillStyle = 'rgb(24,74,132)'; g.fillRect(-S, -S, 2 * S, 2 * S);
+    g.drawImage(L.img, (-me[0] - L.half) * scale, (-me[2] - L.half) * scale, L.img.width * k, L.img.height * k);
+  } else {                                                      // the training plate: a stone slab on grass
+    g.fillStyle = 'rgb(82,132,58)'; g.fillRect(-S, -S, 2 * S, 2 * S);
+    g.fillStyle = 'rgb(156,152,144)'; g.strokeStyle = 'rgb(70,66,60)'; g.lineWidth = 1.5;
+    g.fillRect((-HALF - me[0]) * scale, (-HALF - me[2]) * scale, 2 * HALF * scale, 2 * HALF * scale);
+    g.strokeRect((-HALF - me[0]) * scale, (-HALF - me[2]) * scale, 2 * HALF * scale, 2 * HALF * scale);
+  }
+  g.restore();
+  // the grid: a line every 50 m of the world, a heavier one every 200 m; it turns with the map
+  g.save(); g.beginPath(); g.rect(0, 0, S, S); g.clip(); g.translate(r, r); g.rotate(theta);
+  const step = 50, lo = -MINI.range * 1.6;
+  for (let gx = Math.ceil((me[0] + lo) / step) * step; gx < me[0] - lo; gx += step) { g.strokeStyle = gx % 200 === 0 ? 'rgba(15,12,8,.6)' : 'rgba(15,12,8,.38)'; g.lineWidth = gx % 200 === 0 ? 1.4 : 1; g.beginPath(); g.moveTo((gx - me[0]) * scale, lo * scale); g.lineTo((gx - me[0]) * scale, -lo * scale); g.stroke(); }
+  for (let gz = Math.ceil((me[2] + lo) / step) * step; gz < me[2] - lo; gz += step) { g.strokeStyle = gz % 200 === 0 ? 'rgba(15,12,8,.6)' : 'rgba(15,12,8,.38)'; g.lineWidth = gz % 200 === 0 ? 1.4 : 1; g.beginPath(); g.moveTo(lo * scale, (gz - me[2]) * scale); g.lineTo(-lo * scale, (gz - me[2]) * scale); g.stroke(); }
+  g.restore();
+  for (const b of planted) {                                    // your armed C4, blinking
+    if (!b.armed || Math.sin(game.time * 14) < 0) continue;
+    const [x, y] = toMap(b.p); if (x < 4 || y < 4 || x > S - 4 || y > S - 4) continue;
+    g.fillStyle = 'rgb(220,40,28)'; g.strokeStyle = '#fff'; g.lineWidth = 1.6; g.beginPath(); g.arc(x, y, 3.6, 0, Math.PI * 2); g.fill(); g.stroke();
+  }
+  // the four directions, on the edge of the map, swinging round as you turn (north is -z, east is +x)
+  for (const [name, dx, dz] of [['N', 0, -1], ['E', 1, 0], ['S', 0, 1], ['W', -1, 0]]) {
+    const [ex, ey] = toMap([me[0] + dx * 1000, 0, me[2] + dz * 1000]), vx = ex - r, vy = ey - r, m = Math.max(Math.abs(vx), Math.abs(vy)), lim = r - 10;
+    const lx = r + vx / m * lim, ly = r + vy / m * lim;
+    g.fillStyle = name === 'N' ? 'rgb(170,40,30)' : 'rgb(30,26,22)'; g.fillRect(lx - 8, ly - 8, 16, 16);
+    g.fillStyle = '#f0e8d0'; g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name, lx, ly + 0.5);
+  }
+  // you: a white-edged arrow pointing up, the way you're looking
+  g.fillStyle = 'rgb(214,42,30)'; g.strokeStyle = '#fff'; g.lineWidth = 2; g.lineJoin = 'miter';
+  g.beginPath(); g.moveTo(r, r - 9); g.lineTo(r + 6.5, r + 7); g.lineTo(r, r + 3); g.lineTo(r - 6.5, r + 7); g.closePath(); g.stroke(); g.fill();
+}
 // ======================================================================= hand-built models
 // the shades, the captain's hat, the boat, the boombox, the beer and the rocks: all made here out of
 // curves, so the game needs no extra files. each model is a list of parts, one material each
@@ -6955,6 +7045,7 @@ const CHARRED = [part({ kind: 9, c: MAHOGANY, r: 0.6, glow: 1 }, MB.box(0.13, 0.
 // ======================================================================= the boat trip
 // choosing the island from the menu plays this: you and the skipper cruising in with the boombox going,
 // a cheers, a rock, and waking up on the beach beside the burning wreck. Space skips it
+const CINE_WORDS = false;
 const CINE = {
   driver: 5.5, you: 10.0, boom: 14.5, cheers: 18.5, chug: 24.0, point: 27.0, huh: 28.2, rock: 29.0, hit: 31.0, black: 33.2, eyes: 36.0, up: 41.0, end: 49.5
 };
@@ -7391,6 +7482,7 @@ function cineClearWords() { cine.words.length = 0; cineEl('cinewords').textConte
 function cineFade(a, colour) { const el = cineEl('cinefade'); el.style.opacity = a; if (colour) el.style.background = colour; }
 // a word that pops up over something in the world
 function cineSay(where, text, life, size) {
+  if (!CINE_WORDS && text !== '♪' && text !== '♫') return;       // the pop-up words are switched off, like in the game
   const el = document.createElement('div'); el.className = 'pop'; el.textContent = text; if (size) el.style.fontSize = size + 'px';
   cineEl('cinewords').appendChild(el);
   cine.words.push({ el, where, t: 0, life });
@@ -8003,6 +8095,7 @@ function update(dt) {
     const to = c.t >= 0 || c.forced ? 1 : 0;
     c.openV += ((to - c.open) * 140 - c.openV * (to ? 11 : 20)) * dt; c.open += c.openV * dt;
     if (c.open < 0) { c.open = 0; c.openV = 0; }
+    if (c.held !== undefined && c.held !== null) { c.open = c.held; c.openV = 0; }   // someone's hands are on the lid
     c.wobble *= Math.exp(-dt * 6);
   }
   effectsStep(dt);
@@ -8256,6 +8349,7 @@ function project(p) {
   return w > 0.1 ? [(x / w * 0.5 + 0.5) * lastView.w, (0.5 - y / w * 0.5) * lastView.h] : null;
 }
 function hud(dt) {
+  drawMinimap();
   if (hudDirty) {
     hudDirty = false;
     const g = player.weapon ? GUNS[player.weapon] : null, am = g && player.ammo[player.weapon];
@@ -8269,6 +8363,7 @@ function hud(dt) {
       `<span class="${player.holdC4 ? 'on' : player.c4 ? '' : 'none'}">5 C4 ×${player.c4 || 0}</span>` +
       SLOTS.slice(3).map((id, i) => player.inv.includes(id) ? slot(i + 6, id) : '').join('');
     ui.score.textContent = `Knockouts ${game.kills} · Deaths ${game.deaths}`;
+    ui.killcount.textContent = game.kills;
   }
   const g = player.weapon ? GUNS[player.weapon] : null;
   if (lastView) {

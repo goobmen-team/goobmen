@@ -240,6 +240,7 @@ function drawProps(prog, textured) {
   }
 }
 function popWord(p, text, life) {
+  return;                                                      // the pop-up words are switched off
   const el = document.createElement('div'); el.className = 'pop'; el.textContent = text; ui.pops.appendChild(el);
   pops.push({ el, p: p.slice(), t: 0, life: life || 0.75, tilt: rand(-14, 14) });
 }
@@ -260,6 +261,21 @@ function solveLeg(leg, S, goal) {
 const restAt = name => Rig.rest[IDX[name]];
 let scratchPose = null;
 // S: hips, bend, twist, tilt, head, arms {R, L}, legs {R, L}; everything in the fighter's own space
+// an arm's three bone rotations from any kind of goal: by joints (fk), by where the hand goes (wrist), or a blend of two
+// (blend: { a, b, w }), mixed bone by bone so switching between them is smooth
+function armRots(a, shoulder, chestR, arm) {
+  if (arm.blend) {
+    const A = armRots(a, shoulder, chestR, arm.blend.a), B = armRots(a, shoulder, chestR, arm.blend.b), w = arm.blend.w;
+    return w <= 0.001 ? A : w >= 0.999 ? B : [M3.mix(A[0], B[0], w), M3.mix(A[1], B[1], w), M3.mix(A[2], B[2], w)];
+  }
+  return arm.fk ? fkArm(a, chestR, arm.fk) : solveArm(a, shoulder, arm);
+}
+// a blend of two arm goals; its finger curl is mixed too
+const armBlend = (a, b, w) => ({ blend: { a, b, w: clamp(w, 0, 1) }, curl: [a.curl[0] + (b.curl[0] - a.curl[0]) * clamp(w, 0, 1), a.curl[1] + (b.curl[1] - a.curl[1]) * clamp(w, 0, 1)] });
+// a relaxed arm, hanging by his side
+const relaxed = (ab, sw, el) => ({ fk: { ab: ab === undefined ? 0.13 : ab, sw: sw === undefined ? 0.06 : sw, el: el === undefined ? 0.3 : el, tw: 0.1 }, curl: [0.45, 0.5] });
+// a hand goal whose wrist mostly follows the forearm, so it never bends the wrong way
+const reach = (at, dir, palm, pole, curl, keep) => Object.assign(hand(at, dir, palm, pole, curl), { natural: keep === undefined ? 0.45 : keep });
 function scriptPose(f, S) {
   const P = scratchPose || (scratchPose = newPose());
   poseReset(P); poseAdd(P, 'Idle', f.time, 1);
@@ -276,7 +292,7 @@ function scriptPose(f, S) {
     for (const s of ['R', 'L']) {
       const a = ARMS[s], arm = S.arms && S.arms[s], l = LEGS[s], leg = (S.legs && S.legs[s]) || { ankle: restAt('foot_' + s) };
       if (arm) {
-        if (i === a.up) { ik[s] = solveArm(a, wp[i], arm); wr[i] = ik[s][0]; }
+        if (i === a.up) { ik[s] = armRots(a, wp[i], wr[IDX.chest], arm); wr[i] = ik[s][0]; }
         else if (i === a.fore) wr[i] = ik[s][1];
         else if (i === a.hand) wr[i] = ik[s][2];
         else if (i === a.fingers) wr[i] = M3.mul(wr[a.hand], M3.rz(a.x < 0 ? arm.curl[0] : -arm.curl[0]));
@@ -308,6 +324,25 @@ function hand(at, dir, palm, pole, curl) {
   const d = V.norm(dir), q = V.orth(palm, d);
   return { wrist: V.add(V.add(at, V.mul(d, -0.085)), V.mul(q, -0.036)), dir: d, palm: q, pole, curl: [curl === undefined ? 0.5 : curl, curl === undefined ? 0.5 : curl] };
 }
+// keyframes: [[time, value], ...] as one smooth curve that flows through them (Catmull-Rom), easing only at the very
+// start and end. Unlike track() it does not stop at every key, so the motion carries on like a real one.
+function flow(keys, t) {
+  const n = keys.length;
+  if (t <= keys[0][0]) return keys[0][1];
+  if (t >= keys[n - 1][0]) return keys[n - 1][1];
+  let i = 1; while (keys[i][0] < t) i++;
+  const k0 = keys[Math.max(0, i - 2)], k1 = keys[i - 1], k2 = keys[i], k3 = keys[Math.min(n - 1, i + 1)];
+  const u = (t - k1[0]) / (k2[0] - k1[0]);
+  // tangents scaled for uneven key spacing; zero at the first and last key, so it eases in and out there
+  const d1 = k2[0] - k1[0], m = (a, c, ta, tc) => (c - a) / (tc - ta) * d1;
+  const one = (a, b, c, d) => {
+    const m1 = k0 === k1 ? 0 : m(a, c, k0[0], k2[0]), m2 = k3 === k2 ? 0 : m(b, d, k1[0], k3[0]);
+    const u2 = u * u, u3 = u2 * u;
+    return (2 * u3 - 3 * u2 + 1) * b + (u3 - 2 * u2 + u) * m1 + (-2 * u3 + 3 * u2) * c + (u3 - u2) * m2;
+  };
+  if (Array.isArray(k1[1])) return k1[1].map((_, c) => one(k0[1][c], k1[1][c], k2[1][c], k3[1][c]));
+  return one(k0[1], k1[1], k2[1], k3[1]);
+}
 // keyframes: [[time, value], ...] with eased steps between them
 function track(keys, t) {
   if (t <= keys[0][0]) return keys[0][1];
@@ -329,245 +364,139 @@ function cue(L, at, fn) { if (L.prev < at && L.t >= at) fn(); }
 const localToWorld = (L, q) => V.add(L.spot, M3.vec(M3.ry(L.face), q));
 
 // ---------------------------------------------------------------- loot a knocked-out caveman
-// The body is a ragdoll the whole time. He pokes the belly (it wobbles), lifts an arm and lets go (it flops: dead),
-// hops on and sits on him like a bench, and bounces: junk pops out of the poor guy's mouth with every bounce, and on the
-// big one the gun shoots out and he catches it. Then he looks down the barrel at his own face, and bites it.
-const BODY = { hold: 3.7, end: 6.5, label: 'loot this caveman' };
-const BD = { poke: 0.6, arm: 1.15, drop: 1.55, hop: 1.78, sat: 2.12, bounces: [2.45, 2.85, 3.25], big: 3.55, catch: 4.1, off: 4.55, look: 4.75, bite: 5.4, huh: 5.95 };
+// He kneels by the body (a ragdoll the whole time) and pats him down. He finds the gun and pulls it out by the barrel,
+// because what else would you hold it by. A test swing, like a club. Hmm. He flips it round, and now it looks right.
+const BODY = { hold: 3.0, end: 4.3, label: 'loot this caveman' };
+const BD = { kneel: 0.3, down: 0.75, pat: 0.85, patEnd: 1.55, grab: 1.72, stood: 2.15, swing: 2.25, swingEnd: 2.78, puzzle: 2.98, toss: 3.12, caught: 3.42, ready: 3.85 };
+const SHOULDER_R = [-0.22, 1.42, -0.02];
 function bodyStep(L) {
   const t = L.t, v = L.victim, hips0 = restAt('hips'), rag = v.rag;
   const toLocal = w => M3.vec(M3.ry(-L.face), V.sub(w, L.spot));
-  const belly = bellyTop(v), bl = toLocal(belly);
-  const S = { arms: {}, legs: {} };
-  for (const [s, x] of [['R', -1], ['L', 1]]) S.arms[s] = idleArm(x);
-  // sitting on him: turned round, bum on his belly, feet on the ground in front
-  const seatH = Math.max(0.3, bl[1] + 0.08);
-  const sitP = localToWorld(L, [0, 0, 0.2]), sitR = M3.ry(L.face + Math.PI);
-  const sitHips = [0, seatH, -0.42];
-  let root = null;
-  if (rag) rag.pin = null;
-
-  if (t < BD.arm) {                                               // poke, poke, poke
-    const w = smooth(0.5, 0.65, t) * (1 - smooth(1.05, BD.arm, t));
-    const tap = t > BD.poke && t < BD.poke + 0.45 ? Math.max(0, Math.sin((t - BD.poke) / 0.15 * Math.PI)) : 0;
-    S.bend = 1.1 * w; S.hips = V.add(hips0, [0, -0.25 * w, -0.12 * w]); S.head = M3.rx(0.25 * w);
-    const finger = hand(V.add(bl, [-0.02, 0.03 + 0.12 * (1 - tap), -0.04]), [0, -0.9, 0.4], [0, 0.4, 0.9], [-1, -0.3, -0.4], 0.15);
-    S.arms.R = Object.assign(finger, { wrist: V.lerp(S.arms.R.wrist, finger.wrist, w) });
-  } else if (t < BD.hop) {                                        // lift his arm... let go. flop. dead.
-    if (L.vh === undefined && rag) {                              // whichever of his hands is nearer
-      const a = rag.p[RP.hand_L], b = rag.p[RP.hand_R];
-      L.vh = V.len(V.sub(a, L.spot)) < V.len(V.sub(b, L.spot)) ? RP.hand_L : RP.hand_R;
+  const pt = n => rag ? toLocal(rag.p[RP[n]]) : toLocal(bonePos(v, n));
+  const belly = toLocal(bellyTop(v)), chestP = V.add(pt('chest'), [0, 0.1, 0]), hipP = pt('hips');
+  const kneel = flow([[BD.kneel, 0], [BD.down, 1], [BD.grab, 1], [BD.stood, 0]], t);
+  const S = {
+    hips: V.add(hips0, [0.02 * kneel, -0.33 * kneel, -0.06 * kneel]),
+    bend: flow([[BD.kneel, 0], [BD.down, 0.6], [BD.patEnd, 0.7], [BD.grab, 0.65], [BD.stood, 0.05], [BD.swing, 0], [2.45, -0.15], [2.62, 0.35], [BD.swingEnd, 0.05], [BD.puzzle, 0.1], [BD.ready, 0]], t),
+    twist: flow([[BD.down, 0], [BD.patEnd, 0], [BD.grab, -0.15], [BD.stood, 0], [2.45, -0.3], [2.62, 0.25], [BD.swingEnd, 0], [BD.ready, 0]], t),
+    head: M3.mul(M3.rx(flow([[BD.kneel, 0], [BD.down, 0.35], [BD.patEnd, 0.45], [BD.grab, 0.35], [BD.stood, 0], [BD.swingEnd, 0], [BD.puzzle, 0.15], [BD.toss, -0.25], [BD.caught, 0], [BD.ready, 0]], t)),
+      M3.rz(flow([[BD.swingEnd, 0], [BD.puzzle, 0.35], [BD.toss, 0.3], [BD.caught, 0], [BD.ready, 0]], t))),
+    arms: {}, legs: {
+      R: { ankle: V.lerp(restAt('foot_R'), [-0.16, 0.07, -0.3], kneel), pole: [-0.2, -0.5, 1], footR: M3.rx(1.1 * kneel) },   // knee on the ground
+      L: { ankle: V.lerp(restAt('foot_L'), [0.18, 0.08, 0.32], kneel), pole: [0.3, 0.3, 1] }                                 // foot planted in front
     }
-    const reach = smooth(BD.arm, BD.arm + 0.15, t), lift = smooth(BD.arm + 0.12, 1.45, t), letGo = t >= BD.drop;
-    const from = rag ? toLocal(rag.p[L.vh]) : [0, 0.1, 0.5];
-    const hold = V.lerp(from, V.add(bl, [-0.05, 0.62, -0.12]), lift);       // as high as a floppy arm goes without lifting him
-    const w = reach * (1 - smooth(BD.drop + 0.05, BD.hop, t));
-    S.bend = 0.8 * w * (1 - lift) + 0.1; S.hips = V.add(hips0, [0, -0.15 * w * (1 - lift), 0]);
-    S.head = M3.mul(M3.rx(0.3 - 0.4 * lift), M3.rz(letGo ? 0.35 : 0));
-    const grab = hand(letGo ? V.add(bl, [-0.08, 0.75, -0.15]) : hold, [0, 0.3, 1], [1, 0, 0], [-1, -0.4, -0.3], letGo ? 0.1 : 1.2);
-    S.arms.R = Object.assign(grab, { wrist: V.lerp(S.arms.R.wrist, grab.wrist, w) });
-    if (!letGo && reach > 0.9 && rag) { rag.pin = { pt: L.vh, to: localToWorld(L, hold), k: 0.5 }; rag.sleep = false; }
-  }
-  // hops up and sits on him, turning round in the air
-  if (t >= BD.hop) {
-    const w = smooth(BD.hop, BD.sat, t), off = smooth(BD.catch + 0.05, BD.off, t);
-    const sit = w * (1 - off), arc = Math.sin(Math.PI * w) * (1 - off) + Math.sin(Math.PI * off);
-    let bounce = 0;
-    for (const [k, b] of BD.bounces.concat([BD.big]).entries()) { const a = b - (k === 3 ? 0.32 : 0.28); if (t >= a && t < b) bounce = Math.sin(Math.PI * (t - a) / (b - a)) * (k === 3 ? 0.42 : 0.24); }
-    const yaw = L.face + Math.PI * (t < BD.catch ? w : 1 - off);
-    root = { R: M3.ry(yaw), p: V.add(V.lerp(L.spot, sitP, sit), [0, 0.3 * arc, 0]) };
-    S.hips = V.add(V.lerp(hips0, sitHips, sit), [0, bounce, 0]);
-    S.bend = 0.25 * sit - 0.15 * (bounce > 0.05 ? 1 : 0);
-    const riding = sit * smooth(BD.sat, BD.sat + 0.15, t);
-    for (const [s, x] of [['R', -1], ['L', 1]]) {
-      S.legs[s] = { ankle: V.lerp(restAt('foot_' + s), [x * 0.22, 0.07 + 0.25 * bounce, 0.12], sit), pole: [x * 0.3, 0.3, 1] };
-      // hands up like a cowboy while he bounces; both up high for the catch
-      const ride = hand([x * (0.38 + 0.06 * Math.sin(t * 20 + x)), seatH + 1.05 + 0.6 * bounce, -0.25], [x * 0.3, 1, 0], [0, 0, 1], [x, -0.2, -0.4], 1.2);
-      const catchUp = hand([x * 0.15, seatH + 1.35, -0.3], [x * 0.2, 1, 0], [-x, 0, 0], [x, -0.2, -0.4], 0.8);
-      const up = smooth(BD.big - 0.1, BD.big + 0.1, t);
-      const goal = mixGoal(ride, catchUp, up);
-      S.arms[s] = mixGoal(S.arms[s], goal, riding * (1 - off));
+  };
+  const idle = relaxed(), patY = k => 0.09 * Math.max(0, Math.cos((t - BD.pat) / 0.17 * Math.PI + k * Math.PI));
+  const into = smooth(BD.kneel + 0.1, BD.down, t);
+  // patting him down, the hands taking turns
+  const patR = reach(V.add(belly, [-0.04, 0.02 + patY(0), 0]), [0, -0.6, 0.8], [0, -0.8, -0.6], [-1, -0.6, -0.2], 0.3);
+  const patL = reach(V.add(chestP, [0.05, 0.02 + patY(1), 0]), [0, -0.6, 0.8], [0, -0.8, -0.6], [1, -0.6, -0.2], 0.3);
+  S.arms.L = t < BD.grab ? armBlend(idle, patL, into) : armBlend(patL, relaxed(0.15, 0.1, 0.35), smooth(BD.grab - 0.15, BD.grab + 0.2, t));
+  // the gun
+  const id = L.gun, g = GUNS[id], mz = g.muzzle[2] * g.scale * 0.8;
+  const clubR = hp => { const c = V.norm(V.sub(hp, SHOULDER_R)); return { c, R: M3.frame([0, 0, 1], [0, 1, 0], V.mul(c, -1), Math.abs(c[1]) > 0.9 ? [0, 0, 1] : [0, 1, 0]) }; };
+  const readyP = [-0.2, 1.02, 0.38], readyR = M3.mul(M3.ry(0.15), M3.rx(0.08));
+  if (t < BD.pat + 0.6) S.arms.R = armBlend(idle, patR, into);
+  else if (t < BD.grab) S.arms.R = armBlend(patR, reach(V.add(hipP, [-0.05, 0.08, 0]), [0, -0.7, 0.7], [0, -1, 0], [-1, -0.5, -0.3], 1.1), smooth(BD.patEnd, BD.grab, t));
+  if (t >= BD.grab - 0.05) {
+    // where his right hand is: up from the hip as he stands, the swing, up to his face, then the toss and catch
+    const hp = flow([[BD.grab - 0.05, V.add(hipP, [-0.05, 0.08, 0])], [BD.stood, [-0.15, 1.0, 0.36]], [BD.swing, [-0.16, 1.05, 0.34]], [2.45, [-0.24, 1.78, -0.05]], [2.62, [-0.1, 0.86, 0.6]],
+      [BD.swingEnd, [-0.14, 1.02, 0.42]], [BD.puzzle, [-0.1, 1.3, 0.42]], [BD.toss, [-0.12, 1.12, 0.4]]], t);
+    let gp, R;
+    if (t < BD.puzzle) { const k = clubR(hp); R = k.R; gp = V.mad(hp, k.c, mz); }
+    else if (t < BD.toss) {                                         // turns it in his hand to look at it, ready to flip it
+      const k = clubR(hp), w = smooth(BD.puzzle, BD.toss, t), flipR = M3.mul(readyR, M3.rx(Math.PI));
+      R = M3.mix(k.R, flipR, w); gp = V.mad(hp, k.c, mz * (1 - w) + 0.12 * w);
+    } else {                                                        // up it goes, round it turns, caught by the handle
+      const w = smooth(BD.toss, BD.caught, t), from = V.mad(hp, clubR(hp).c, 0.12);
+      gp = V.add(V.lerp(from, readyP, w), [0, 0.38 * Math.sin(Math.PI * w), 0]);
+      R = M3.mul(readyR, M3.rx(Math.PI * (1 - w)));
     }
-    S.head = M3.rx(-0.2 * bounce - 0.5 * smooth(BD.big, BD.catch, t) * (1 - off));
-  }
-  // the gun: caught overhead, brought down as he hops off, then the inspection
-  if (t >= BD.catch) {
-    const id = L.gun, inspect = smooth(BD.look - 0.1, BD.look + 0.2, t), bite = smooth(BD.bite, BD.bite + 0.2, t), done = smooth(BD.huh, BD.huh + 0.3, t);
-    const off = smooth(BD.catch + 0.05, BD.off, t);
-    const over = [-0.2 * GUNS[id].scale, seatH + 1.3, -0.3], chest = [-0.22, 0.95, 0.35];
-    const barrel = [0.05, 1.48, 0.38 + 0.25 * GUNS[id].scale];     // pointing at his own face
-    const mouth = [-0.2 * GUNS[id].scale - (id === 'glock' ? 0 : 0.05), 1.36, 0.3];
-    const chew = t > BD.bite + 0.2 && t < BD.huh ? 0.05 * Math.max(0, Math.sin((t - BD.bite) * 18)) : 0;
-    let gp = V.lerp(over, chest, off), R = M3.mul(M3.ry(0.25), M3.rx(0.15));
-    if (t >= BD.look) { gp = V.lerp(V.lerp(chest, barrel, inspect), V.add(mouth, [0, 0, 0.04 - chew]), bite); R = M3.mix(M3.mix(R, M3.ry(Math.PI), inspect), M3.mul(M3.ry(Math.PI / 2), M3.rz(0.1)), bite); }
-    gp = V.lerp(gp, [-0.32, 0.86, 0.22], done);
-    R = M3.mix(R, M3.mul(M3.ry(0.25), M3.rx(0.15)), done);
-    const H = gunHands(id, { p: gp, R });
     S.gun = { id, p: gp, R };
-    S.arms.R = H.R;
-    S.arms.L = t < BD.off ? H.L : t < BD.huh ? mixGoal(H.L, idleArm(1), smooth(BD.off, BD.look, t)) : (() => { const s2 = scratchArm(1, t), w = smooth(BD.huh, BD.huh + 0.25, t) * (1 - smooth(6.3, 6.5, t)); return Object.assign(s2, { wrist: V.lerp(idleArm(1).wrist, s2.wrist, w) }); })();
-    if (t >= BD.look) S.head = M3.mul(M3.rx(-0.1 + chew * 3 - 0.15 * inspect * (1 - bite)), M3.rz(t >= BD.huh ? -0.3 * done : 0));
+    const H = gunHands(id, { p: gp, R });
+    if (t < BD.toss) S.arms.R = armBlend(S.arms.R || idle, reach(hp, V.norm(V.sub(hp, SHOULDER_R)), [0, 0, 1], [-1, -0.5, -0.3], 1.25, 0.3), smooth(BD.grab - 0.05, BD.grab + 0.1, t));
+    else if (t < BD.caught) S.arms.R = reach([-0.16, 1.05, 0.4], [0, 0.3, 1], [1, 0, 0], [-1, -0.5, -0.3], 0.3);     // open hand, waiting
+    else S.arms.R = H.R;
+    if (t >= BD.caught - 0.05 && id !== 'glock') S.arms.L = armBlend(S.arms.L, H.L, smooth(BD.caught - 0.05, BD.caught + 0.15, t));
   }
-  if (root) S.root = root;
+  if (rag) rag.pin = null;
   L.f.script = S;
 
-  // the poor guy: poked, dropped, bounced on
   const word = (q, text, life) => popWord(localToWorld(L, q), text, life);
-  const headPt = () => rag ? rag.p[RP.head] : V.add(belly, [0, 0, 0]);
-  for (let k = 0; k < 3; k++) cue(L, BD.poke + 0.075 + k * 0.15, () => { Sound.play('pop', 0.6); if (rag) ragPush(v, belly, [0, -1.6, 0], 0.35); if (k === 0) word([0, 1.5, 0.3], 'poke?', 0.6); });
-  cue(L, BD.drop, () => Sound.play('whoosh', 0.5));
-  cue(L, BD.drop + 0.18, () => { Sound.play('thud', 0.7); word([0, 1.55, 0.3], '...DEAD.', 0.8); });
-  cue(L, BD.hop, () => Sound.play('hup', 0.8));
-  cue(L, BD.sat, () => { Sound.play('thud', 0.9); if (rag) ragPush(v, belly, [0, -2.5, 0], 0.5); });
-  ['rock', 'fish', 'bone'].forEach((kind, k) => cue(L, BD.bounces[k], () => {
-    Sound.play('boing', 0.8); Sound.play('thud', 0.6);
-    if (rag) { ragPush(v, belly, [0, -3.8, 0], 0.5); ragPush(v, headPt(), [0, 2.6, 0], 0.3); }
-    const h = headPt(); spawnProp(kind, V.add(h, [0, 0.12, 0]), [rand(-1.2, 1.2), rand(4, 5.5), rand(-1.2, 1.2)]);
-    word([0.3 * (k % 2 ? 1 : -1), 1.9, 0.2], ['BOING', 'BLEH', 'HURK'][k], 0.5);
-  }));
-  cue(L, BD.big, () => {                                          // the big one: out comes the gun
-    Sound.play('boing', 1); Sound.play('pop', 1); cam.shake = Math.max(cam.shake, 0.5);
-    if (rag) { ragPush(v, belly, [0, -5, 0], 0.5); ragPush(v, headPt(), [0, 3.5, 0], 0.35); }
-    const h = V.add(headPt(), [0, 0.15, 0]), catchAt = V.add(sitP, M3.vec(sitR, [-0.2 * GUNS[L.gun].scale, seatH + 1.3, -0.3]));
-    L.drop = spawnProp('gun', h, lob(h, catchAt, BD.catch - BD.big), { gun: L.gun, life: BD.catch - BD.big + 0.02, spin: 12 });
-    word([0, 2.1, 0.2], 'PTOOO!', 0.6);
-  });
-  cue(L, BD.catch, () => { if (L.drop) L.drop.life = 0; Sound.play('rack', 0.7); word([0, 2.2, 0.2], 'HA!', 0.5); });
-  cue(L, BD.off, () => Sound.play('land', 0.7));
-  cue(L, BD.look + 0.1, () => { Sound.play('ooo', 0.8, 0); word([0.1, 1.95, 0.3], 'ooo', 0.6); });
-  for (const at of [BD.bite + 0.25, BD.bite + 0.5]) cue(L, at, () => { Sound.play('chomp', 0.9); word([at < BD.bite + 0.4 ? -0.4 : 0.35, 1.75, 0.3], 'CHOMP', 0.5); });
-  cue(L, BD.huh + 0.1, () => { Sound.play('huh', 1); word([0, 2.2, 0], '???', 0.85); });
+  for (let k = 0; k < 4; k++) cue(L, BD.pat + 0.085 + k * 0.17, () => { Sound.play('thud', 0.25); if (rag) ragPush(v, localToWorld(L, k % 2 ? chestP : belly), [0, -0.8, 0], 0.3); });
+  cue(L, BD.grab, () => Sound.play('magout', 0.6));
+  cue(L, 2.5, () => { Sound.play('whoosh', 0.8); word([0, 2.0, 0.3], 'OOGA?', 0.6); });
+  cue(L, BD.puzzle, () => { Sound.play('huh', 0.8); word([0, 1.9, 0.3], 'hmm', 0.5); });
+  cue(L, BD.toss, () => Sound.play('whoosh', 0.5));
+  cue(L, BD.caught, () => { Sound.play('rack', 0.7); Sound.play('hmph', 0.6); });
 }
 
-// ---------------------------------------------------------------- open a chest the caveman way
-// He knocks, politely. Puts his ear to it: hello? Nobody answers, so he climbs on top and stomps on the lid until it
-// bursts open and throws him off onto his bum. Junk everywhere; the prize sails out and lands on his head.
-const CHEST = { hold: 4.5, end: 6.5, label: 'open the chest' };
-const CH = { knock: 0.6, listen: 1.25, climb: 1.75, onTop: 2.15, stomps: [2.45, 2.8, 3.15], land: 3.75, bonk: 4.22, up: 4.32, stand: 4.75 };
+// ---------------------------------------------------------------- open a chest
+// He grabs the lock and tugs at it. Tug. Tug. Nothing. He scratches his head, then notices the lid, lifts it, has a
+// look inside, takes the prize out and has a good look at it.
+const CHEST = { hold: 3.45, end: 4.5, label: 'open the chest' };
+const CS = { lock: 0.3, tug: 0.75, tugEnd: 1.35, scratch: 1.45, scratchEnd: 1.95, grip: 2.25, lift: 2.62, peek: 2.8, inside: 3.12, out: 3.45, up: 3.75 };
 function chestStep(L) {
   const t = L.t, c = L.chest, hips0 = restAt('hips');
-  const S = { arms: {}, legs: {}, hips: hips0, bend: 0 };
-  for (const [s, x] of [['R', -1], ['L', 1]]) S.arms[s] = idleArm(x);
-  const TOP = 0.58, MID = 0.8, FRONT = 0.5;                       // the lid's height, the chest's middle and front, in his space
-  const at = (q, R) => ({ R: M3.mul(M3.ry(L.face), R || M3.id()), p: localToWorld(L, q) });
-  let root = null;
-
-  if (t < CH.listen) {                                            // knock knock
-    const w = smooth(0.5, 0.65, t) * (1 - smooth(1.15, 1.25, t));
-    const tap = t > CH.knock && t < 1.1 ? Math.max(0, Math.sin((t - CH.knock) / 0.15 * Math.PI)) : 0;
-    const fist = hand([-0.08, 0.5, FRONT - 0.06 - 0.07 * tap], [0, 0.2, 1], [0, 0, 1], [-1, -0.3, -0.4], 1.5);
-    S.arms.R = Object.assign(fist, { wrist: V.lerp(S.arms.R.wrist, fist.wrist, w) });
-    S.bend = 0.35 * w; S.hips = V.add(hips0, [0, -0.06 * w, 0]); S.head = M3.rx(0.1 * w);
-  } else if (t < CH.climb) {                                      // ear to the lid. hello? hello??
-    const w = smooth(CH.listen, 1.45, t) * (1 - smooth(1.62, CH.climb, t));
-    S.bend = 1.05 * w; S.hips = V.add(hips0, [0, -0.2 * w, -0.12 * w]); S.twist = 0.25 * w;
-    S.head = M3.mul(M3.rz(-0.85 * w), M3.rx(0.25 * w));
-    const cup = hand([0.12, 1.08 - 0.2 * w, 0.32], [-0.3, 0.6, 0.6], [-1, 0, 0], [1, -0.3, -0.5], 0.8);
-    S.arms.L = Object.assign(cup, { wrist: V.lerp(S.arms.L.wrist, cup.wrist, w) });
-  } else if (t < CH.onTop) {                                      // climbs up, knee first
-    const w = smooth(CH.climb, CH.onTop, t), arc = Math.sin(Math.PI * w);
-    root = at([0, TOP * smooth(0.15, 0.85, w) + 0.25 * arc, MID * smooth(0.05, 0.9, w)]);
-    S.bend = 0.6 * arc; S.hips = V.add(hips0, [0, -0.15 * arc, 0]);
-    for (const [s, x] of [['R', -1], ['L', 1]]) {
-      S.legs[s] = { ankle: V.add(restAt('foot_' + s), [0, (s === 'L' ? 0.35 : 0.12) * arc, (s === 'L' ? 0.25 : -0.1) * arc]), pole: [x * 0.3, 0, 1] };
-      S.arms[s] = hand([x * 0.3, 0.75 + 0.2 * arc, 0.4], [x * 0.2, -0.6, 0.8], [0, -1, 0], [x, -0.3, -0.6], 0.5);
+  const toLocal = w => M3.vec(M3.ry(-L.face), V.sub(w, L.spot));
+  const lidEdge = (x, open) => toLocal(V.add(V.add(c.pos, [0, 0.44, -0.30]), M3.vec(M3.rx(-1.9 * open), [x, 0.07, 0.6])));
+  const lock = toLocal(V.add(c.pos, [0, 0.33, 0.31]));
+  const open = flow([[CS.grip, 0], [CS.lift, 0.55]], t);
+  if (t >= CS.grip && t < CS.lift) c.held = open;
+  else if (t >= CS.lift && c.held !== null && c.held !== undefined) { c.held = null; c.forced = true; c.openV = 4; }
+  const tugs = t > CS.tug && t < CS.tugEnd ? Math.max(0, Math.sin((t - CS.tug) / 0.2 * Math.PI)) : 0;
+  const crouch = flow([[CS.lock, 0], [CS.tug, 0.45], [CS.tugEnd, 0.45], [CS.scratch, 0], [CS.scratchEnd, 0], [CS.grip, 1], [CS.lift, 0.6], [CS.inside, 0.8], [CS.out, 0.6], [CS.up, 0], [CHEST.end, 0]], t);
+  const S = {
+    hips: V.add(hips0, [0, -0.36 * crouch, -0.12 * crouch - 0.06 * tugs]),
+    bend: flow([[CS.lock, 0], [CS.tug, 0.55], [CS.tugEnd, 0.5], [CS.scratch, 0], [CS.scratchEnd, 0], [CS.grip, 0.55], [CS.lift, 0.25], [CS.peek, 0.7], [CS.inside, 0.8], [CS.out, 0.5], [CS.up, 0.05], [CHEST.end, 0]], t) - 0.25 * tugs,
+    head: M3.mul(M3.rx(flow([[CS.lock, 0], [CS.tug, 0.2], [CS.tugEnd, 0.2], [CS.scratch, 0], [CS.scratchEnd, 0], [CS.grip, 0.15], [CS.lift, -0.05], [CS.peek, 0.4], [CS.out, 0.3], [CS.up, -0.1], [CHEST.end, 0]], t)),
+      M3.rz(flow([[CS.tugEnd, 0], [CS.scratch, 0.3], [CS.scratchEnd, 0.25], [CS.grip, 0], [CHEST.end, 0]], t))),
+    arms: {}, legs: {}
+  };
+  for (const [s, x] of [['R', -1], ['L', 1]]) S.legs[s] = { ankle: V.add(restAt('foot_' + s), [x * 0.06 * crouch, 0, -0.04 * crouch]), pole: [x * 0.45, 0, 1] };
+  const idle = relaxed();
+  const onLock = x => reach(V.add(lock, [x * 0.05, 0, -0.03 - 0.05 * tugs]), [x * 0.2, 0, 1], [-x, 0, 0], [x, -0.6, -0.3], 1.2);
+  const onLid = x => reach(V.add(lidEdge(x * 0.28, open), [0, -0.02, -0.02]), [x * 0.1, 0.1, 1], [0, 1, 0], [x, -0.6, -0.3], 1.0, 0.35);
+  for (const [s, x] of [['R', -1], ['L', 1]]) {
+    let arm;
+    if (t < CS.tugEnd) arm = armBlend(idle, onLock(x), smooth(CS.lock, CS.tug, t));
+    else if (t < CS.scratchEnd) {
+      const back = armBlend(onLock(x), idle, smooth(CS.tugEnd, CS.scratch, t));
+      arm = s === 'R' ? armBlend(back, Object.assign(scratchArm(-1, t), { natural: 0.5 }), smooth(CS.scratch, CS.scratch + 0.15, t) * (1 - smooth(CS.scratchEnd - 0.15, CS.scratchEnd, t))) : back;
+    } else if (t < CS.lift) arm = armBlend(idle, onLid(x), smooth(CS.scratchEnd, CS.grip, t));
+    else if (s === 'L') arm = armBlend(onLid(x), reach([0.24, 0.5, 0.5], [0, -0.5, 1], [0, -1, 0], [1, -0.6, -0.3], 0.8), smooth(CS.lift, CS.peek, t));   // a hand on the front
+    else {
+      const dig = t > CS.peek + 0.1 && t < CS.inside ? [0.06 * Math.sin(t * 13), 0.04 * Math.abs(Math.sin(t * 9)), 0.05 * Math.cos(t * 11)] : [0, 0, 0];
+      arm = armBlend(onLid(x), reach(V.add(flow([[CS.lift, [-0.12, 0.75, 0.45]], [CS.peek, [-0.1, 0.6, 0.62]], [CS.inside, [-0.08, 0.36, 0.8]]], t), dig), [0, -0.7, 0.7], [0, -0.7, -0.7], [-1, -0.6, -0.2], 0.9), smooth(CS.lift, CS.peek, t));
     }
-  } else if (t < CH.stomps[2] + 0.02) {                           // stomp. stomp. STOMP.
-    let hop = 0;
-    for (let k = 0; k < 3; k++) { const a = CH.stomps[k] - 0.3, b = CH.stomps[k]; if (t >= a && t < b) hop = Math.sin(Math.PI * (t - a) / (b - a)) * (k === 2 ? 0.45 : 0.3); }
-    const squash = CH.stomps.some(b => t >= b - 0.02 && t < b + 0.12) ? 1 : 0;
-    root = at([0, TOP + hop, MID]);
-    S.hips = V.add(hips0, [0, -0.14 * squash + 0.04 * hop, 0]); S.bend = 0.2 * squash - 0.1 * hop;
-    S.head = M3.rx(-0.25 * hop);
-    for (const [s, x] of [['R', -1], ['L', 1]]) {
-      const lift = (s === 'L' ? 1 : 0.6) * hop;
-      S.legs[s] = { ankle: V.add(restAt('foot_' + s), [x * 0.04, 0.5 * lift, 0.08 * lift]), pole: [x * 0.5, 0, 1] };
-      S.arms[s] = hand([x * (0.42 + 0.1 * hop), 1.55 + 0.4 * hop + 0.05 * Math.sin(t * 30 + x), 0.05], [x * 0.3, 1, 0], [0, 0, 1], [x, -0.2, -0.5], 1.4);
-    }
-  } else if (t < CH.land) {                                       // the lid bursts open and throws him off, backwards
-    const w = (t - CH.stomps[2]) / (CH.land - CH.stomps[2]), arc = Math.sin(Math.PI * w);
-    const H = [0, (TOP + hips0[1]) * (1 - w) + 0.24 * w + 1.05 * arc, MID * (1 - smooth(0, 1, w)) + 0.12 * smooth(0, 1, w)];
-    const spin = M3.rx(-1.15 * Math.sin(Math.PI * 0.5 * Math.min(1, w * 1.2)) * (1 - smooth(0.75, 1, w)) - 0.25 * smooth(0.75, 1, w));
-    root = { R: M3.mul(M3.ry(L.face), spin), p: localToWorld(L, V.sub(H, M3.vec(spin, hips0))) };
-    S.bend = -0.3 * arc;
-    for (const [s, x] of [['R', -1], ['L', 1]]) {
-      S.legs[s] = { ankle: V.add(restAt('foot_' + s), [x * 0.15 * arc, 0.42 * arc, 0.45 * arc]), pole: [x * 0.3, 0.6, 1] };
-      S.arms[s] = hand([x * (0.6 + 0.08 * Math.sin(t * 40 + x)), 1.6 + 0.1 * Math.cos(t * 33 + x), 0.0], [x * 0.4, 1, 0], [0, 0, 1], [x, -0.2, -0.5], 0.2);
-    }
+    S.arms[s] = arm;
   }
-  // on his bum, seeing stars, until the prize comes down on his head; then he gets up with it
-  const sitting = t >= CH.land - 0.02 && t < CH.stand;
-  if (sitting) {
-    const getUp = smooth(CH.up, CH.stand, t);
-    const H = V.lerp([0, 0.2, 0.08], hips0, getUp), dazed = 1 - getUp;
-    S.hips = V.sub(H, [0, 0, 0]); S.bend = -0.25 * dazed + 0.3 * Math.sin(Math.PI * getUp);
-    S.head = M3.mul(M3.rz(Math.sin(t * 9) * 0.3 * dazed), M3.rx(Math.cos(t * 9) * 0.15 * dazed));
-    for (const [s, x] of [['R', -1], ['L', 1]]) {
-      S.legs[s] = { ankle: V.lerp([x * 0.2, 0.07, 0.62], restAt('foot_' + s), getUp), pole: [x * 0.3, 1, 0.4] };
-      S.arms[s] = hand(V.lerp([x * 0.32, 0.1, -0.28], [x * 0.22, 0.85, 0.3], smooth(CH.bonk, CH.stand, t)), [x * 0.2, -1, -0.3], [0, -1, 0], [x, 0, -0.4], 0.4);
+  // the prize: out of the chest, held up to have a look, then held ready
+  if (t >= CS.inside) {
+    const id = L.gun, vest = id === 'vest';
+    const pos = flow([[CS.inside, [-0.08, 0.38, 0.8]], [CS.out, [-0.1, 0.8, 0.55]], [CS.up, [-0.08, 1.3, 0.42]], [CS.up + 0.3, [-0.08, 1.32, 0.42]], [CHEST.end - 0.2, vest ? [0, 1.1, 0.35] : [-0.2, 1.02, 0.38]]], t);
+    if (vest) {
+      S.vest = { p: pos, R: M3.rx(-0.1) };
+      S.arms.R = armBlend(S.arms.R, reach(V.add(pos, [-0.2, 0.06, 0]), [0.1, 1, 0.1], [1, 0, 0], [-1, -0.3, -0.3], 1.1), smooth(CS.inside, CS.out, t));
+      S.arms.L = armBlend(S.arms.L, reach(V.add(pos, [0.2, 0.06, 0]), [-0.1, 1, 0.1], [-1, 0, 0], [1, -0.3, -0.3], 1.1), smooth(CS.out, CS.up, t));
+    } else {
+      const side = M3.mul(M3.ry(Math.PI / 2), M3.rz(0.15)), readyR = M3.mul(M3.ry(0.15), M3.rx(0.08));
+      const R = t < CS.up + 0.3 ? side : M3.mix(side, readyR, smooth(CS.up + 0.3, CHEST.end - 0.2, t));
+      const H = gunHands(id, { p: pos, R });
+      S.gun = { id, p: pos, R }; S.arms.R = H.R;
+      if (id !== 'glock') S.arms.L = armBlend(S.arms.L, H.L, smooth(CS.out, CS.up, t));
+      else S.arms.L = armBlend(S.arms.L, relaxed(), smooth(CS.out, CS.up, t));
     }
-    root = at([0, 0, 0]);
-  }
-  if (root) S.root = root;
-
-  // the prize, flying out of the chest onto his head, then into his hands
-  if (t >= CH.land && t < CH.stand) {
-    const fly = smooth(CH.land, CH.bonk, t), head = [0, 1.12 + 0.04 * Math.max(0, Math.sin((t - CH.bonk) * 30)) * (t > CH.bonk ? 1 : 0), 0.05];
-    const from = [0, TOP, MID], pos = t < CH.bonk ? V.add(V.lerp(from, head, fly), [0, 1.0 * Math.sin(Math.PI * fly), 0]) : V.lerp(head, [-0.2, 0.8, 0.35], smooth(CH.up, CH.stand, t));
-    const R = M3.mul(M3.ry(Math.PI / 2), M3.rx(t < CH.bonk ? fly * 9 : 0));
-    if (L.gun === 'vest') S.vest = { p: pos, R: M3.rx(t < CH.bonk ? fly * 7 : -0.12) }; else S.gun = { id: L.gun, p: pos, R };
-  }
-
-  // and hold the prize up for everyone to see
-  if (t >= 4.75 && L.gun === 'vest') {
-    const take = smooth(4.75, 5.0, t), w = smooth(4.85, 5.2, t), hop = t > 5.15 && t < 6.15 ? Math.abs(Math.sin((t - 5.15) * Math.PI * 2)) : 0;
-    const gp = V.lerp([0, 0.8, 0.4], [0, 1.9 + hop * 0.04, 0.14], w);
-    S.vest = { p: gp, R: M3.mul(M3.rz(Math.sin(t * 9) * 0.06), M3.rx(-0.12)) };
-    for (const [s, x] of [['R', -1], ['L', 1]]) {
-      const goal = hand([x * 0.205, gp[1] - 0.04, gp[2]], [-x * 0.1, 1, 0.1], [-x, 0, 0], [x, -0.3, -0.3], 1.1);
-      S.arms[s] = Object.assign(goal, { wrist: V.lerp(S.arms[s].wrist, goal.wrist, take) });
-    }
-    S.bend = S.bend * (1 - w) - 0.2 * w; S.head = M3.rx(-0.3 * w); S.hips = V.lerp(S.hips, hips0, take);
-    S.root = { R: M3.ry(L.face), p: V.add(L.spot, [0, hop * 0.14, 0]) };
-    for (const s of ['R', 'L']) S.legs[s] = { ankle: V.add(restAt('foot_' + s), [0, hop * 0.07, 0]) };
-  } else if (t >= 4.75) {
-    const id = L.gun, take = smooth(4.75, 5.0, t), w = smooth(4.85, 5.2, t), hop = t > 5.15 && t < 6.15 ? Math.abs(Math.sin((t - 5.15) * Math.PI * 2)) : 0;
-    const R = M3.mul(M3.ry(Math.PI / 2), M3.rx(-0.08 + Math.sin(t * 9) * 0.1));
-    const gp = V.lerp([-0.2, 0.8, 0.35], [id === 'glock' ? -0.12 : -0.25 * GUNS[id].scale, 1.86 + hop * 0.04, 0.12], w);
-    const H = gunHands(id, { p: gp, R });
-    S.gun = { id, p: gp, R };
-    const other = id === 'glock' ? hand([0.34, 0.86, 0.06], [-0.4, -1, 0], [-1, 0, 0], [1, 0, -0.2], 1.1) : H.L;
-    for (const [s, goal] of [['R', H.R], ['L', other]]) S.arms[s] = Object.assign(goal, { wrist: V.lerp(S.arms[s].wrist, goal.wrist, take) });
-    S.bend = S.bend * (1 - w) - 0.2 * w; S.head = M3.rx(-0.3 * w); S.hips = V.lerp(S.hips, hips0, take);
-    S.root = { R: M3.ry(L.face), p: V.add(L.spot, [0, hop * 0.14, 0]) };
-    for (const s of ['R', 'L']) S.legs[s] = { ankle: V.add(restAt('foot_' + s), [0, hop * 0.07, 0]) };
   }
   L.f.script = S;
 
-  const lid = V.add(c.pos, [0, 0.62, 0.15]), word = (q, text, life) => popWord(localToWorld(L, q), text, life);
-  for (let k = 0; k < 3; k++) cue(L, CH.knock + 0.075 + k * 0.15, () => { Sound.play('knock', 0.9); c.wobble = Math.max(c.wobble, 0.15); if (k === 0) word([0, 1.6, 0.4], 'knock knock?', 0.7); });
-  cue(L, CH.listen + 0.25, () => { Sound.play('huh', 0.8); word([0.2, 1.4, 0.3], 'hello??', 0.8); });
-  cue(L, CH.climb + 0.05, () => Sound.play('hup', 0.8));
-  CH.stomps.forEach((at, k) => cue(L, at, () => {
-    Sound.play('thud', 1); Sound.play('bonk', 0.5); c.wobble = 1; cam.shake = Math.max(cam.shake, 0.5 + 0.25 * k);
-    puff(lid, 6, [0.6, 0.45, 0.25, 0.8], 1.0, 0.04, 0.4, 4);
-    word([0.4 * (k % 2 ? 1 : -1), 1.25, 0.8], ['STOMP', 'STOMP!', 'STOMP!!'][k], 0.5);
-  }));
-  cue(L, CH.stomps[2] + 0.01, () => {                              // KA-BOING: the lid gives
-    c.forced = true; c.openV += 14; Sound.play('boing', 1); Sound.play('whoosh', 1); cam.shake = 1;
-    word([0, 1.9, 0.8], 'BOING!', 0.8); puff(lid, 14, [0.6, 0.45, 0.25, 0.8], 1.8, 0.05, 0.5, 4);
-    ['rock', 'bone', 'fish', 'meat', 'rock'].forEach((kind, k) => {
-      const from = V.add(c.pos, [rand(-0.2, 0.2), 0.55, 0]), land = V.add(c.pos, [(k % 2 ? 1 : -1) * rand(0.8, 1.8), 0.07, rand(-0.3, 1.8)]);
-      spawnProp(kind, from, lob(from, land, rand(0.7, 1.0)));
-    });
-  });
-  cue(L, CH.land, () => { Sound.play('thud', 1); Sound.play('ugh', 0.7); puff(L.spot.slice(), 12, [0.5, 0.47, 0.42, 0.7], 1.1, 0.06, 0.5, 1.5); });
-  cue(L, CH.bonk, () => { Sound.play('bonk', 1); word([0.3, 1.6, 0.1], 'BONK!', 0.6); });
-  cue(L, CH.stand + 0.1, () => { Sound.play('tada', 0.9); Sound.play('ooga', 0.9); word([0, 2.05, -0.8], 'OOGA!!', 1.1); });
-
-  // stars while he sits there dazed
-  const see = smooth(CH.land, CH.land + 0.1, t) * (1 - smooth(CH.up, CH.up + 0.15, t));
-  if (see > 0) stars.push({ f: L.f, w: see });
+  const word = (q, text, life) => popWord(localToWorld(L, q), text, life);
+  for (let k = 0; k < 3; k++) cue(L, CS.tug + 0.1 + k * 0.2, () => { Sound.play('click', 0.7); Sound.play('knock', 0.4); c.wobble = Math.max(c.wobble, 0.35); if (k === 1) word([0, 1.5, 0.4], 'hnng', 0.5); });
+  cue(L, CS.scratch + 0.1, () => { Sound.play('huh', 0.8); word([0, 1.95, 0.1], '?', 0.6); });
+  cue(L, CS.grip + 0.05, () => Sound.play('creak', 0.9));
+  cue(L, CS.peek, () => Sound.play('whoosh', 0.35));
+  cue(L, CS.out, () => Sound.play(L.gun === 'vest' ? 'vest' : 'rack', 0.6));
+  cue(L, CS.up + 0.05, () => { Sound.play('ooo', 0.6, 0.3); word([0, 1.75, 0.4], 'ooh', 0.6); });
 }
 
 // ---------------------------------------------------------------- starting, holding, finishing
@@ -616,7 +545,7 @@ function startLoot(target) {
 function releaseTarget(L) {
   if (L.victim && L.victim.rag) L.victim.rag.pin = null;
   if (L.victim && L.victim.dead >= 0) { L.victim.beingLooted = false; L.victim.script = null; L.victim.scriptW = 0; if (L.given) { L.victim.looted = true; L.victim.dead = 1.3; } else L.victim.dead = Math.min(L.victim.dead, LOOT_WINDOW - 4); }
-  if (L.chest) L.chest.forced = false;
+  if (L.chest) { L.chest.forced = false; L.chest.held = null; }
 }
 function endLoot() {
   const L = looting; if (!L) return;
@@ -645,7 +574,7 @@ function lootStep(dt) {
   const pressed = holding && !lootHeld;
   lootHeld = holding;
   stars.length = 0;
-  lootCam = clamp(lootCam + (looting && looting.cancel < 0 && looting.t < looting.def.end - 0.45 ? dt / 0.65 : -dt / 0.55), 0, 1);
+  lootCam = 0;                                                 // the camera stays yours while he does it
   if (!looting) {
     const target = pressed ? lootTarget() : null;
     if (!target) {
@@ -685,8 +614,6 @@ function lootStep(dt) {
   } else f.speed = 0;
   const gait = f.speed > 0.2 ? 'Walk' : 'Idle';
   for (const n of CLIP_NAMES) f.weights[n] = n === gait ? 1 : 0;
-  cam.yaw += wrap(L.face - Math.PI - cam.yaw) * Math.min(1, dt * 5);
-  cam.pitch += (0.18 - cam.pitch) * Math.min(1, dt * 5);
 
   (L.kind === 'body' ? bodyStep : chestStep)(L);
   const out = 1 - smooth(L.def.end - 0.28, L.def.end, t);

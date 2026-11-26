@@ -1,6 +1,7 @@
 // ======================================================================= the boat trip
 // choosing the island from the menu plays this: you and the skipper cruising in with the boombox going,
 // a cheers, a rock, and waking up on the beach beside the burning wreck. Space skips it
+const CINE_WORDS = false;
 const CINE = {
   driver: 5.5, you: 10.0, boom: 14.5, cheers: 18.5, chug: 24.0, point: 27.0, huh: 28.2, rock: 29.0, hit: 31.0, black: 33.2, eyes: 36.0, up: 41.0, end: 49.5
 };
@@ -437,6 +438,7 @@ function cineClearWords() { cine.words.length = 0; cineEl('cinewords').textConte
 function cineFade(a, colour) { const el = cineEl('cinefade'); el.style.opacity = a; if (colour) el.style.background = colour; }
 // a word that pops up over something in the world
 function cineSay(where, text, life, size) {
+  if (!CINE_WORDS && text !== '♪' && text !== '♫') return;       // the pop-up words are switched off, like in the game
   const el = document.createElement('div'); el.className = 'pop'; el.textContent = text; if (size) el.style.fontSize = size + 'px';
   cineEl('cinewords').appendChild(el);
   cine.words.push({ el, where, t: 0, life });
