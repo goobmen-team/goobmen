@@ -169,6 +169,7 @@ function drawThing(prog, kind, R, p) {
 
 // ---------------------------------------------------------------- things lying about for the taking
 const floorLoot = [];
+const pickFlyers = [];                                         // things on their way from the floor to him
 function dropLoot(item, at, spread) {
   const s = spread === undefined ? 0.5 : spread;
   let x = at[0] + rand(-s, s), z = at[2] + rand(-s, s);
@@ -188,6 +189,14 @@ function lootNear(p, reachOut) {
 const LOOT_SEEN = 45;                                          // metres
 const lootSeen = o => Math.abs(o.p[0] - player.pos[0]) < LOOT_SEEN && Math.abs(o.p[2] - player.pos[2]) < LOOT_SEEN;
 function drawFloorLoot(prog, textured) {
+  for (let i = pickFlyers.length - 1; i >= 0; i--) {
+    const q = pickFlyers[i], u = (game.time - q.t0) / 0.32;
+    if (u >= 1) { pickFlyers.splice(i, 1); continue; }
+    const e = smooth(0, 1, u), to = toWorld(player, [-0.28, 0.95, 0.12]), sc = 1 - 0.75 * e;
+    const at = V.add(V.lerp(q.from, to, e), [0, 0.35 * Math.sin(Math.PI * e), 0]), spin = M3.ry(q.a + game.time * 6);
+    if (q.item.t === 'gun') { const g = GUNS[q.item.id]; drawGun(prog, textured, g, spin.map(x => x * g.scale * sc), V.add(at, M3.vec(spin, [0, 0, -0.18 * g.scale * sc])), {}); }
+    else drawThing(prog, q.item.t, spin.map(x => x * 1.15 * sc), at);
+  }
   for (const o of floorLoot) {
     if (!lootSeen(o)) continue;
     const it = o.item, spin = M3.ry(o.a + game.time * 0.9), lift = 0.04 * Math.sin(game.time * 2.2 + o.a);
@@ -272,13 +281,34 @@ function useStep(f, dt) {
   }
   return t >= USE_TIME[u.t];
 }
+// food and plates come up out of the pocket on his hip into his hands, and go back the same way
+const POCKET = [-0.30, 0.78, 0.10];
+function holdBlend(f, h) {
+  const e = smooth(0, 1, h.w);
+  if (e >= 1 || !f.carry) return;
+  const c = f.carry;
+  f.carry = {};
+  if (c.R) f.carry.R = mixGoal(idleArm(-1), c.R, e);
+  if (c.L) f.carry.L = mixGoal(idleArm(1), c.L, e);
+  if (f.thing) f.thing = Object.assign({}, f.thing, { p: V.lerp(POCKET, f.thing.p, e) });
+}
 // yours: runs inside playerStep, after the C4 code has had its say about your arms
 function itemStep(f, dt) {
-  f.headTilt = null; f.thing = null;
+  f.headTilt = null; f.thing = null; f.carry = null;
+  const h = f.hold || (f.hold = { kind: null, w: 0 });
   if (f.hand && findSlot(f, f.hand) < 0) { f.hand = null; f.use = null; }
-  if (!f.hand || f.dead >= 0 || looting || f.ride) { f.use = null; return; }
-  if (!f.use && mouse.pressed && !useBlock(f, f.hand)) { f.use = { t: f.hand, time: 0 }; mouse.pressed = false; }
-  if (!f.use) { holdThingPose(f, f.hand); return; }
+  const free = f.dead < 0 && !looting && !f.ride && !f.hol && !f.weapon;      // hands not busy with a gun
+  if (!f.hand || !free) {
+    f.use = null;
+    if (!free) h.w = 0; else h.w = Math.max(0, h.w - dt / 0.22);
+    if (h.w > 0 && h.kind) { holdThingPose(f, h.kind); holdBlend(f, h); }     // putting it away
+    return;
+  }
+  if (h.kind !== f.hand) { h.kind = f.hand; h.w = 0; }
+  if (!f.use) h.w = Math.min(1, h.w + dt / 0.30);
+  if (!f.use && h.w >= 0.9 && mouse.pressed && !useBlock(f, f.hand)) { f.use = { t: f.hand, time: 0 }; mouse.pressed = false; }
+  if (!f.use) { holdThingPose(f, f.hand); holdBlend(f, h); return; }
+  h.w = 1;
   if (!useStep(f, dt)) return;
   const k = findSlot(f, f.use.t), s = f.slots[k];
   f.use = null; f.headTilt = null;
