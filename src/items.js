@@ -351,7 +351,7 @@ function holdBlend(f, h) {
 // ---------------------------------------------------------------- picking things up off the floor, caveman style
 // leans over it, sniffs it, pokes it, jumps back (huh?), grabs it, and: food gets a bite and goes in the pocket, a plate gets a knock and
 // goes in the pocket, a vest is held up for the putting on
-const PICKIT = { reach: 0.30, poke: 0.62, grab: 0.90, dur: 1.80 };
+const PICKIT = { reach: 0.34, poke: 0.70, grab: 1.00, dur: 2.00 };
 function startItemPick(f, st) {
   return { kind: st.kind, t: 0, a: st.a, floorP: st.floorP, item: toLocalPos(f, V.add(st.floorP, [0, 0.04, 0])) };
 }
@@ -361,27 +361,27 @@ function pickItStep(f, dt) {
   if (f.dead >= 0 || looting || f.ride) { f.pickIt = null; f.bendX = 0; return; }
   const before = q.t, t = (q.t += dt), crossed = at => before < at && t >= at, food = q.kind === 'fish' || q.kind === 'meat';
   const loud = 0.8, snd = (n, v) => Sound.play(n, loud * (v || 1));
-  if (crossed(0.40)) snd(food ? 'huh' : 'clank', 0.6);
-  if (crossed(0.52) && !food) snd('bonk', 0.5);
+  if (crossed(0.45)) snd(food ? 'huh' : 'clank', 0.6);
+  if (crossed(0.58) && !food) snd('bonk', 0.5);
   if (crossed(PICKIT.poke)) snd('huh', 0.8);
   if (crossed(PICKIT.grab)) snd('grab');
-  if (food && crossed(1.32)) snd('chomp');
-  if (food && crossed(1.50)) snd('huh', 0.6);
-  if (crossed(1.62)) snd('rustle', 0.7);
+  if (food && crossed(1.45)) snd('chomp');
+  if (food && crossed(1.65)) snd('huh', 0.6);
+  if (crossed(1.78)) snd('rustle', 0.7);
   const head = f.wp[IDX.head] || Rig.rest[IDX.head], mouth = V.add(head, [-0.03, 0.04, 0.2]), pocket = POCKET;
   const poking = smooth(PICKIT.reach, PICKIT.reach + 0.04, t) * (1 - smooth(PICKIT.poke - 0.04, PICKIT.poke, t));
   const tap = 0.06 * Math.abs(Math.sin((t - PICKIT.reach) * 13)) * poking;
   let p;
   if (t < PICKIT.grab) p = V.add(q.item, [0, tap, 0]);
-  else if (q.kind === 'vest') p = flow([[PICKIT.grab, q.item], [1.2, [0, 1.0, 0.42]], [PICKIT.dur, [0, 1.0, 0.42]]], t);
-  else p = flow(food ? [[PICKIT.grab, q.item], [1.12, [-0.12, 1.02, 0.5]], [1.3, mouth], [1.5, mouth], [1.62, pocket], [PICKIT.dur, pocket]]
-                      : [[PICKIT.grab, q.item], [1.15, [0, 1.05, 0.48]], [1.4, [0, 1.1, 0.4]], [1.62, pocket], [PICKIT.dur, pocket]], t);
-  if (food) p = V.add(p, [0, 0, 0.05 * Math.max(0, Math.sin((t - 1.3) / 0.2 * Math.PI)) * (t > 1.3 && t < 1.5 ? 1 : 0)]);
-  const shrink = 1 - 0.85 * smooth(1.55, 1.74, t);                            // into the pocket
+  else if (q.kind === 'vest') p = flow([[PICKIT.grab, q.item], [1.35, [0, 1.0, 0.42]], [PICKIT.dur, [0, 1.0, 0.42]]], t);
+  else p = flow(food ? [[PICKIT.grab, q.item], [1.33, [-0.12, 1.02, 0.5]], [1.5, mouth], [1.65, mouth], [1.78, pocket], [PICKIT.dur, pocket]]
+                      : [[PICKIT.grab, q.item], [1.34, [0, 1.05, 0.48]], [1.56, [0, 1.1, 0.4]], [1.78, pocket], [PICKIT.dur, pocket]], t);
+  if (food) p = V.add(p, [0, 0, 0.05 * Math.max(0, Math.sin((t - 1.45) / 0.2 * Math.PI)) * (t > 1.45 && t < 1.65 ? 1 : 0)]);
+  const shrink = 1 - 0.85 * smooth(1.7, 1.92, t);                            // into the pocket
   f.carry = food || q.kind === 'ammo' ? foodGoal(p) : plateGoals(p);                  // the ammo box goes in one fist, the rest in two hands
-  f.thing = t >= PICKIT.grab && t < PICKIT.dur - 0.06 ? { kind: q.kind, p, R: M3.mul(M3.ry(food ? 1.35 : 0), M3.rx(food ? 0.1 : -0.25)).map(x => x * shrink) } : null;
-  f.bendX = 1.15 * smooth(0, PICKIT.reach, t) * (1 - smooth(PICKIT.grab + 0.05, 1.3, t));
-  const sniff = smooth(0.3, 0.45, t) * (1 - smooth(0.58, 0.64, t)), puzzled = smooth(PICKIT.poke - 0.04, PICKIT.poke + 0.1, t) * (1 - smooth(0.82, PICKIT.grab + 0.04, t));
+  f.thing = t >= PICKIT.grab && t < PICKIT.dur - 0.06 ? { kind: q.kind, p, R: M3.mul(M3.ry(food ? 1.35 : 0), M3.rx(food ? 0.1 : -0.25)).map(x => x * shrink * (0.5 + 0.5 * smooth(PICKIT.grab, PICKIT.grab + 0.1, t))) } : null;
+  f.bendX = 1.15 * smooth(0, PICKIT.reach, t) * (1 - smooth(PICKIT.grab + 0.05, 1.45, t));
+  const sniff = smooth(0.32, 0.5, t) * (1 - smooth(0.64, 0.7, t)), puzzled = smooth(PICKIT.poke - 0.04, PICKIT.poke + 0.1, t) * (1 - smooth(0.9, PICKIT.grab + 0.04, t));
   f.headTilt = M3.mul(M3.rx(0.3 * sniff), M3.rz(0.4 * puzzled));
   if (t >= PICKIT.dur) { f.pickIt = null; f.bendX = 0; f.headTilt = null; f.thing = null; f.carry = null; hudDirty = true; }
 }

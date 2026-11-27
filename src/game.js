@@ -310,6 +310,15 @@ function poseFighter(f) {
   }
   const J = jumpShape(f);
   if (f.hol && (f.dead >= 0 || !f.inv.includes(f.hol.id))) f.hol = null;
+  // how long since this fighter was last posed: everything below that eases in or out uses it
+  const dtp = clamp(game.time - (f.goalT === undefined ? game.time : f.goalT), 0, 0.1); f.goalT = game.time;
+  // the lean and the head tilt of the pickups and the vest follow what they are asked for, instead of snapping to it
+  { const bt = hol0 => (hol0 && hol0.mode === 'pick') ? pickBend(hol0) : (f.bendX || 0);
+    f.bendS = (f.bendS || 0) + (bt(f.hol) - (f.bendS || 0)) * Math.min(1, dtp * 14);
+    if (Math.abs(f.bendS) < 0.002 && !bt(f.hol)) f.bendS = 0;
+    const hT = f.headTilt || M3.id();
+    f.headS = f.headS ? M3.mix(f.headS, hT, Math.min(1, dtp * 12)) : (f.headTilt ? f.headTilt : null);
+    if (f.headS && !f.headTilt && Math.abs(f.headS[0] - 1) + Math.abs(f.headS[4] - 1) + Math.abs(f.headS[8] - 1) < 0.003) f.headS = null; }
   const hol = f.hol, vid = hol ? hol.id : f.weapon;           // the gun in his hand: while he stows one, that is the one still moving
   const g = vid && f.dead < 0 && f.scriptW < 0.3 ? GUNS[vid] : null;
   const wr = f.wr, wp = f.wp;
@@ -330,13 +339,13 @@ function poseFighter(f) {
       if (i === IDX.hips) { wr[i] = yawOf(wr[i], f.legYaw); wp[i] = M3.vec(M3.ry(f.legYaw), wp[i]); }
       else if (UP_CHEST.includes(i)) wr[i] = yawOf(wr[i], -f.legYaw / 2);
     }
-    if (UP_CHEST.includes(i) && ((hol && hol.mode === 'pick') || f.bendX)) wr[i] = M3.mul(M3.rx((hol && hol.mode === 'pick' ? pickBend(hol) : f.bendX) / 2), wr[i]);
+    if (UP_CHEST.includes(i) && f.bendS) wr[i] = M3.mul(M3.rx(f.bendS / 2), wr[i]);
     if (i === IDX.head && hol && hol.mode === 'pick') wr[i] = M3.mul(M3.mul(M3.rz(0.42 * pickPuzzled(hol)), M3.rx(0.22 * pickPuzzled(hol))), wr[i]);
     if (UP_CHEST.includes(i) && (g || punching)) {
       wr[i] = M3.mul(M3.mul(M3.ry(blade / 2 + (punching ? 0.2 * Math.sin(Math.PI * f.punch / 0.4) : 0)), M3.rx(-lean * 0.22)), wr[i]);
     }
     if (i === IDX.head && g) wr[i] = M3.mul(M3.mul(M3.ry(-blade * 0.9), M3.rx(-lean * 0.25)), wr[i]);
-    if (i === IDX.head && f.headTilt && f.dead < 0) wr[i] = M3.mul(f.headTilt, wr[i]);
+    if (i === IDX.head && f.headS && f.dead < 0) wr[i] = M3.mul(f.headS, wr[i]);
     if (i === IDX.head && g && f.reload >= 0) {           // peering: head cocked to one side
       const peer = peerAmount(f);
       wr[i] = M3.mul(M3.mul(M3.mul(M3.ry(-0.5 * peer), M3.rz(0.3 * peer)), M3.rx(0.14 * peer)), wr[i]);
@@ -372,13 +381,19 @@ function poseFighter(f) {
       goals = { R: { wrist: V.add(wp[i], [-0.2 + 0.1 * out, 0.13 + 0.05 * out, 0.16 + 0.48 * out]), dir: [0, 0, 1], palm: [0, -1, 0], pole: [-1, -0.6, -0.2], curl: [1.4, 1.4] } };
       arms = {};
     }
+    if (i === IDX.chest) {                                     // hands settle onto what they hold, and let go of it, over a moment
+      if (goals) { f.lastGoals = goals; f.goalW = Math.min(1, (f.goalW || 0) + dtp / 0.16); }
+      else if ((f.goalW || 0) > 0.001 && f.lastGoals) { f.goalW = Math.max(0, f.goalW - dtp / 0.22); goals = f.lastGoals; arms = arms || {}; }
+      else f.goalW = 0;
+    }
     if (goals) {
+      const gw = f.goalW === undefined ? 1 : f.goalW, ease = (cur, ik) => gw >= 0.999 ? ik : M3.mix(cur, ik, gw);
       for (const s of ['R', 'L']) {
         const a = ARMS[s], goal = goals[s];
         if (!goal) continue;
-        if (i === a.up) { arms[s] = solveArm(a, wp[i], goal); wr[i] = arms[s][0]; }
-        else if (i === a.fore) wr[i] = arms[s][1];
-        else if (i === a.hand) wr[i] = arms[s][2];
+        if (i === a.up) { arms[s] = solveArm(a, wp[i], goal); wr[i] = ease(wr[i], arms[s][0]); }
+        else if (i === a.fore) wr[i] = ease(wr[i], arms[s][1]);
+        else if (i === a.hand) wr[i] = ease(wr[i], arms[s][2]);
         else if (i === a.fingers) wr[i] = M3.mul(wr[a.hand], M3.rz(a.x < 0 ? goal.curl[0] : -goal.curl[0]));
         else if (i === a.tips) wr[i] = M3.mul(wr[a.fingers], M3.rz(a.x < 0 ? goal.curl[1] : -goal.curl[1]));
         else if (i === a.thumb) wr[i] = M3.mul(wr[a.hand], M3.mul(M3.ry(a.x * 0.75), M3.rx(0.55)));
@@ -713,7 +728,7 @@ addEventListener('keydown', e => {
   if (looting && !['Escape', 'KeyF', 'KeyP', 'KeyM'].includes(e.code)) return;
   if (player.ride && !['Escape', 'KeyF', 'KeyP', 'KeyM', 'KeyT'].includes(e.code) && !(world.asking && e.code.length === 6)) return;   // both hands on the bars
   if (e.code === 'Escape') setRunning(false);
-  else if (e.code === 'Space') { if (!FLY.on) startJump(player); }
+  else if (e.code === 'Space') { if (!FLY.on && !player.pickIt && !player.pickNext && !(player.wearing && player.wearing.started) && !(player.hol && player.hol.mode === 'pick')) startJump(player); }
   else if (e.code === 'KeyR') startReload(player);
   else if (world.asking && ['Digit1', 'Digit2', 'Numpad1', 'Numpad2'].includes(e.code)) { setMap('island', e.code.endsWith('2')); menuTiles(); cineStart(); }
   else if (['Digit1', 'Digit2', 'Digit3', 'Digit4'].includes(e.code)) selectSlot(player, +e.code.slice(5) - 1);
@@ -903,8 +918,9 @@ function playerStep(dt) {
   const sprinting = sprint && my > 0 && f.speed > 2.7;
   f.sprintW += ((sprinting && g ? 1 : 0) - f.sprintW) * Math.min(1, dt * 9);
   f.yaw += wrap(cam.yaw + Math.PI - f.yaw) * Math.min(1, dt * 18);
-  const kneeling = f.plantT >= 0;                              // planting C4: stay put
+  const kneeling = f.plantT >= 0 || !!f.pickIt || !!f.pickNext || !!(f.wearing && f.wearing.started) || !!(f.hol && f.hol.mode === 'pick');   // planting, picking up, putting on: stay put
   locomotion(f, kneeling ? 0 : mx, kneeling ? 0 : my, sprint && !kneeling, dt);
+  if (kneeling) mouse.pressed = false;
   weaponStep(f, dt);
   c4Step(f, dt);
   itemStep(f, dt);

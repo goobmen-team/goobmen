@@ -268,7 +268,7 @@ function pickHol(f, st) {
 }
 const pickBend = h => 1.2 * smooth(0, PICK.reach, h.t) * (1 - smooth(PICK.grab + 0.1, PICK.dur, h.t));
 const pickPuzzled = h => smooth(PICK.startle - 0.05, PICK.startle + 0.12, h.t) * (1 - smooth(PICK.backEnd, PICK.grab + 0.05, h.t));
-const HOL = { carry: 0.30, release: 0.16, reach: 0.20 };
+const HOL = { carry: 0.34, release: 0.18, reach: 0.24 };
 function holsterOnEquip(f, id) {
   const h = f.hol, now = f.weapon;
   if (id === now) return;
@@ -326,10 +326,10 @@ function holsterPose(f, g, G, h) {
   let R, L;
   if (h.mode === 'stow') {
     R = h.a < 1 ? grip(Gp) : mixGoal(grip(Gp), restR, smooth(0, 1, h.rel));          // carries it there, then lets go and drops the hand
-    L = mixGoal(left(Gp), restL, smooth(0, 0.4, h.a));                                  // the other hand lets go first
+    L = mixGoal(left(Gp), restL, smooth(0.04, 0.9, h.a));                               // the other hand lets go, gradually
   } else {
     R = h.reach < 1 ? mixGoal(restR, grip(Gp), smooth(0, 1, h.reach)) : grip(Gp);      // reaches round, takes hold, then brings it out
-    L = mixGoal(restL, left(Gp), smooth(0.6, 1, 1 - h.a));
+    L = mixGoal(restL, left(Gp), smooth(0.2, 0.95, 1 - h.a));
   }
   return { G: Gp, goals: { R, L } };
 }
