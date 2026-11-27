@@ -159,23 +159,64 @@ const ammoShape = (() => {
     { mesh: mergeMesh(brass), color: [0.78, 0.55, 0.14], rough: 0.25, metal: 1 },
     { mesh: mergeMesh(tips), color: [0.55, 0.24, 0.10], rough: 0.3, metal: 1 }];
 })();
-// kind: fish, meat, plate, ammo, vest, c4. R may already be scaled
+// the model of a fish, meat, plate or vest. mode 0: lying on the ground, its origin at the middle of its underside.
+// mode 1: lying, but turned about its own middle (for tumbling). mode 2: held, the way up it is carried, turned about its own middle
+function drawLoot(prog, kind, R, p, mode) {
+  const m = LOOT[kind];
+  if (!m) return;
+  if (prog.u.uHasTex) {
+    gl.uniform1i(prog.u.uHasTex, 1);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, m.tex);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, m.normal);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, m.orm);
+  }
+  if (mode === 2) R = M3.mul(R, LOOT_PRE[kind]);
+  if (mode) p = V.sub(p, M3.vec(R, [0, m.size[1] / 2, 0]));
+  drawMesh(prog, m.parts.body, R, p);
+}
+// kind: fish, meat, plate, ammo, vest, c4. R may already be scaled; held things turn about their middle
 function drawThing(prog, kind, R, p) {
-  if (kind === 'plate' || kind === 'ammo') { for (const part of kind === 'plate' ? plateShape : ammoShape) { flat(prog, part.color, part.rough, part.metal); drawMesh(prog, part.mesh, R, p); } }
-  else if (kind === 'vest') drawHeldVest(prog, R, p);
+  if (kind === 'ammo') { for (const part of ammoShape) { flat(prog, part.color, part.rough, part.metal); drawMesh(prog, part.mesh, R, p); } }
   else if (kind === 'c4') drawC4(prog, p, R, false, 0);
-  else for (const part of JUNK[kind]) { flat(prog, part.color, part.rough, 0.08); drawMesh(prog, part.mesh, R.map(x => x * 1.35), p); }
+  else drawLoot(prog, kind, R, p, 2);
 }
 
 // ---------------------------------------------------------------- things lying about for the taking
 const floorLoot = [];
 const pickFlyers = [];                                         // things on their way from the floor to him
-function dropLoot(item, at, spread) {
+function dropLoot(item, at, spread, still) {
   const s = spread === undefined ? 0.5 : spread;
   let x = at[0] + rand(-s, s), z = at[2] + rand(-s, s);
   if (world.map === 'island') { const q = { pos: [x, at[1], z], isPlayer: true }; confine(q); x = q.pos[0]; z = q.pos[2]; }
-  floorLoot.push({ item, p: [x, floorAt(x, z, at[1] + 0.6), z], a: rand(0, 6.3) });
+  const o = { item, p: [x, floorAt(x, z, at[1] + 0.6), z], a: rand(0, 6.3), rest: true };
+  if (!still) {                                                // it is dropped from about his hands and falls, bounces and settles
+    const a = rand(0, 6.3), sp = rand(0.4, 1.6);
+    Object.assign(o, { rest: false, p: [x, Math.max(o.p[1] + 0.4, at[1] + 0.9), z], v: [Math.cos(a) * sp, rand(1.2, 2.6), Math.sin(a) * sp], axis: V.norm([rand(-1, 1), rand(-1, 1), rand(-1, 1)]), spin: rand(5, 11), R: M3.ry(rand(0, 6.3)) });
+  }
+  floorLoot.push(o);
   while (floorLoot.length > 320) floorLoot.shift();
+}
+// the way each thing lies when it has come to rest
+const lootRestR = o => o.item.t === 'gun' ? M3.mul(M3.ry(o.a), M3.rz(Math.PI / 2)) : M3.ry(o.a);
+function lootPhysics(dt) {
+  for (const o of floorLoot) {
+    if (o.rest) continue;
+    if (o.settle !== undefined) {                              // lands, then eases onto the side it rests on
+      o.settle += dt;
+      o.R = M3.mix(o.R, lootRestR(o), Math.min(1, dt * 16));
+      if (o.settle > 0.3) { o.rest = true; o.settle = undefined; }
+      continue;
+    }
+    o.v[1] -= 9.8 * dt; o.p = V.mad(o.p, o.v, dt);
+    o.R = M3.mul(M3.axis(o.axis, o.spin * dt), o.R);
+    const ground = floorAt(o.p[0], o.p[2], o.p[1] + 0.4);
+    if (o.p[1] <= ground && o.v[1] < 0) {
+      o.p[1] = ground;
+      const vy = -o.v[1], d = Math.hypot(o.p[0] - player.pos[0], o.p[2] - player.pos[2]);
+      if (vy > 1.3) { o.v = [o.v[0] * 0.5, vy * 0.3, o.v[2] * 0.5]; o.spin *= 0.55; if (d < 25) Sound.play('click', 0.35 * (1 - d / 25)); }
+      else { o.v = [0, 0, 0]; o.settle = 0; if (d < 25) Sound.play('thud', 0.12 * (1 - d / 25)); }
+    }
+  }
 }
 function lootNear(p, reachOut) {
   let best = null, bestD = reachOut || 1.4;
@@ -203,16 +244,18 @@ function drawFloorLoot(prog, textured) {
   }
   for (const o of floorLoot) {
     if (!lootSeen(o)) continue;
-    const it = o.item, spin = M3.ry(o.a + game.time * 0.9), lift = 0.04 * Math.sin(game.time * 2.2 + o.a);
-    if (it.t === 'gun') { const g = GUNS[it.id]; drawGun(prog, textured, g, spin.map(x => x * g.scale), V.add(o.p, V.add([0, 0.30 + lift, 0], M3.vec(spin, [0, 0, -0.18 * g.scale]))), {}); continue; }
-    const up = it.t === 'c4' ? 0.12 : it.t === 'vest' ? 0.36 : 0.28;
-    drawThing(prog, it.t, it.t === 'c4' || it.t === 'vest' ? spin : spin.map(x => x * 1.15), V.add(o.p, [0, up + lift, 0]));
+    const it = o.item, R = o.rest || o.settle !== undefined ? lootRestR(o) : o.R, loose = !o.rest && o.settle === undefined;
+    // lying on the ground, not floating: a gun on its side, everything else on its underside
+    if (it.t === 'gun') { const g = GUNS[it.id], S = (o.rest ? R : o.R).map(x => x * g.scale); drawGun(prog, textured, g, S, V.add(o.p, M3.vec(S, [0, -0.04, -0.1])), {}); continue; }
+    if (it.t === 'c4') { drawC4(prog, V.add(o.p, [0, 0.02, 0]), R, false, 0); continue; }
+    if (it.t === 'ammo') { drawThing(prog, 'ammo', R, V.add(o.p, [0, 0.06, 0])); continue; }
+    drawLoot(prog, it.t, loose ? o.R : R, o.p, loose ? 1 : 0);
   }
 }
 // the coloured glow that says how good it is
 function drawLootGlow(quad, right) {
   for (const o of floorLoot) {
-    if (!lootSeen(o)) continue;
+    if (!lootSeen(o) || o.item.t !== 'gun') continue;
     const it = o.item, c = it.t === 'gun' ? RARITY[it.rarity].col : FOOD[it.t] ? [0.9, 0.35, 0.2] : it.t === 'plate' || it.t === 'vest' ? [0.25, 0.55, 0.75] : [0.6, 0.55, 0.2];
     const k = it.t === 'gun' ? 0.55 + 0.1 * it.rarity : 0.4;
     quad([o.p[0], o.p[1] + 0.03, o.p[2]], [0.42, 0, 0], [0, 0, 0.42], [c[0] * k, c[1] * k, c[2] * k, k]);

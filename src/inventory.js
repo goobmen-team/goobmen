@@ -37,7 +37,7 @@ function itemIcon(kind) {
   gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.CULL_FACE); gl.disable(gl.BLEND);
   gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, shadowTex);
   flashCol[0] = flashCol[1] = flashCol[2] = 0;
-  const from = kind === 'plate' ? [0.3, 0.12, 1] : kind === 'c4' ? [0.45, 0.75, 0.6] : [-1, 0.16, 0.12];
+  const from = kind === 'plate' || kind === 'vest' ? [0.3, 0.12, 1] : kind === 'c4' ? [0.45, 0.75, 0.6] : [-1, 0.16, 0.12];
   // once from well back to find it, once more filling the picture
   const wide = 1.6, first = iconShot(kind, from, wide, [0, 0]);
   let x0 = ICON_W, y0 = ICON_H, x1 = -1, y1 = -1;

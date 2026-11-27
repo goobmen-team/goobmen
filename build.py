@@ -15,6 +15,7 @@ parts = ['<script>window.MODEL_B64="%s";</script>' % model,
          '<script>Object.assign(window.GUN_DATA,%s);</script>' % read('assets/guns2.json'),
          '<script>window.C4_DATA=%s;</script>' % read('assets/c4.json'),
          '<script>window.TAPE_DATA=%s;</script>' % read('assets/tape.json'),
+         '<script>window.LOOT_DATA=%s;</script>' % read('assets/loot.json'),
          '<script>window.HOUSE_DATA=%s;</script>' % read('assets/house.json'),
          '<script>window.BIKE_DATA=%s;</script>' % read('assets/bike.json')]
 

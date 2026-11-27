@@ -216,27 +216,15 @@ const pouches = (() => {
   gl.bindVertexArray(null);
   return { vao, count: i.length };
 })();
-// called while the skinned program is drawing this fighter
-function drawWornVest(prog, f) {
-  if (!(f.vest > 0 || f.hasVest) || (f.script && f.script.vest && f.scriptW > 0.3)) return;
-  const skin = Rig.prims.find(p => p.name === 'skin');
-  gl.uniform1i(prog.u.uHasTex, 0); gl.uniform1i(prog.u.uHasNormal, 0); gl.uniform3fv(prog.u.uTint, [1, 1, 1]); gl.uniform1f(prog.u.uRough, 0.75);
-  gl.uniform3fv(prog.u.uColor, f.vest > 0 ? OLIVE : BLACK); gl.uniform1i(prog.u.uVest, 1);      // a broken one hangs there dark gl.uniform1f(prog.u.uInflate, 0.028);
-  gl.bindVertexArray(skin.vao); gl.drawElements(gl.TRIANGLES, skin.count, gl.UNSIGNED_SHORT, 0);
-  gl.uniform1i(prog.u.uVest, 0); gl.uniform1f(prog.u.uInflate, 0);
-  gl.uniform3fv(prog.u.uColor, BLACK);
-  gl.bindVertexArray(pouches.vao); gl.drawElements(gl.TRIANGLES, pouches.count, gl.UNSIGNED_SHORT, 0);
+// the vest he is wearing, on his chest
+function drawWornVest(prog, textured, f, hideSelf) {
+  if (!(f.vest > 0 || f.hasVest) || (hideSelf && f.isPlayer) || f.gone || !f.vis || f.rag || f.away > 40 || !f.wr[IDX.chest]) return;
+  if (f.script && f.script.vest && f.scriptW > 0.3) return;
+  const Rb = M3.mul(f.R, f.wr[IDX.chest]);
+  // sized to his chest (he is broad and deep), centred between his waist and shoulders
+  drawLoot(prog, 'vest', M3.mul(Rb, [1.22, 0, 0, 0, 1.0, 0, 0, 0, 1.45]), toWorld(f, V.add(f.wp[IDX.chest], M3.vec(f.wr[IDX.chest], [0, 0.05, 0.03]))), 2);
 }
-// the vest on its own, for holding up out of a chest
-const vestShape = {
-  cloth: mergeMesh([boxData(0.40, 0.30, 0.06, 0, -0.04, 0.08), boxData(0.40, 0.30, 0.06, 0, -0.04, -0.08), boxData(0.085, 0.14, 0.06, -0.125, 0.18, 0.08), boxData(0.085, 0.14, 0.06, 0.125, 0.18, 0.08),
-    boxData(0.085, 0.14, 0.06, -0.125, 0.18, -0.08), boxData(0.085, 0.14, 0.06, 0.125, 0.18, -0.08), boxData(0.085, 0.05, 0.22, -0.125, 0.27, 0), boxData(0.085, 0.05, 0.22, 0.125, 0.27, 0)]),
-  trim: mergeMesh([boxData(0.10, 0.11, 0.04, -0.12, -0.11, 0.125), boxData(0.10, 0.11, 0.04, 0, -0.11, 0.125), boxData(0.10, 0.11, 0.04, 0.12, -0.11, 0.125), boxData(0.41, 0.028, 0.23, 0, -0.175, 0), boxData(0.41, 0.018, 0.23, 0, 0.0, 0)])
-};
-function drawHeldVest(prog, R, p) {
-  flat(prog, OLIVE, 0.75, 0); drawMesh(prog, vestShape.cloth, R, p);
-  flat(prog, BLACK, 0.6, 0.1); drawMesh(prog, vestShape.trim, R, p);
-}
+function drawHeldVest(prog, R, p) { drawLoot(prog, 'vest', R, p, 2); }
 const itemName = id => id === 'vest' ? 'bulletproof vest' : GUNS[id].name;
 
 // ======================================================================= guns carried on the body
