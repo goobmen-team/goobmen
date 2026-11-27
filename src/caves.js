@@ -36,6 +36,7 @@ function caveRock(p) {
   const c = caveAt(p[0], p[2]);
   if (!c || c.s < 0 || p[1] > c.c.base + c.c.lip) return false;
   if (c.hollow) return p[1] > caveRoof(c.s, c.c) - 0.15;
+  if (c.s > 5 && p[1] > groundHeight(p[0], p[2]) + 0.1) return false;     // open sky above the hill
   return p[1] > c.c.base - 0.2;
 }
 // the camera must not poke through a wall or the roof

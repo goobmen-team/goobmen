@@ -6,10 +6,10 @@ A third-person caveman fighting game with real guns. Loot chests, fight other ca
 
 On the menu pick **Baseplate** or **Island**. The island starts with a boat trip: you in your gold shades, your mate at the wheel, a boombox and a few cans, and then a rock. You wake up on the beach with the boat still burning, get up, and throw the shades in the sand. It can't be skipped.
 
-**The island is a robbing game:** 99 other cavemen live there. Tribes hole up in the caves behind a door with a stash at the back, others build little log forts, the rest roam. They loot chests, rob each other and you, and carry what they took home. A few are friendly and will join you (up to three). You start with nothing and have **one life**: if you die you lose, and Enter starts a new island. **Baseplate** stays as a practice floor.
+**The island is a robbing game:** 99 other cavemen live there, all of them on one of ten teams. Each team has a cave with a door, a stash and a work table; a couple stay in to guard it while the others loot chests, fight, and blow their way into other teams' stashes (and yours). Walk up to someone with a green health bar and press E to ask to team up: you join his team and up to three of them come with you. Two caves are left empty for you to move into. Guns with parts on them are only found in stashes, or you fit them at a work table. You start with nothing and have **one life**: if you die you lose, and Enter starts a new island. **Baseplate** stays as a practice floor.
 
 - **Shiny rocks** are the money. They take no pocket; you can carry 25,000.
-- **Building** takes the stone hammer (your first chest has one): log wall, door wall, stash, work table.
+- **Building** takes the stone hammer (your first chest has one): log wall, door wall, stash, work table. In a cave passage a wall or door stretches to fill it.
 - **Robbing:** hold E on a stash to break in. If walls are in the way, blow them up with C4.
 - **Work table:** silencer, red dot, scope, grip and bigger magazine for your guns (no silencer on an Exotic), plus C4, plates, a vest, a hammer or a duffel bag.
 - **Black duffel bag:** worn across your back, takes you from four pockets to seven.
@@ -39,7 +39,7 @@ The **Settings** tab on the menu (also there when you pause with Esc) has shadow
 | H | fists |
 | Hammer, then left click | build (island). R: next piece, Q: turn it, right click: knock yours down |
 | E by a stash or work table | open it (hold E to break into someone else's stash) |
-| E by a friendly caveman | team up; again to make him guard or follow |
+| E by a friendly caveman | ask to team up; again to make him guard or follow |
 | Tab | inventory: drag to rearrange, drag outside (or right-click) to drop |
 | Left click with food or a plate | eat it / put it in your vest |
 | Left click with C4 | plant it (5 s fuse; on a knocked-out caveman too) |
@@ -58,7 +58,7 @@ The **Settings** tab on the menu (also there when you pause with Esc) has shadow
 - `assets/house.json`, `assets/bike.json`: the abandoned house and the BMX bike, made by `tools/make_scenery.py`
 - `src/inventory.js`: the Tab inventory, stash and work table screens
 - `src/raid.js`, `src/raidmodels.js`: building, stashes, C4 on walls, weapon parts; their models, made in code
-- `src/items.js`, `src/royale.js`: pockets, rarities, food and plates; the other cavemen: tribes, forts, raids and friends
+- `src/items.js`, `src/royale.js`: pockets, rarities, food and plates; the other cavemen: teams, cave stashes, raids and fighting
 - `src/houses.js`, `src/bike.js`: house walls and drawing; riding, tricks and crashes
 - `src/cutscene.js`: the boat trip, the sea and the wreck on the beach
 - `src/models.js`: the sunglasses, captain's hat, boat, boombox, cans and rocks, all made in code

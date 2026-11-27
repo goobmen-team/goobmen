@@ -568,7 +568,7 @@ function fire(f, origin, dir, spread, minT) {
         puff(hit.p, g.pellets ? 3 : 7, hit.f.vest > 0 && !head ? [0.10, 0.13, 0.07, 0.9] : [0.55, 0.04, 0.03, 0.9], 1.1, 0.032, 0.45, 6);
         const so = struck.get(hit.f) || { amount: 0, head: false };
         // the others hit softer than their guns would, you most of all
-        so.amount += g.damage * RARITY[rarity].mult * (f.isPlayer ? 1 : hit.f.isPlayer ? 0.42 : 0.62) * hit.mult * falloff; so.head = so.head || head;
+        so.amount += g.damage * RARITY[rarity].mult * (f.isPlayer ? 1 : hit.f.isPlayer ? (royaleOn() ? BR.hurtsYou : 0.42) : 0.62) * hit.mult * falloff; so.head = so.head || head;
         struck.set(hit.f, so);
       } else if (hit.kind === 'ground') { puff(hit.p, 6, [0.45, 0.43, 0.40, 0.7], 0.9, 0.045, 0.5, 3); marks.push(hit.p); if (marks.length > 90) marks.shift(); }
       else if (hit.kind === 'water') puff(hit.p, 8, [0.85, 0.93, 0.97, 0.8], 1.2, 0.04, 0.45, 5);
@@ -1380,7 +1380,7 @@ function healthBars() {
   if (lastView && scopeAmount() < 0.5) for (const b of bots) {
     if (b.gone) continue;
     const alive = b.dead < 0, body = b.dead >= 1.2 && !b.looted && !looting && !b.send && (!br || b.inv.length > 0 || b.rocks > 0);
-    const friend = br && b.br && (b.br.crew || b.br.friendly);
+    const friend = br && b.br && (b.br.crew || b.br.friendly || yourTeam(b));
     if (!(alive ? !br || (game.time - (b.hitByYou || -99) < 5) || (friend && b.away < 30) : body)) continue;
     const at = alive ? V.add(b.pos, [0, b.crouch ? 1.6 : 1.92, 0]) : [b.pos[0] - Math.sin(b.yaw) * 0.8, b.pos[1] + 0.75 + Math.sin(game.time * 5) * 0.08, b.pos[2] - Math.cos(b.yaw) * 0.8];
     const d = Math.hypot(at[0] - player.pos[0], at[2] - player.pos[2]);
@@ -1396,8 +1396,8 @@ function healthBars() {
     const el = barEls[used++];
     el.style.display = 'block';
     el.classList.toggle('loot', q.body);
-    el.classList.toggle('friend', !q.body && !!q.b.br && !!q.b.br.friendly && !q.b.br.crew);
-    el.classList.toggle('crew', !q.body && !!q.b.br && !!q.b.br.crew);
+    el.classList.toggle('friend', !q.body && !!q.b.br && !!q.b.br.friendly && !q.b.br.crew && !yourTeam(q.b));
+    el.classList.toggle('crew', !q.body && !!q.b.br && (!!q.b.br.crew || yourTeam(q.b)));
     el.classList.toggle('soon', q.body && q.b.dead > (br ? 40 : LOOT_WINDOW) - 3);
     el.style.left = p[0] + 'px'; el.style.top = p[1] + 'px'; el.firstElementChild.style.width = q.b.hp + '%';
   }
@@ -1441,7 +1441,7 @@ window.__game = {
   ensure(f) { f.posedT = -1; ensurePosed(f); },
   resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE, bikes, HOUSES, houseWorld,
   look(eye, at) { testView = eye ? { eye, at } : null; },
-  raid, addPiece, newPiece, placeBlock, removePiece, buildRay, explode, planted, benchBuy, openInventory, closeInventory,
+  raid, addPiece, newPiece, placeBlock, removePiece, buildRay, surfaceHit, canSee, trace, caveShift, caveWide, explode, planted, benchBuy, openInventory, closeInventory,
   cine, CINE, TRIP, Sound, cineStart, settings, setShadows, setDistance, get wreck() { return wreck; },
   watch(t) { manual = true; if (!cine.on || t < cine.t) { cineStart(); render(); } while (cine.on && cine.t < t - 1e-6) cineStep(Math.min(1 / 20, t - cine.t)); render(); if (cine.on) cineOverlay(0); },
   get looting() { return looting; },

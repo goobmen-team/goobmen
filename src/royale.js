@@ -1,14 +1,17 @@
 // ======================================================================= rob run: the other cavemen
-// Ninety-nine of them. Tribes hole up in the caves behind a door, with a stash at the back; others build little forts
-// out in the open; the rest wander. They search chests, fight, break into each other's stashes and yours (with C4 if
-// there is a wall in the way), carry what they took home, and build. A few are friendly and will join you.
+// Ninety-nine of them, every one on a team. Each team has a cave (two caves are left empty for you): a door across the passage, a stash and a work table
+// at the back, and a few who stay in and guard it. The rest are out: going through chests, fighting, breaking into
+// other teams' stashes (and yours) with C4, and carrying what they took home. A few teams will take you on.
 //
 // The ones near you are played out in full. The ones far away move and fight in a cheaper way, so a hundred of them
 // still runs.
-const BR = { others: 99, near: 65, far: 80, sight: 34, bodies: 10, watch: 55, bikes: 30, forts: 16, friends: 12, grace: 75 };
+const BR = { others: 99, near: 65, far: 80, sight: 44, bodies: 10, watch: 55, bikes: 30, guards: 2, open: 3, grace: 45, hurtsYou: 0.6 };
 let match = null;
 const royaleOn = () => world.map === 'island';
-const TINTS = [[0.78, 0.95, 0.72], [1.0, 0.72, 0.66], [0.72, 0.82, 1.05], [1.12, 0.97, 0.55], [0.95, 0.72, 1.08], [0.66, 1.02, 1.02], [1.15, 1.02, 0.86], [0.68, 0.68, 0.72], [1.12, 0.80, 0.54], [0.86, 1.10, 0.56]];
+const TINTS = [[0.78, 0.95, 0.72], [1.0, 0.72, 0.66], [0.72, 0.82, 1.05], [1.12, 0.97, 0.55], [0.95, 0.72, 1.08], [0.66, 1.02, 1.02], [1.15, 1.02, 0.86], [0.68, 0.68, 0.72], [1.12, 0.80, 0.54], [0.86, 1.10, 0.56], [1.1, 1.1, 1.12], [0.82, 0.74, 0.62]];
+// is he on the team you joined?
+const yourTeam = b => !!(match && match.myTeam && b.br && b.br.squad === match.myTeam);
+const teamOf = b => (match && b.br && match.teams[b.br.squad - 1]) || null;
 
 function setRoster(n) {
   while (bots.length > n) { const b = bots.pop(); endSend(b); if (b.onBike) { b.onBike.rider = null; b.onBike = null; } b.br = null; }
@@ -23,15 +26,15 @@ function resetBot(b) {
   for (const n of CLIP_NAMES) b.weights[n] = n === 'Idle' ? 1 : 0;
 }
 function brain(extra) {
-  const skill = rand(0.25, 1);
-  return Object.assign({ squad: 0, cave: null, state: 'idle', skill, think: rand(0, 0.6), goal: null, path: null, wp: 0, wants: false, target: null, seen: -99, lastSeen: null, react: 0, burst: 0, wait: 0,
+  const skill = rand(0.6, 1);
+  return Object.assign({ squad: 0, cave: null, role: 'out', spot: null, state: 'idle', skill, think: rand(0, 0.6), goal: null, path: null, wp: 0, wants: false, target: null, seen: -99, lastSeen: null, react: 0, burst: 0, wait: 0,
     strafe: 0, strafeT: 0, chest: null, loot: null, bike: null, dest: null, busy: 0, stuckT: 0, stuck: 0, side: 0, sideT: 0, from: [0, 0], rest: 0, bikeAt: rand(0, 60), acc: 0, heard: null, far: true,
-    home: null, friendly: false, crew: false, guard: false, post: null, grudge: null, grudgeT: 0, raid: null, raidAt: rand(70, 420), plan: null, greet: 0, respawnAt: null }, extra || {});
+    home: null, friendly: false, crew: false, guard: false, post: null, grudge: null, grudgeT: 0, raid: null, greet: 0, respawnAt: null, cover: null, coverAt: 0, aimHead: false }, extra || {});
 }
 function putBot(b, x, z, y, extra) {
   resetBot(b);
   b.br = brain(extra);
-  b.runCap = 3.1 + b.br.skill * 0.6;
+  b.runCap = 3.3 + b.br.skill * 0.6;
   b.pos = [x, y === undefined ? walkHeight(x, z) : y, z];
   b.yaw = rand(-Math.PI, Math.PI);
   b.target = V.add(b.pos, [Math.sin(b.yaw) * 6, 1.1, Math.cos(b.yaw) * 6]);
@@ -44,124 +47,135 @@ function landSpot(avoid, taken, least) {
     const c = cells[Math.floor(Math.random() * cells.length)];
     x = c[0]; z = c[1];
     if (Math.hypot(x - avoid[0], z - avoid[2]) < (least || 80) || pastCoast(x, z) > -8 || riverDistance(x, z) < RIVER.bank + 2 || caveAt(x, z, 2) || nearHouse(x, z, 7)) continue;
-    if (k < 200 && taken && taken.some(q => Math.abs(q[0] - x) < 22 && Math.abs(q[1] - z) < 22)) continue;
+    if (k < 200 && taken && taken.some(q => Math.abs(q[0] - x) < 12 && Math.abs(q[1] - z) < 12)) continue;
     break;
   }
   return [x, z];
 }
+// the same, but out in the country round a team's own cave
+function teamSpot(c, avoid, least) {
+  const cells = reachMap().cells;
+  for (let k = 0; k < 600; k++) {
+    const q = cells[Math.floor(Math.random() * cells.length)], d = Math.hypot(q[0] - c.x, q[1] - c.z);
+    if (d > (k < 400 ? 110 : 220) || d < 14 || Math.hypot(q[0] - avoid[0], q[1] - avoid[2]) < least || pastCoast(q[0], q[1]) > -8 || riverDistance(q[0], q[1]) < RIVER.bank + 2 || caveAt(q[0], q[1], 2) || nearHouse(q[0], q[1], 7)) continue;
+    return [q[0], q[1]];
+  }
+  return landSpot(avoid, null, least);
+}
 
-// ---------------------------------------------------------------- what they start with, and what is in their stashes
-function botGear(b, rich) {
-  if (Math.random() < (rich ? 0.95 : 0.5)) {
-    const id = rich ? rollGun() : Math.random() < 0.65 ? 'glock' : 'mp5', r = Math.random() < (rich ? 0.35 : 0.15) ? 1 + (Math.random() < 0.3) : 0;
-    botTake(b, gunItem(id, r, GUNS[id].mag, GUNS[id].mag * 3, randomAtt(id, r, rich ? 0.2 : 0.05)), true);
-  }
-  if (Math.random() < (rich ? 0.35 : 0.12)) botTake(b, { t: 'vest' }, true);
-  if (Math.random() < 0.4) botTake(b, { t: 'meat' }, true);
-  b.rocks = Math.floor(rand(0, rich ? 60 : 35));
-  b.c4 = Math.random() < 0.08 ? 1 : 0;
+// ---------------------------------------------------------------- what they carry, and what is in their stashes
+// plain guns only: parts are found in stashes or fitted at a work table, never lying about
+function botGear(b, guard) {
+  const gun = () => { let id = rollGun(); if (id === 'mgl') id = 'ak'; const r = Math.random() < (guard ? 0.5 : 0.35) ? 1 + (Math.random() < 0.35) : 0; return gunItem(id, r, GUNS[id].mag, GUNS[id].mag * 4); };
+  botTake(b, gun(), true);
+  if (Math.random() < 0.45) botTake(b, gun(), true);
+  if (b.inv.length) equip(b, b.inv[0]);
+  b.equip = 1;
+  if (Math.random() < (guard ? 0.8 : 0.6)) botTake(b, { t: 'vest' }, true);
+  b.plates = Math.random() < 0.55 ? 1 + (Math.random() < 0.3) : 0;
+  b.food.meat = Math.random() < 0.65 ? 1 : 0; b.food.fish = Math.random() < 0.5 ? 1 : 0;
+  b.rocks = Math.floor(rand(0, 50));
 }
-function stashFill(s, rich) {
-  const guns = (rich ? 2 : 1) + (Math.random() < 0.45 ? 1 : 0);
-  for (let i = 0; i < guns; i++) {
-    const id = rollGun(), r = Math.max(rollRarity(), rich ? rollRarity() : 0);
-    s.items.push(gunItem(id, r, GUNS[id].mag, GUNS[id].mag * 3, randomAtt(id, r, rich ? 0.4 : 0.2)));
-  }
+// a gun with something fitted to it: only ever found in a stash
+function upgradedGun(rarity) {
+  const id = ['ak', 'mp5', 'p90', 'awp', 'glock', 'shotgun'][Math.floor(Math.random() * 6)];
+  const parts = Object.keys(ATTS).filter(q => canFit(id, rarity, q));
+  const att = randomAtt(id, rarity, 0.3) || { [parts[Math.floor(Math.random() * parts.length)]]: true };
+  return gunItem(id, rarity, GUNS[id].mag, GUNS[id].mag * 3, att);
+}
+function stashFill(s) {
+  s.items.push(upgradedGun(Math.max(rollRarity(), rollRarity())));
+  if (Math.random() < 0.7) s.items.push(upgradedGun(rollRarity()));
+  if (Math.random() < 0.35) { const id = rollGun(); s.items.push(gunItem(id, Math.max(rollRarity(), rollRarity()), GUNS[id].mag, GUNS[id].mag * 3)); }
   if (Math.random() < 0.6) s.items.push({ t: 'meat', n: 1 + (Math.random() < 0.5) });
-  if (Math.random() < 0.4) s.items.push({ t: 'plate', n: 1 + (Math.random() < 0.3) });
-  if (Math.random() < 0.3) s.items.push({ t: 'c4' });
-  if (Math.random() < (rich ? 0.2 : 0.07)) s.items.push({ t: 'bag' });
-  if (Math.random() < 0.12) s.items.push({ t: 'hammer' });
-  s.rocks = Math.floor(rich ? rand(150, 550) : rand(40, 200));
+  if (Math.random() < 0.5) s.items.push({ t: 'plate', n: 1 + (Math.random() < 0.4) });
+  if (Math.random() < 0.4) s.items.push({ t: 'c4' });
+  if (Math.random() < 0.2) s.items.push({ t: 'bag' });
+  if (Math.random() < 0.15) s.items.push({ t: 'hammer' });
+  s.rocks = Math.floor(rand(150, 550));
 }
-// a tribe's cave: a door across the passage, a stash at the back, sometimes a work table
-function tribeHome(c, owner) {
-  const at = (s, t) => ({ x: c.x + caveShift(c, s) + (t || 0), z: c.z - s, y: caveFloorAt(s, c) });
-  const d = at(11.5), door = newPiece('door', d.x, d.y, d.z, 0, owner, (caveWide(11.5) * 2 + 0.25) / 2.4);
-  const k = at(18.3), stash = newPiece('stash', k.x, k.y, k.z, 0, owner);
-  addPiece(door); addPiece(stash); stashFill(stash, true);
-  if (Math.random() < 0.4) { const w = at(15.4, 3.2); addPiece(newPiece('bench', w.x, w.y, w.z, -Math.PI / 2, owner)); }
-  return { stash, door, cave: c };
+const caveSpot = (c, s, t) => ({ x: c.x + caveShift(c, s) + (t || 0), z: c.z - s, y: caveFloorAt(s, c) });
+// a team's cave: a door across the passage, a stash at the back, a work table to one side
+function teamHome(team, owner) {
+  const c = team.cave;
+  const d = caveSpot(c, 11.5), k = caveSpot(c, 18.3), w = caveSpot(c, 15.4, 3.2);
+  team.door = newPiece('door', d.x, d.y, d.z, 0, owner, (caveWide(11.5) * 2 + 0.25) / 2.4);
+  team.stash = newPiece('stash', k.x, k.y, k.z, 0, owner);
+  team.bench = newPiece('bench', w.x, w.y, w.z, -Math.PI / 2, owner);
+  addPiece(team.door); addPiece(team.stash); addPiece(team.bench);
+  stashFill(team.stash);
 }
-// the pieces of a little fort: three walls and a door round a stash. a: which way the door faces
-function fortPlan(x, z, a, owner, level) {
-  const f = [Math.sin(a), Math.cos(a)], r = [Math.cos(a), -Math.sin(a)];
-  const piece = (kind, ahead, aside, yaw) => { const p = newPiece(kind, x + f[0] * ahead + r[0] * aside, 0, z + f[1] * ahead + r[1] * aside, yaw, owner); p.floor = level; return p; };
-  const list = [piece('wall', -1.2, 0, a + Math.PI), piece('wall', 0, 1.2, a + Math.PI / 2), piece('wall', 0, -1.2, a - Math.PI / 2), piece('door', 1.2, 0, a), piece('stash', -0.55, 0, a)];
-  if (list.some(p => placeBlock(p))) return null;
-  if (Math.max(...list.map(p => p.y)) - Math.min(...list.map(p => p.y)) > 0.6) return null;
-  return { x, z, a, list, door: list[3], stash: list[4], inside: [x + f[0] * 0.55, z + f[1] * 0.55], outside: [x + f[0] * 2.2, z + f[1] * 2.2] };
-}
-function fortNear(px, pz, spread, owner) {
-  for (let k = 0; k < 40; k++) {
-    const x = px + rand(-spread, spread), z = pz + rand(-spread, spread);
-    if (!reachMap().has(x, z) || pastCoast(x, z) > -10 || caveAt(x, z, 4) || nearHouse(x, z, 8)) continue;
-    if (raid.builds.some(q => Math.abs(q.x - x) < 7 && Math.abs(q.z - z) < 7)) continue;
-    const plan = fortPlan(x, z, rand(-3.14, 3.14), owner, undefined);
-    if (plan) return plan;
-  }
-  return null;
-}
+// where the ones on guard stand: one watching the door, the others by the stash
+const GUARD_SPOTS = [[14.6, 0.3], [17.2, -2.4], [16.6, 2.0]];
 
 function newMatch() {
   setRoster(BR.others);
   floorLoot.length = 0;
   clearBuilds();
-  match = { t: 0, over: null, shown: false, bodies: [], paths: [], bird: 3, gunAt: 0, tidy: 0, foe: null, foeT: -99 };
+  match = { t: 0, over: null, shown: false, bodies: [], paths: [], bird: 3, gunAt: 0, tidy: 0, foe: null, foeT: -99, teams: [], myTeam: 0 };
   game.kills = 0; game.chestLearned = false;
   ui.results.hidden = true;
   for (const b of bots) b.br = null;
-  let i = 0;
-  // tribes in the caves
-  const caves = CAVES.slice().sort(() => Math.random() - 0.5).slice(0, 8);
-  caves.forEach((c, k) => {
-    const size = 3 + (Math.random() < 0.5 ? 1 : 0);
-    let home = null;
-    for (let m = 0; m < size && i < bots.length; m++) {
-      const s = CAVE.length + CAVE.room - 1.4 + rand(-1.6, 1.6), x = c.x + caveShift(c, s) + (m - (size - 1) / 2) * 1.2 + rand(-0.3, 0.3);
-      const b = bots[i++];
-      putBot(b, x, c.z - s, caveFloorAt(s, c), { squad: k + 1, cave: c, state: 'camp' });
-      b.yaw = rand(-0.9, 0.9);                                // mostly watching the way in
-      if (!home) home = tribeHome(c, b);
-      b.br.home = home;
-      botGear(b, true);
-    }
-  });
-  // forts out in the open, one or two to each
+  // two caves are left empty for you to move into: one near the beach and one somewhere else
+  const byBeach = CAVES.slice().sort((a, b) => Math.hypot(a.x - START[0], a.z - START[2]) - Math.hypot(b.x - START[0], b.z - START[2]));
+  const nearest = byBeach[0], empty = new Set([byBeach[1], byBeach[2 + Math.floor(Math.random() * (byBeach.length - 2))]]);
+  const caves = CAVES.filter(c => !empty.has(c)).sort(() => Math.random() - 0.5), n = caves.length;
+  // the ones who will take you on: always the team nearest the beach, and a couple of others
+  const open = new Set([nearest, ...caves.filter(c => c !== nearest).slice(0, BR.open - 1)]);
+  match.teams = caves.map((c, k) => ({ id: k + 1, cave: c, door: null, stash: null, bench: null, open: open.has(c), angry: false, raidAt: rand(50, 220) }));
   const taken = [];
-  let squad = 100;
-  for (let n = 0; n < BR.forts && i < bots.length; n++) {
-    const b = bots[i++], spot = landSpot(START, taken, 90); taken.push(spot);
-    putBot(b, spot[0], spot[1], undefined, { squad: ++squad, state: 'roam' });
-    const plan = fortNear(spot[0], spot[1], 12, b);
-    if (plan) {
-      for (const p of plan.list) addPiece(p);
-      stashFill(plan.stash, false);
-      b.br.home = plan;
-      b.pos = [plan.inside[0], walkHeight(plan.inside[0], plan.inside[1]), plan.inside[1]];
+  for (let i = 0; i < bots.length; i++) {
+    const b = bots[i], team = match.teams[i % n], m = Math.floor(i / n), guard = m < BR.guards;
+    const tint = TINTS[(team.id - 1) % TINTS.length];
+    b.tint = tint.map(t => t * rand(0.95, 1.05));                // you can tell a team by its colour
+    if (guard) {
+      const [gs, gt] = GUARD_SPOTS[m], q = caveSpot(team.cave, gs, gt);
+      putBot(b, q.x, q.z, q.y, { squad: team.id, role: 'guard', cave: team.cave, spot: [q.x, q.z], state: 'camp' });
+      b.yaw = rand(-0.5, 0.5);                                  // watching the way in
+    } else {
+      const spot = teamSpot(team.cave, START, 90); taken.push(spot);
+      putBot(b, spot[0], spot[1], undefined, { squad: team.id, state: 'roam' });
     }
-    botGear(b, false);
-    if (Math.random() < 0.5 && i < bots.length) {
-      const m = bots[i++];
-      putBot(m, plan ? plan.outside[0] : spot[0] + 1.5, plan ? plan.outside[1] : spot[1], undefined, { squad: b.br.squad, state: 'roam' });
-      m.br.home = b.br.home; m.br.buddy = b; botGear(m, false);
-    }
-  }
-  // everyone else, a few of them the friendly sort
-  let friends = 0;
-  while (i < bots.length) {
-    const b = bots[i++], spot = landSpot(START, taken); taken.push(spot);
-    putBot(b, spot[0], spot[1], undefined, { state: 'roam' });
-    botGear(b, false);
-    if (friends < BR.friends) { b.br.friendly = true; friends++; }
+    if (!team.stash) teamHome(team, b);
+    b.br.home = team; b.br.friendly = team.open;
+    botGear(b, guard);
   }
   // one friendly face not far from the beach
-  const near = bots[bots.length - 1], hello = landSpot(START, null, 35);
-  for (let k = 0; k < 200; k++) { const s = landSpot(START, null, 35); if (Math.hypot(s[0] - START[0], s[1] - START[2]) < 75) { hello[0] = s[0]; hello[1] = s[1]; break; } }
-  near.pos = [hello[0], walkHeight(hello[0], hello[1]), hello[1]];
+  const hello = bots.find(b => b.br.friendly && b.br.role === 'out' && match.teams[b.br.squad - 1].cave === nearest);
+  if (hello) for (let k = 0; k < 300; k++) {
+    const q = landSpot(START, null, 30);
+    if (Math.hypot(q[0] - START[0], q[1] - START[2]) > 70) continue;
+    hello.pos = [q[0], walkHeight(q[0], q[1]), q[1]]; break;
+  }
   addBikes();
   hudDirty = true;
 }
+// fall out with a team: no more welcome, and they come after you
+function betray(id) {
+  const team = match && match.teams[id - 1];
+  if (!team || (team.angry && match.myTeam !== id)) return;
+  team.angry = true;
+  if (match.myTeam === id) match.myTeam = 0;
+  for (const b of bots) if (b.br && b.br.squad === id) {
+    b.br.friendly = false; b.br.crew = false;
+    if (Math.hypot(b.pos[0] - player.pos[0], b.pos[2] - player.pos[2]) < 45) { b.br.grudge = player; b.br.grudgeT = game.time + 120; }
+  }
+  hudDirty = true;
+}
+// walk up to one and ask: true if he says yes
+function askTeam(b) {
+  const br = b.br;
+  if (br.crew) { br.guard = !br.guard; br.post = b.pos.slice(); br.goal = br.path = null; return true; }
+  if (match.myTeam && br.squad !== match.myTeam) return false;         // you are with somebody else
+  if (!match.myTeam && !br.friendly) return false;
+  if (!match.myTeam) { match.myTeam = br.squad; for (const f of bots) if (f.br && f.br.squad === br.squad && f.br.grudge === player) f.br.grudge = null; }
+  if (crewSize() >= CREW_MAX) return false;
+  br.crew = true; br.guard = false; br.friendly = true; br.target = null; br.raid = null; br.cover = null;
+  setState(b, 'roam'); br.goal = br.path = null;
+  hudDirty = true;
+  return true;
+}
+
 // more bikes about the place, so there are some to ride
 function addBikes() {
   const cells = reachMap().cells;
@@ -179,9 +193,9 @@ function matchBegin() {
   if (!match) return;
   const taken = [];
   for (const b of bots) {
-    if (Math.hypot(b.pos[0] - player.pos[0], b.pos[2] - player.pos[2]) > 70 || b.br.home || b.br.friendly) continue;
-    const spot = landSpot(player.pos, taken); taken.push(spot);
-    b.pos = [spot[0], walkHeight(spot[0], spot[1]), spot[1]]; b.br.buddy = null; b.br.goal = b.br.path = null;
+    if (Math.hypot(b.pos[0] - player.pos[0], b.pos[2] - player.pos[2]) > 70 || b.br.role === 'guard' || b.br.friendly) continue;
+    const spot = teamSpot(b.br.home.cave, player.pos, 80); taken.push(spot);
+    b.pos = [spot[0], walkHeight(spot[0], spot[1]), spot[1]]; b.br.goal = b.br.path = null;
   }
   match.t = 0;
 }
@@ -333,15 +347,10 @@ function pathsStep() {
       lead.push([c.c.x, c.c.z + 3.5]);
       ax = c.c.x; az = c.c.z + 3.5;
     }
-    const fort = br.home && br.home.outside && br.home, within = (x, z) => fort && Math.abs(x - fort.x) < 1.3 && Math.abs(z - fort.z) < 1.3;
     let to = br.goal, tail = [];
     if (g) {                                                    // into a cave: to its mouth, then along the passage
       for (let s = 0.5; s < Math.min(g.s - 1, CAVE.length); s += 3.5) tail.push([g.c.x + caveShift(g.c, s), g.c.z - s]);
       tail.push(to.slice()); to = [g.c.x, g.c.z + 3.5];
-    }
-    if (fort && within(ax, az) !== within(to[0], to[1])) {       // through his own door
-      if (within(ax, az)) { lead.push(fort.inside, fort.outside); ax = fort.outside[0]; az = fort.outside[1]; }
-      else { tail = [fort.inside, to.slice()]; to = fort.outside; }
     }
     br.path = lead.concat(findPath(ax, az, to[0], to[1]), tail); br.wp = 0;
   }
@@ -362,11 +371,11 @@ function waypoint(b, close) {
 
 // ---------------------------------------------------------------- who he can see
 const allies = (a, b) => {
-  if (a.isPlayer || b.isPlayer) { const q = a.isPlayer ? b : a; return !!(q.br && (q.br.crew || q.br.friendly)); }
+  if (a.isPlayer || b.isPlayer) { const q = a.isPlayer ? b : a; return !!(q.br && (q.br.crew || q.br.friendly || yourTeam(q))); }
   if (!a.br || !b.br) return false;
-  if (a.br.crew && b.br.crew) return true;
-  if (a.br.squad && a.br.squad === b.br.squad) return true;
-  return !!(a.br.friendly && b.br.friendly);
+  if (a.br.crew && (b.br.crew || yourTeam(b))) return true;
+  if (b.br.crew && yourTeam(a)) return true;
+  return !!(a.br.squad && a.br.squad === b.br.squad);
 };
 function canSee(a, b, d) {
   const from = V.add(a.pos, [0, a.crouch ? 1.1 : 1.55, 0]), to = V.add(b.pos, [0, b.crouch ? 0.9 : 1.25, 0]);
@@ -391,10 +400,9 @@ function spotEnemy(b) {
     const d = Math.hypot(dx, dz), nosy = home && !home.gone && Math.hypot(f.pos[0] - home.x, f.pos[2] - home.z) < 9;
     // your crew only fights whoever is fighting you; friendly ones keep to themselves
     if (br.crew && !(f === match.foe && game.time - match.foeT < 12) && !(f.br && (f.br.target === player || (f.br.target && f.br.target.br && f.br.target.br.crew)))) return;
-    if (br.friendly && !br.crew && !grudge && br.target !== f) return;
     // in your first minute nobody picks on you unless you give them a reason
     if (f.isPlayer && !grudge && !nosy && match.t < BR.grace && !hurt && b.hitByYou < 0) return;
-    let reachOut = (br.crew || grudge ? 48 : camping ? 20 : br.raid ? 16 : f.isPlayer ? BR.sight : 24) + (game.time - (f.shotAt || -99) < 1.5 ? 16 : 0) - (f.crouch ? 9 : 0);
+    let reachOut = (br.crew || grudge ? 55 : camping ? 18 : br.raid ? 24 : f.isPlayer ? BR.sight : 34) + (game.time - (f.shotAt || -99) < 1.5 ? 20 : 0) - (f.crouch ? 10 : 0);
     if (nosy) reachOut = Math.max(reachOut, 16);
     if (d > reachOut || Math.abs(f.pos[1] - b.pos[1]) > 14) return;
     if (br.target !== f && !hurt && !br.crew && d > 9 && (dx * fx + dz * fz) / d < -0.1) return;    // behind his back
@@ -440,7 +448,7 @@ function setState(b, state) {
   if (br.state === state) return;
   if (br.state === 'loot') leaveLoot(b);
   if (br.state === 'bike') dismount(b, false);
-  if (br.state === 'raid' || br.state === 'build') handsFree(b);
+  if (br.state === 'raid') handsFree(b);
   br.state = state; br.goal = br.path = null; b.crouch = false;
 }
 // put down whatever he was doing with a hammer or a stash
@@ -451,31 +459,35 @@ function think(b) {
   if (b.use) return;
   if (br.grudge && (br.grudge.dead >= 0 || game.time > br.grudgeT)) br.grudge = null;
   const enemy = spotEnemy(b);
+  if (br.cover && br.state === 'fight') {                      // getting behind something: finish that first
+    if (enemy) { br.target = enemy; br.seen = game.time; br.lastSeen = [enemy.pos[0], enemy.pos[2]]; }
+    return;
+  }
   if (enemy) {
     const d = Math.hypot(enemy.pos[0] - b.pos[0], enemy.pos[2] - b.pos[2]);
-    if (br.target !== enemy || game.time - br.seen > 3) br.react = 0.35 + (1 - br.skill) * 0.85;
+    if (br.target !== enemy || game.time - br.seen > 3) br.react = 0.14 + (1 - br.skill) * 0.4;
     br.target = enemy; br.seen = game.time; br.lastSeen = [enemy.pos[0], enemy.pos[2]];
-    const food = b.food.fish + b.food.meat;
-    if (armed(b)) setState(b, b.hp < 32 && food && d > 14 ? 'flee' : 'fight');
+    if (armed(b)) setState(b, 'fight');
     else if (d < 7 && !enemy.weapon) setState(b, 'brawl');
     else if (d < 30) setState(b, 'flee');
     if (br.state === 'fight' || br.state === 'brawl' || br.state === 'flee') {
       // shout to the others
-      for (const f of bots) if (f !== b && f.br && ((br.squad && f.br.squad === br.squad) || (br.crew && f.br.crew)) && f.dead < 0 && !f.br.target && Math.hypot(f.pos[0] - b.pos[0], f.pos[2] - b.pos[2]) < (silenced(enemy) ? 12 : 25)) { f.br.target = enemy; f.br.seen = game.time - 1; f.br.lastSeen = br.lastSeen.slice(); }
+      for (const f of bots) if (f !== b && f.br && (f.br.squad === br.squad || (br.crew && f.br.crew)) && f.dead < 0 && !f.br.target && !allies(f, enemy) && Math.hypot(f.pos[0] - b.pos[0], f.pos[2] - b.pos[2]) < (silenced(enemy) ? 12 : 32)) { f.br.target = enemy; f.br.seen = game.time - 1; f.br.lastSeen = br.lastSeen.slice(); }
       return;
     }
   }
   if (br.state === 'fight' || br.state === 'brawl' || br.state === 'flee') {
-    if (br.target && br.target.dead < 0 && game.time - br.seen < 6 && br.state !== 'flee') {       // lost sight of him: go and look
+    const home = homeOf(b), strayed = br.role === 'guard' && home && Math.hypot(b.pos[0] - home.stash.x, b.pos[2] - home.stash.z) > 16;   // a guard does not leave the cave to chase
+    if (br.target && br.target.dead < 0 && game.time - br.seen < 8 && br.state !== 'flee' && !strayed) {       // lost sight of him: go and look
       if (br.lastSeen && !br.goal) goTo(b, br.lastSeen[0], br.lastSeen[1]);
       return;
     }
-    br.target = null; setState(b, br.raid ? 'raid' : br.cave ? 'camp' : 'roam');
+    br.target = null; br.cover = null; setState(b, br.raid ? 'raid' : br.cave ? 'camp' : 'roam');
   }
   // time to look after himself
-  if (b.hp < 70 && (b.food.fish || b.food.meat) && !b.onBike) { leaveLoot(b); handsFree(b); const t = b.food.meat && b.hp < 50 ? 'meat' : b.food.fish ? 'fish' : 'meat'; b.food[t]--; b.use = { t, time: 0 }; br.goal = br.path = null; return; }
-  if (b.hasVest && b.vest < 55 && b.plates && !b.onBike) { leaveLoot(b); handsFree(b); b.plates--; b.use = { t: 'plate', time: 0 }; br.goal = br.path = null; return; }
-  if (br.state === 'loot' || br.state === 'bike' || br.state === 'build') return;
+  if (b.hp < 85 && (b.food.fish || b.food.meat) && !b.onBike) { leaveLoot(b); handsFree(b); eat(b); br.goal = br.path = null; return; }
+  if (b.hasVest && b.vest < 70 && b.plates && !b.onBike) { leaveLoot(b); handsFree(b); b.plates--; b.use = { t: 'plate', time: 0 }; br.goal = br.path = null; return; }
+  if (br.state === 'loot' || br.state === 'bike') return;
   if (br.raid) { setState(b, 'raid'); return; }
   // something on the floor worth bending down for
   if (!br.crew || br.guard) for (const o of floorLoot) {
@@ -483,46 +495,41 @@ function think(b) {
     setState(b, 'loot'); br.loot = o; goTo(b, o.p[0], o.p[2]); return;
   }
   if (br.crew) { crewThink(b); return; }
-  if (br.friendly && greetThink(b)) return;
+  if (br.friendly && br.role !== 'guard' && !match.myTeam && greetThink(b)) return;
   const home = homeOf(b), poor = !armed(b);
+  if (br.role === 'guard' && home) { guardThink(b); return; }
   // pockets full of rocks: take them home
   if (home && b.rocks > 90 && br.state !== 'home') { setState(b, 'home'); goTo(b, home.stash.x, home.stash.z); return; }
   if (br.state === 'home') { if (home && !br.goal && !br.wants) goTo(b, home.stash.x, home.stash.z); else if (!home) setState(b, 'roam'); return; }
-  // off to rob somebody
-  if (match.t > br.raidAt && !poor && !br.friendly) { br.raidAt = match.t + rand(150, 380); if (pickRaid(b)) { setState(b, 'raid'); return; } }
-  const c = nearChest(b, br.cave ? 11 : poor ? 90 : 32);
-  if (c && (poor || Math.random() < 0.5)) { setState(b, 'loot'); br.chest = c; br.busy = 0; goTo(b, c.pos[0], c.pos[2] + 0.8); return; }
-  if (br.cave) {
-    setState(b, 'camp');
-    if (!br.goal && (br.rest -= 0.5) <= 0) {                  // shuffle about at the back of the cave, now and then
-      br.rest = rand(3, 12);
-      const k = br.cave, s = CAVE.length + CAVE.room - 1.4 + rand(-2.4, 1.8);
-      b.crouch = Math.random() < 0.4;
-      if (Math.random() < 0.6) goTo(b, k.x + caveShift(k, s) + rand(-2.2, 2.2), k.z - s);
-    }
-    return;
-  }
+  const c = nearChest(b, poor ? 90 : 45);
+  if (c && (poor || Math.random() < 0.6)) { setState(b, 'loot'); br.chest = c; br.busy = 0; goTo(b, c.pos[0], c.pos[2] + 0.8); return; }
   setState(b, 'roam');
-  // no home yet, and enough rocks for one: build it
-  if (!br.home && !br.friendly && b.rocks >= 50 && Math.random() < 0.06) {
-    const plan = fortNear(b.pos[0], b.pos[2], 14, b);
-    if (plan) { br.plan = { fort: plan, next: 0, t: 0 }; setState(b, 'build'); goTo(b, plan.x, plan.z); return; }
-  }
-  // stay with the other half of the pair
-  const mate = br.buddy;
-  if (mate && mate.dead < 0 && Math.hypot(mate.pos[0] - b.pos[0], mate.pos[2] - b.pos[2]) > 7) { goTo(b, mate.pos[0] + rand(-2, 2), mate.pos[2] + rand(-2, 2)); return; }
   if (br.goal) return;
-  if (br.heard && Math.random() < 0.3 + br.skill * 0.3 && !poor && !br.friendly) { goTo(b, br.heard[0] + rand(-6, 6), br.heard[1] + rand(-6, 6)); br.heard = null; return; }
+  if (br.heard && Math.random() < 0.4 + br.skill * 0.4 && !poor && !br.friendly) { goTo(b, br.heard[0] + rand(-5, 5), br.heard[1] + rand(-5, 5)); br.heard = null; return; }
   br.heard = null;
-  // those with a home do not stray far from it for long
-  const far = home && Math.hypot(home.stash.x - b.pos[0], home.stash.z - b.pos[2]) > 70;
-  const to = far && Math.random() < 0.6 ? [home.stash.x + rand(-6, 6), home.stash.z + rand(-6, 6)] : somewhere(b, 25, 110);
+  // not too far from home for long
+  const far = home && Math.hypot(home.stash.x - b.pos[0], home.stash.z - b.pos[2]) > 130;
+  const to = far && Math.random() < 0.7 ? teamSpot(home.cave, b.pos, 20) : somewhere(b, 25, 110);
   if (match.t > br.bikeAt && Math.hypot(to[0] - b.pos[0], to[1] - b.pos[2]) > 35) {
     let ride = null, rideD = 45;
     for (const k of bikes) { const d = Math.hypot(k.p[0] - b.pos[0], k.p[2] - b.pos[2]); if (!k.rider && d < rideD && !(player.ride && player.ride.b === k)) { rideD = d; ride = k; } }
     if (ride) { setState(b, 'bike'); br.bike = ride; br.dest = to; goTo(b, ride.p[0], ride.p[2]); br.bikeAt = match.t + rand(40, 100); return; }
   }
   goTo(b, to[0], to[1]);
+}
+function eat(b) {
+  const t = b.food.meat && b.hp < 60 ? 'meat' : b.food.fish ? 'fish' : 'meat';
+  b.food[t]--; b.use = { t, time: 0 };
+}
+// on guard: at his spot in the cave, watching the way in. he does not wander off
+function guardThink(b) {
+  const br = b.br;
+  setState(b, 'camp');
+  const away = Math.hypot(br.spot[0] - b.pos[0], br.spot[1] - b.pos[2]);
+  if (away > 1.2) { if (!br.goal && !br.wants) goTo(b, br.spot[0], br.spot[1]); b.crouch = false; return; }
+  br.goal = br.path = null;
+  b.yaw += wrap(Math.atan2(br.home.door.x - b.pos[0], br.home.door.z - b.pos[2]) - b.yaw) * 0.5;
+  if ((br.rest -= 0.5) <= 0) { br.rest = rand(4, 14); b.crouch = Math.random() < 0.35; }
 }
 // a friendly one who sees you comes over to say hello
 function greetThink(b) {
@@ -628,10 +635,40 @@ function chooseGun(b, d) {
   }
   return best;
 }
-// the full thing: turn, strafe, keep a distance that suits the gun, take a moment, then shoot in bursts
+// somewhere a few steps off where the other one cannot see him
+function findCover(b, e) {
+  const from = V.add(e.pos, [0, e.crouch ? 1.1 : 1.55, 0]), turn = rand(0, 6.28);
+  for (let k = 0; k < 14; k++) {
+    const a = turn + k * 2.4, r = 2.2 + (k % 5) * 1.3, x = b.pos[0] + Math.sin(a) * r, z = b.pos[2] + Math.cos(a) * r;
+    const c = caveAt(x, z, 0);
+    if (!(c && c.hollow) && !reachMap().has(x, z)) continue;
+    const y = floorAt(x, z, b.pos[1] + 1);
+    if (Math.abs(y - b.pos[1]) > 1.3) continue;
+    const to = [x, y + 1.0, z], way = V.sub(to, from), len = V.len(way) || 1, hit = surfaceHit(from, V.mul(way, 1 / len));
+    if (hit && hit.t < len - 0.4) return [x, z];
+  }
+  return null;
+}
+// behind it: eat, mend the vest, reload, then back out
+function coverMove(b, dt) {
+  const br = b.br, c = br.cover, still = { x: 0, y: 0, sprint: false };
+  c.t += dt;
+  const there = Math.hypot(c.p[0] - b.pos[0], c.p[1] - b.pos[2]) < 0.6;
+  if (!there && c.t < 3) { stepTo(b, c.p[0], c.p[1]); return walkTo(b, dt, true, 0.5); }
+  br.goal = br.path = null; b.crouch = true;
+  if (b.reload >= 0) return still;
+  if (b.hp < 75 && (b.food.fish || b.food.meat) && c.t < 9) { eat(b); return still; }
+  if (b.hasVest && b.vest < 60 && b.plates && c.t < 9) { b.plates--; b.use = { t: 'plate', time: 0 }; return still; }
+  const am = b.weapon && b.ammo[b.weapon];
+  if (am && am.clip < magSize(b, b.weapon) * 0.6 && am.spare > 0) { startReload(b); return still; }
+  br.cover = null; b.crouch = false; br.wait = 0;
+  return still;
+}
+// the full thing: turn, strafe, keep a distance that suits the gun, shoot in bursts, and get out of sight to mend
 function fightMove(b, dt) {
   const br = b.br, e = br.target, move = { x: 0, y: 0, sprint: false };
-  if (!e || e.dead >= 0 || e.gone) { br.target = null; br.think = 0; return move; }
+  if (!e || e.dead >= 0 || e.gone) { br.target = null; br.cover = null; br.think = 0; return move; }
+  if (br.cover) return coverMove(b, dt);
   const dx = e.pos[0] - b.pos[0], dz = e.pos[2] - b.pos[2], d = Math.hypot(dx, dz), seen = game.time - br.seen < 0.9;
   if (!seen) {                                                 // out of sight: walk to where he was last
     const p = waypoint(b, 1.5);
@@ -640,31 +677,37 @@ function fightMove(b, dt) {
     return move;
   }
   br.goal = br.path = null;
-  b.yaw += wrap(Math.atan2(dx, dz) - b.yaw) * Math.min(1, dt * 7);
+  b.yaw += wrap(Math.atan2(dx, dz) - b.yaw) * Math.min(1, dt * 11);
   const id = chooseGun(b, d);
   if (!id) { br.state = 'flee'; return move; }
   if (b.weapon !== id) equip(b, id);
-  const g = GUNS[id], pref = PREF[id];
+  const g = GUNS[id], pref = PREF[id], am = b.ammo[id];
+  const hurt = (b.hp < 55 && (b.food.fish || b.food.meat)) || (b.hasVest && b.vest < 30 && b.plates), dry = am.clip <= 0 || b.reload >= 0;
+  if ((hurt || dry) && match.t > br.coverAt && d > 4) {
+    br.coverAt = match.t + 5;
+    const p = findCover(b, e);
+    if (p) { br.cover = { p, t: 0 }; br.goal = br.path = null; return move; }
+  }
   if ((br.strafeT -= dt) <= 0) {
-    br.strafeT = rand(0.5, 1.7); br.strafe = [-1, -1, 0, 1, 1][Math.floor(rand(0, 5))];
-    b.crouch = Math.random() < (d > 18 ? 0.35 : 0.1);
-    if (Math.random() < 0.07 * br.skill && d < 16) startJump(b);
+    br.strafeT = rand(0.3, 1.0); br.strafe = [-1, -1, -1, 0, 1, 1, 1][Math.floor(rand(0, 7))];
+    b.crouch = Math.random() < (d > 18 ? 0.4 : 0.15);
+    if (Math.random() < 0.14 * br.skill && d < 16) startJump(b);
   }
   move.x = br.strafe; move.y = d > pref + 5 ? 1 : d < pref - 5 ? -1 : 0;
-  b.target = [e.pos[0], e.pos[1] + (e.crouch ? 0.8 : 1.1), e.pos[2]];
+  b.target = [e.pos[0], e.pos[1] + (br.aimHead ? (e.crouch ? 1.15 : 1.55) : e.crouch ? 0.8 : 1.15), e.pos[2]];
   b.ads = 0;
   br.wait -= dt;
-  if ((br.react -= dt) > 0 || br.wait > 0 || b.reload >= 0 || b.cool > 0 || b.equip < 1 || b.cycle >= 0 || d > (id === 'shotgun' ? 22 : 75)) return move;
-  const am = b.ammo[id];
+  if ((br.react -= dt) > 0 || br.wait > 0 || b.reload >= 0 || b.cool > 0 || b.equip < 1 || b.cycle >= 0 || d > (id === 'shotgun' ? 24 : 85)) return move;
   if (am.clip <= 0) { startReload(b); return move; }
-  if (br.burst <= 0) br.burst = g.auto ? Math.floor(rand(3, 8)) : 1;
+  if (br.burst <= 0) { br.burst = g.auto ? Math.floor(rand(4, 10)) : 1; br.aimHead = Math.random() < br.skill * 0.2; }
   ensurePosed(b);
   if (!b.gun) return move;
   const muzzle = V.add(b.gun.p, M3.vec(b.gun.S, b.gun.g.muzzle));
-  const wobble = (id === 'awp' ? 0.008 : 0.022) + (1 - br.skill) * 0.045 + (e.speed || 0) * 0.011;
+  const att = attOf(b, id) || {};
+  const wobble = ((id === 'awp' ? 0.003 : 0.008) + (1 - br.skill) * 0.022 + (e.speed || 0) * 0.007) * (att.dot || att.scope ? 0.7 : 1);
   fire(b, muzzle, V.norm(V.sub(b.target, muzzle)), wobble, 0);
-  b.cool = Math.max(b.cool, g.auto ? 90 / g.rate : id === 'awp' ? 2.2 : id === 'glock' ? rand(0.22, 0.5) : rand(0.9, 1.4));
-  if (--br.burst <= 0) br.wait = rand(0.4, 1.3) * (1.5 - br.skill);
+  b.cool = Math.max(b.cool, g.auto ? 75 / g.rate : id === 'awp' ? 1.8 : id === 'glock' ? rand(0.16, 0.34) : rand(0.8, 1.1));
+  if (--br.burst <= 0) br.wait = rand(0.15, 0.55) * (1.6 - br.skill);
   return move;
 }
 // a long way off: no bullets, just a roll of the dice now and then
@@ -696,25 +739,31 @@ function farFight(b, dt) {
 
 // ---------------------------------------------------------------- robbing a stash
 const raidsOn = () => bots.reduce((n, b) => n + (b.br && b.br.raid && b.dead < 0 ? 1 : 0), 0);
+const freeToRaid = b => b.dead < 0 && !b.gone && b.br && b.br.role === 'out' && !b.br.crew && !b.br.raid && !b.br.target && !b.onBike;
+// a few of them set off for a stash. the ones too far to walk are already on their way, never in front of you
+function sendParty(men, s, size) {
+  const party = men.map(b => ({ b, d: Math.hypot(b.pos[0] - s.x, b.pos[2] - s.z) })).sort((m, n) => m.d - n.d).slice(0, size);
+  for (const { b, d } of party) {
+    if (d > 110 && Math.hypot(b.pos[0] - player.pos[0], b.pos[2] - player.pos[2]) > 70) {
+      for (let k = 0; k < 40; k++) {
+        const a = rand(0, 6.28), x = s.x + Math.sin(a) * rand(50, 85), z = s.z + Math.cos(a) * rand(50, 85);
+        if (!reachMap().has(x, z) || pastCoast(x, z) > -8 || caveAt(x, z, 3) || Math.hypot(x - player.pos[0], z - player.pos[2]) < 60) continue;
+        b.pos = [x, walkHeight(x, z), z]; break;
+      }
+    }
+    leaveLoot(b);
+    startRaid(b, s); b.c4 = Math.max(b.c4, 1); setState(b, 'raid');
+    // nobody goes robbing without kitting up first
+    if (!b.hasVest) botTake(b, { t: 'vest' }, true);
+    b.vest = 100; b.hp = 100; b.plates = Math.max(b.plates, 1);
+  }
+  return party.length;
+}
 const worthRobbing = s => !s.gone && (s.rocks > 0 || s.items.length > 0);
 function startRaid(b, stash) {
   b.br.raid = { stash, phase: 'go', t: 0, p: 0, wall: null };
   b.br.goal = b.br.path = null;
   if (!b.c4 && Math.random() < 0.8) b.c4 = 1;
-}
-function pickRaid(b) {
-  if (raidsOn() >= 5) return false;
-  let best = null, bestD = 150;
-  for (const s of raid.builds) {
-    if (s.kind !== 'stash' || !worthRobbing(s) || !s.owner || sameSide(b, s.owner) || (s.owner.isPlayer && (!game.enemiesShoot || match.t < BR.grace * 2))) continue;
-    const d = Math.hypot(s.x - b.pos[0], s.z - b.pos[2]) * rand(0.6, 1.5);
-    if (d < bestD) { bestD = d; best = s; }
-  }
-  if (!best) return false;
-  startRaid(b, best);
-  const mate = b.br.buddy || bots.find(f => f !== b && f.br && b.br.squad && f.br.squad === b.br.squad && f.dead < 0 && !f.br.raid && Math.hypot(f.pos[0] - b.pos[0], f.pos[2] - b.pos[2]) < 15);
-  if (mate && mate.dead < 0 && mate.br && !mate.br.raid && Math.random() < 0.7) { startRaid(mate, best); setState(mate, 'raid'); }
-  return true;
 }
 function endRaid(b, got) {
   const br = b.br, home = homeOf(b);
@@ -732,6 +781,13 @@ function raidMove(b, dt) {
   const s = R.stash;
   R.t += dt;
   if (s.gone || R.t > 150 || !worthRobbing(s)) { endRaid(b, false); return still; }
+  // caught on something with nobody watching: step round it
+  if (br.stuck >= 4 && Math.hypot(b.pos[0] - player.pos[0], b.pos[2] - player.pos[2]) > 80) {
+    for (let k = 0; k < 30; k++) {
+      const a = rand(0, 6.28), x = b.pos[0] + Math.sin(a) * rand(4, 9), z = b.pos[2] + Math.cos(a) * rand(4, 9);
+      if (reachMap().has(x, z) && !caveAt(x, z, 2)) { b.pos = [x, walkHeight(x, z), z]; br.goal = br.path = null; br.stuck = 0; break; }
+    }
+  }
   const d = Math.hypot(s.x - b.pos[0], s.z - b.pos[2]);
   if (R.phase === 'go') {
     if (d < 7 && Math.abs(s.y - b.pos[1]) < 2.5) {
@@ -802,6 +858,7 @@ function homeMove(b, dt) {
   const s = home.stash;
   if (Math.hypot(s.x - b.pos[0], s.z - b.pos[2]) < 1.5) {
     s.rocks = addRocks(s.rocks, b.rocks); b.rocks = 0; s.broken = false;
+    upgradeStash(s, 0.5);
     if (b.inv.length > 1 && s.items.length < STASH_SLOTS) { const id = b.inv.pop(), am = b.ammo[id]; s.items.push(gunItem(id, am.rarity, am.clip, am.spare, am.att)); delete b.ammo[id]; if (b.weapon === id) b.weapon = null; }
     br.state = br.cave ? 'camp' : 'roam'; br.goal = br.path = null;
     return still;
@@ -809,33 +866,6 @@ function homeMove(b, dt) {
   if (!br.goal && !br.wants) goTo(b, s.x, s.z);
   return walkTo(b, dt, true, 1.1);
 }
-// putting a fort up, one piece at a time
-function buildMove(b, dt) {
-  const br = b.br, P = br.plan, still = { x: 0, y: 0, sprint: false };
-  const stop = () => { br.plan = null; handsFree(b); br.state = 'roam'; br.goal = br.path = null; if (b.inv.length) equip(b, b.inv[0]); return still; };
-  if (!P) return stop();
-  const fort = P.fort, d = Math.hypot(fort.x - b.pos[0], fort.z - b.pos[2]);
-  if (P.next === 0 && d > 0.9) { if (!br.goal && !br.wants) goTo(b, fort.x, fort.z); if (br.stuck > 3) return stop(); return walkTo(b, dt, true, 0.7); }
-  const piece = fort.list[P.next];
-  if (b.weapon) equip(b, null);
-  turnTo(b, piece.x, piece.z, dt);
-  const k = (P.t % 1.5) / 1.5, before = P.t; P.t += dt;
-  const up = flow([[0, 0], [0.35, -0.8], [0.6, 1], [1, 0]], k), p = [-0.25, 1.02 + 0.1 * Math.max(0, -up), 0.3 + 0.12 * Math.max(0, up)];
-  b.carry = foodGoal(p); b.thing = { kind: 'hammer', p, R: M3.mul(M3.rx(0.35 + up), M3.ry(0.15)) };
-  if (Math.floor((before + 0.6) / 1.5) !== Math.floor((P.t + 0.6) / 1.5)) {
-    if (placeBlock(piece) === 'Somebody is standing there' && P.t < 25) return still;
-    piece.born = game.time; addPiece(piece); buildSound(piece); puffAt([piece.x, piece.y, piece.z], 8);
-    b.rocks = Math.max(0, b.rocks - PIECES[piece.kind].cost);
-    if (++P.next >= fort.list.length) {
-      br.home = fort; br.squad = br.squad || 200 + bots.indexOf(b);
-      if (br.buddy && br.buddy.br) { br.buddy.br.home = fort; br.buddy.br.squad = br.squad; }
-      fort.stash.rocks = b.rocks; b.rocks = 0;
-      return stop();
-    }
-  }
-  return still;
-}
-
 // ---------------------------------------------------------------- one frame of one caveman
 function liveStep(b, dt) {
   const br = b.br;
@@ -846,6 +876,7 @@ function liveStep(b, dt) {
   if (b.use) {
     b.crouch = br.skill > 0.5 && b.use.t !== 'plate';
     if (useStep(b, dt)) { b.use = null; b.carry = null; b.thing = null; b.headTilt = null; b.crouch = false; }
+    if (br.cover) br.cover.t += dt * 0.5;
   } else if (br.state === 'fight') {
     if (br.far) farFight(b, dt); else move = fightMove(b, dt);
   } else if (br.state === 'brawl') {
@@ -878,7 +909,6 @@ function liveStep(b, dt) {
     } else br.state = 'roam';
   } else if (br.state === 'raid') move = raidMove(b, dt);
   else if (br.state === 'home') move = homeMove(b, dt);
-  else if (br.state === 'build') move = buildMove(b, dt);
   else if (br.state === 'bike') {
     const k = br.bike;
     if (!k || (k.rider && k.rider !== b) || (player.ride && player.ride.b === k)) { br.bike = null; br.state = 'roam'; br.goal = br.path = null; }
@@ -886,7 +916,7 @@ function liveStep(b, dt) {
     else { move = walkTo(b, dt, true, 1); if (!br.goal && !br.wants) goTo(b, k.p[0], k.p[2]); if (br.stuck > 3) { br.bike = null; br.state = 'roam'; br.goal = br.path = null; } }
   } else move = walkTo(b, dt, br.crew ? Math.hypot(player.pos[0] - b.pos[0], player.pos[2] - b.pos[2]) > 8 : br.state === 'roam' && br.skill > 0.45);
   // guns away when walking about is nothing to worry about; out when something is
-  if (!b.use && !b.onBike && br.state !== 'brawl' && br.state !== 'build' && !(br.raid && (br.raid.phase === 'plant' || br.raid.phase === 'pry')) && br.busy <= 0 && !b.weapon && b.inv.length) equip(b, b.inv[0]);
+  if (!b.use && !b.onBike && br.state !== 'brawl' && !(br.raid && (br.raid.phase === 'plant' || br.raid.phase === 'pry')) && br.busy <= 0 && !b.weapon && b.inv.length) equip(b, b.inv[0]);
   if (br.state !== 'fight') b.target = [b.pos[0] + Math.sin(b.yaw) * 6, b.pos[1] + 1.0, b.pos[2] + Math.cos(b.yaw) * 6];
 
   if (br.far) {                                                // cheap: slide along the path
@@ -963,20 +993,35 @@ function royaleStep(dt) {
       const step = br.acc; br.acc = 0; liveStep(b, step);
     } else { br.acc = 0; liveStep(b, dt); }
   }
+  teamsStep();
   raidersStep(dt);
   if ((match.tidy -= dt) <= 0) { match.tidy = 20; tidyStep(); }
 }
 function comeBack(b) {
-  const br = b.br, home = br.home && br.home.stash && !br.home.stash.gone ? br.home : null;
-  let x, z, y;
-  if (home && Math.hypot(home.stash.x - player.pos[0], home.stash.z - player.pos[2]) > 50) {
-    if (home.cave) { const s = CAVE.length + CAVE.room - 1.4 + rand(-1.4, 1.2); x = home.cave.x + caveShift(home.cave, s) + rand(-2, 2); z = home.cave.z - s; y = caveFloorAt(s, home.cave); }
-    else { x = home.inside[0]; z = home.inside[1]; }
-  } else if (home) { br.respawnAt = match.t + 20; return; }
-  else { const s = landSpot(player.pos, null, 100); x = s[0]; z = s[1]; }
-  const keep = { squad: br.squad, cave: home ? br.cave : null, home, friendly: br.friendly, state: br.cave && home ? 'camp' : 'roam' };
-  putBot(b, x, z, y, keep);
-  botGear(b, !!keep.cave);
+  const br = b.br, team = br.home, guard = br.role === 'guard';
+  if (!team || team.stash.gone || Math.hypot(team.stash.x - player.pos[0], team.stash.z - player.pos[2]) < 55) { br.respawnAt = match.t + 20; return; }
+  const keep = { squad: br.squad, role: br.role, home: team, friendly: team.open && !team.angry, cave: guard ? team.cave : null, spot: br.spot, state: guard ? 'camp' : 'roam' };
+  if (guard) putBot(b, br.spot[0], br.spot[1], caveFloorAt(team.cave.z - br.spot[1], team.cave), keep);
+  else { const q = teamSpot(team.cave, player.pos, 90); putBot(b, q[0], q[1], undefined, keep); }
+  botGear(b, guard);
+}
+// every team goes out after somebody else's stash now and then
+function teamsStep() {
+  for (const team of match.teams) {
+    if (match.t < team.raidAt) continue;
+    team.raidAt = match.t + rand(90, 220);
+    if (raidsOn() >= 12) continue;
+    const men = bots.filter(b => freeToRaid(b) && b.br.squad === team.id);
+    if (!men.length) continue;
+    const mid = team.cave;
+    let best = null, bestD = Infinity;
+    for (const other of match.teams) {
+      if (other === team || !worthRobbing(other.stash) || (team.id === match.myTeam && other.id === match.myTeam)) continue;
+      const d = Math.hypot(other.cave.x - mid.x, other.cave.z - mid.z) * rand(0.5, 1.8);
+      if (d < bestD) { bestD = d; best = other.stash; }
+    }
+    if (best) sendParty(men, best, 3 + (Math.random() < 0.5));
+  }
 }
 // somebody is sent after what you have stashed away
 function raidersStep(dt) {
@@ -984,56 +1029,48 @@ function raidersStep(dt) {
   if (!mine.length || !game.enemiesShoot || player.dead >= 0) { raid.nextRaid = Math.max(raid.nextRaid, 60); return; }
   if ((raid.nextRaid -= dt) > 0) return;
   const s = mine[Math.floor(Math.random() * mine.length)];
-  const free = b => b.dead < 0 && b.br && !b.br.friendly && !b.br.crew && !b.br.raid && !b.br.cave && !b.br.target && !b.onBike;
-  const near = bots.filter(free).map(b => ({ b, d: Math.hypot(b.pos[0] - s.x, b.pos[2] - s.z) })).sort((m, n) => m.d - n.d);
-  const party = near.filter(q => q.d > 40).slice(0, Math.random() < 0.4 ? 2 : 1);
-  for (const { b, d } of party) {
-    if (d > 110) {                                             // too far to walk: he is already on his way
-      for (let k = 0; k < 30; k++) {
-        const a = rand(0, 6.28), x = s.x + Math.sin(a) * rand(55, 80), z = s.z + Math.cos(a) * rand(55, 80);
-        if (!reachMap().has(x, z) || pastCoast(x, z) > -8 || Math.hypot(x - player.pos[0], z - player.pos[2]) < 45) continue;
-        b.pos = [x, walkHeight(x, z), z]; break;
-      }
-    }
-    if (!armed(b)) botTake(b, gunItem(Math.random() < 0.5 ? 'glock' : 'mp5', Math.random() < 0.3 ? 1 : 0, 30, 90), true);
-    startRaid(b, s); b.c4 = Math.max(b.c4, 1); setState(b, 'raid');
-  }
+  const teams = match.teams.filter(t => t.id !== match.myTeam && !(t.open && !t.angry));
+  const t = teams.map(q => ({ q, d: Math.hypot(q.cave.x - s.x, q.cave.z - s.z) * rand(0.6, 1.6) })).sort((a, b) => a.d - b.d)[0];
+  if (t) sendParty(bots.filter(b => freeToRaid(b) && b.br.squad === t.q.id), s, 2 + (Math.random() < 0.4));
   raid.nextRaid = rand(110, 240);
 }
-// out of your sight, they mend what was broken and their stashes slowly fill again
+// out of your sight, they mend what was broken, their stashes fill again and they work on their guns
 function tidyStep() {
   const away = (x, z) => Math.hypot(x - player.pos[0], z - player.pos[2]) > 75;
-  const done = new Set();
-  for (const b of bots) {
-    const br = b.br, home = br && b.dead < 0 && br.home;
-    if (!home || done.has(home)) continue;
-    done.add(home);
-    const s = home.stash;
-    if (!away(s.x, s.z)) continue;
-    if (s.gone) { br.home = null; continue; }
+  for (const team of match.teams) {
+    const s = team.stash;
+    if (s.gone || !away(s.x, s.z)) continue;
     s.broken = false;
-    s.rocks = Math.min(900, s.rocks + Math.floor(rand(2, 14)));
-    if (s.items.length < 2 && Math.random() < 0.1) { const id = rollGun(), r = rollRarity(); s.items.push(gunItem(id, r, GUNS[id].mag, GUNS[id].mag * 3, randomAtt(id, r, 0.25))); }
-    const hole = (home.cave ? [home.door] : home.list).find(p => p.gone && p.kind !== 'stash');
-    if (hole && Math.random() < 0.35) { hole.gone = false; hole.open = 0; hole.openV = 0; addPiece(hole); }
+    s.rocks = Math.min(900, s.rocks + Math.floor(rand(3, 18)));
+    if (s.items.length < 3 && Math.random() < 0.08) s.items.push(upgradedGun(rollRarity()));
+    else upgradeStash(s, 0.1);
+    if (team.door.gone && Math.random() < 0.4) { team.door.gone = false; team.door.open = 0; team.door.openV = 0; addPiece(team.door); }
   }
 }
-
+// at the work table: a plain gun out of the stash gets a part, paid for out of the stash
+function upgradeStash(s, chance) {
+  if (s.rocks < 80 || Math.random() > chance) return;
+  const it = s.items.find(q => q.t === 'gun' && !q.att && Object.keys(ATTS).some(p => canFit(q.id, q.rarity, p)));
+  if (!it) return;
+  const parts = Object.keys(ATTS).filter(p => canFit(it.id, it.rarity, p));
+  it.att = { [parts[Math.floor(Math.random() * parts.length)]]: true };
+  s.rocks -= 60;
+}
 // ---------------------------------------------------------------- being hurt and going out
 function royaleHurt(b, from) {
   const br = b.br;
   if (!br) return;
   if (from.isPlayer) {
     b.hitByYou = game.time; match.foe = b; match.foeT = game.time;
-    if (br.friendly || br.crew) { br.friendly = false; br.crew = false; br.squad = 0; hudDirty = true; }       // so much for that
-    br.grudge = player; br.grudgeT = game.time + 90;
+    if (br.friendly || br.crew || yourTeam(b)) betray(br.squad);               // so much for that
+    br.grudge = player; br.grudgeT = game.time + 120;
   }
   if (b.onBike) { dismount(b, true); br.state = 'roam'; br.goal = br.path = null; }
   if (br.state === 'loot') { leaveLoot(b); br.state = 'roam'; br.goal = br.path = null; }
-  if (br.state === 'raid' || br.state === 'build' || br.state === 'home') handsFree(b);
+  if (br.state === 'raid' || br.state === 'home') handsFree(b);
   const who = from.br ? bots.find(f => f.br === from.br) || null : from.isPlayer && game.enemiesShoot ? player : null;
   if (who && who !== b && !allies(b, who)) {
-    if (br.target !== who) br.react = 0.25 + (1 - br.skill) * 0.5;
+    if (br.target !== who) br.react = 0.12 + (1 - br.skill) * 0.3;
     br.target = who; br.seen = game.time; br.lastSeen = [who.pos[0], who.pos[2]]; br.think = Math.min(br.think, 0.1);
     if (br.state !== 'fight') { br.goal = br.path = null; b.use = null; b.carry = null; b.thing = null; b.headTilt = null; br.state = armed(b) ? 'fight' : 'flee'; }
   }
@@ -1046,7 +1083,7 @@ function royaleDeath(b) {
   const br = b.br;
   dismount(b, true); leaveLoot(b);
   b.use = null; b.carry = null; b.thing = null; b.headTilt = null; b.script = null; b.scriptW = 0;
-  br.raid = null; br.plan = null; br.crew = false; br.respawnAt = null; br.target = null;
+  br.raid = null; br.crew = false; br.respawnAt = null; br.target = null; br.cover = null;
   const d = Math.hypot(b.pos[0] - player.pos[0], b.pos[2] - player.pos[2]);
   b.yours = game.time - b.hitByYou < 4;                        // your knockouts stay, however far off
   if (d > BR.watch && !b.yours) { b.gone = true; spillPockets(b); }   // too far to see: just his things on the ground

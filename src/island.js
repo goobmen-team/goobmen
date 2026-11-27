@@ -323,7 +323,12 @@ function surfaceHit(origin, dir) {
     return Math.abs(p[0]) < HALF && Math.abs(p[2]) < HALF ? { t, kind: 'ground' } : null;
   }
   const solid = Math.min(solidHit(origin, dir), buildRay(origin, dir).t);
-  const under = t => { const p = V.mad(origin, dir, t); return p[1] < floorAt(p[0], p[2], p[1] + 1) || caveRock(p); };
+  const under = t => {
+    const p = V.mad(origin, dir, t), c = caveAt(p[0], p[2]);
+    // inside a cave there is a floor, then air up to the roof, then rock up to the grass. (the hill overhead is not in the way of the air)
+    if (c && c.hollow) return p[1] < caveFloorAt(c.s, c.c) || (p[1] >= caveRoof(c.s, c.c) - 0.15 && p[1] < Math.max(groundHeight(p[0], p[2]), SEA.level));
+    return p[1] < floorAt(p[0], p[2], p[1] + 1) || caveRock(p);
+  };
   for (let last = 0, t = 0.4; t < Math.min(90, solid); last = t, t += 0.4 + t * 0.012) {
     if (!under(t)) continue;
     let lo = last, hi = t;

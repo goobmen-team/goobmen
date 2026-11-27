@@ -47,8 +47,8 @@ function clearBuilds() { for (const b of raid.builds) b.gone = true; raid.builds
 const sameSide = (a, b) => {
   if (!a || !b) return false;
   if (a === b) return true;
-  if (a.isPlayer) return !!(b.br && b.br.crew);
-  if (b.isPlayer) return !!(a.br && a.br.crew);
+  if (a.isPlayer) return !!(b.br && (b.br.crew || yourTeam(b)));
+  if (b.isPlayer) return !!(a.br && (a.br.crew || yourTeam(a)));
   return !!(a.br && b.br && ((a.br.crew && b.br.crew) || (a.br.squad && a.br.squad === b.br.squad)));
 };
 const canPass = (f, b) => !!f && sameSide(f, b.owner);
@@ -129,9 +129,10 @@ function placeBlock(b, loose) {
   const lo = Math.min(...ys), hi = Math.max(...ys);
   b.y = (b.kind === 'wall' || b.kind === 'door') ? Math.min(lo + 0.08, ys[1]) : ys[1];
   if (!loose && hi - lo > (b.kind === 'wall' || b.kind === 'door' ? 0.75 : 0.35)) return 'The ground is too steep';
-  if (lo < SEA.level + 0.15) return 'Too wet here';
+  const cave = caveAt(b.x, b.z, 0), dry = cave && cave.hollow && b.floor !== undefined && b.floor < cave.c.base + 1;     // down in a cave the sea and river do not count
+  if (!dry && lo < SEA.level + 0.15) return 'Too wet here';
   if (loose) return null;
-  if (riverDistance(b.x, b.z) < RIVER.wet / 2 + 1.5) return 'Too close to the river';
+  if (!dry && riverDistance(b.x, b.z) < RIVER.wet / 2 + 1.5) return 'Too close to the river';
   if (houseAt(b.x, b.z, 0.6)) return 'Not in a house';
   const pts = samples(b);
   for (const p of pts) {
@@ -152,7 +153,10 @@ function buildAim(f) {
   const wantYaw = f.yaw + raid.turn * Math.PI / 2 + (kind === 'stash' || kind === 'bench' ? Math.PI : 0);
   const b = newPiece(kind, want[0], 0, want[1], wantYaw, f);
   b.floor = f.pos[1];
-  if (kind === 'wall' || kind === 'door') {                     // walls click on to the ends of your other walls
+  // facing along a cave passage, a wall or door stretches to fill it from side to side
+  const cave = caveAt(want[0], want[1], 0), across = (kind === 'wall' || kind === 'door') && cave && cave.hollow && f.pos[1] < cave.c.base + 1 && cave.s > 0.8 && caveWide(cave.s) < 2.8 && Math.abs(Math.cos(wantYaw)) > 0.7;
+  if (across) { b.x = cave.c.x + caveShift(cave.c, cave.s); b.yaw = 0; b.c = 1; b.s = 0; b.sx = (caveWide(cave.s) * 2 + 0.25) / 2.4; }
+  else if (kind === 'wall' || kind === 'door') {                // walls click on to the ends of your other walls
     let best = 1.15;
     for (const q of buildsNear(want[0], want[1])) {
       if ((q.kind !== 'wall' && q.kind !== 'door') || !sameSide(f, q.owner) || Math.abs(q.y - f.pos[1]) > 1.6) continue;
@@ -237,6 +241,7 @@ function raidBlast(c, owner) {
 // somebody is at it: whoever it belongs to (and his lot) comes for him
 function raidAlarm(b, culprit) {
   const owner = b.owner;
+  if (owner && culprit && culprit.isPlayer && !owner.isPlayer && yourTeam(owner) && (b.kind !== 'bench')) betray(owner.br.squad);   // your own team's things
   if (!owner || !culprit || sameSide(owner, culprit)) return;
   if (owner.isPlayer) {
     if (!raid.alarm || game.time - raid.alarm.t > 8) Sound.play('horn', 0.8);
@@ -477,7 +482,7 @@ function raidTarget() {
   if (best) return best;                                       // a stash or a table comes first
   let near = 3.2;
   for (const q of bots) {
-    if (q.dead >= 0 || q.gone || !q.br || !(q.br.friendly || q.br.crew) || Math.abs(q.pos[1] - p[1]) > 1.2) continue;
+    if (q.dead >= 0 || q.gone || !q.br || !(q.br.friendly || q.br.crew || yourTeam(q)) || q.br.state === 'fight' || Math.abs(q.pos[1] - p[1]) > 1.2) continue;
     const d = Math.hypot(q.pos[0] - p[0], q.pos[2] - p[2]);
     if (d < near) { near = d; best = { kind: 'friend', bot: q }; }
   }
@@ -492,14 +497,18 @@ function raidKey(dt, holding, pressed) {
   if (!t || !holding) { raid.use = null; return false; }
   if (t.kind === 'friend') {
     if (!pressed) return false;
-    const br = t.bot.br;
-    if (br.crew) { br.guard = !br.guard; br.post = t.bot.pos.slice(); br.goal = br.path = null; Sound.play('huh', 0.8); }
-    else if (crewSize() < CREW_MAX) { br.crew = true; br.guard = false; br.friendly = true; br.target = null; br.state = 'roam'; br.goal = br.path = null; br.squad = 0; Sound.play('oogaq', 0.9); }
-    else Sound.play('nope', 0.6);
+    const br = t.bot.br, was = br.crew, joined = !match.myTeam;
+    if (askTeam(t.bot)) {
+      Sound.play(was ? 'huh' : 'oogaq', 0.9);
+      raid.say = was ? null : { until: game.time + 3, words: joined ? 'He says yes. You are on his team now' : 'He comes with you' };
+    } else {
+      Sound.play('nope', 0.6);
+      raid.say = { until: game.time + 3, words: match.myTeam && br.squad !== match.myTeam ? 'He says no: you are on another team' : 'Three are already with you' };
+    }
     hudDirty = true;
     return true;
   }
-  const b = t.piece, mine = !b.owner || sameSide(player, b.owner) || b.broken;
+  const b = t.piece, mine = !b.owner || b.owner.isPlayer || b.broken;
   if (t.kind === 'bench') { if (pressed) { openInventory({ bench: b }); return true; } return false; }
   if (mine) { if (pressed) { openInventory({ stash: b }); Sound.play('creak', 0.7); return true; } return false; }
   // somebody else's: it takes a while to force
@@ -514,14 +523,16 @@ function raidKey(dt, holding, pressed) {
 // the words at the bottom of the screen; false if there is nothing of ours to say
 function raidPrompt() {
   const t = raidTarget();
-  if (!t || game.stash || game.bench) return false;
+  const said = raid.say && game.time < raid.say.until;
+  if ((!t && !said) || game.stash || game.bench) return false;
   let words, p = 100;
-  if (t.kind === 'friend') {
+  if (said) words = raid.say.words;
+  else if (t.kind === 'friend') {
     const br = t.bot.br;
-    words = br.crew ? (br.guard ? 'Press E: follow me' : 'Press E: stay and guard here') : crewSize() < CREW_MAX ? 'Press E to team up with this caveman' : 'Your crew is full';
+    words = br.crew ? (br.guard ? 'Press E: follow me' : 'Press E: stay and guard here') : !match.myTeam ? 'Press E to ask to team up' : br.squad !== match.myTeam ? 'Press E to ask to team up' : crewSize() < CREW_MAX ? 'Press E: come with me' : 'Three are already with you';
   } else if (t.kind === 'bench') words = 'Press E to use the work table';
-  else if (!t.piece.owner || sameSide(player, t.piece.owner) || t.piece.broken) words = 'Press E to open the stash';
-  else { words = raid.use ? 'Keep holding… prying it open' : 'Hold E to break into the stash'; p = raid.use ? raid.use.t / PRY * 100 : 0; }
+  else if (!t.piece.owner || t.piece.owner.isPlayer || t.piece.broken) words = 'Press E to open the stash';
+  else { words = raid.use ? 'Keep holding… prying it open' : yourTeam(t.piece.owner) ? 'Hold E to steal from your own team' : 'Hold E to break into the stash'; p = raid.use ? raid.use.t / PRY * 100 : 0; }
   ui.prompt.style.display = 'flex'; ui.prompt.classList.toggle('holding', !!raid.use);
   ui.prompttext.textContent = words; ui.prompttext.style.color = ''; ui.ring.style.display = ''; ui.ring.style.setProperty('--p', p + '%');
   return true;
