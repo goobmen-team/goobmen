@@ -221,8 +221,8 @@ function drawWornVest(prog, textured, f, hideSelf) {
   if (!(f.vest > 0 || f.hasVest) || (hideSelf && f.isPlayer) || f.gone || !f.vis || f.rag || f.away > 40 || !f.wr[IDX.chest]) return;
   if (f.script && f.script.vest && f.scriptW > 0.3) return;
   const Rb = M3.mul(f.R, f.wr[IDX.chest]);
-  // sized to his chest (he is broad and deep), centred between his waist and shoulders
-  drawLoot(prog, 'vest', M3.mul(Rb, [1.22, 0, 0, 0, 1.0, 0, 0, 0, 1.45]), toWorld(f, V.add(f.wp[IDX.chest], M3.vec(f.wr[IDX.chest], [0, 0.05, 0.03]))), 2);
+  // measured against his torso (about 0.55 wide, 0.46 deep, from his waist to his shoulders): the model scaled evenly by 1.12 fits it
+  drawLoot(prog, 'vest', M3.mul(Rb, [1.12, 0, 0, 0, 1.2, 0, 0, 0, 1.12]), toWorld(f, V.add(f.wp[IDX.chest], M3.vec(f.wr[IDX.chest], [0, 0.0, 0.025]))), 2);   // a little taller, to cover his belly
 }
 function drawHeldVest(prog, R, p) { drawLoot(prog, 'vest', R, p, 2); }
 const itemName = id => id === 'vest' ? 'bulletproof vest' : GUNS[id].name;
