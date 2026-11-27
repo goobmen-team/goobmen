@@ -307,6 +307,11 @@ function holsterPose(f, g, G, h) {
     const out = [-0.15, 1.0, 0.52];                                                      // it comes up out in front of him first, and is only drawn in once he is standing
     const p = V.lerp(V.lerp(onFloor, out, smooth(0, 0.6, lift)), G.p, smooth(0.6, 1, lift));
     const Gp = Object.assign({}, G, { R, p });
+    // the gun must stay in his hand: never further from his shoulder than his arm reaches (he is bent over, so the shoulder is low and forward)
+    { const sh = V.add(f.wp[IDX.chest], M3.vec(f.wr[IDX.chest], V.sub(Rig.rest[IDX.upperArm_R], Rig.rest[IDX.chest])));
+      const reachMax = 0.97 * (V.len(Rig.offset[IDX.foreArm_R]) + V.len(Rig.offset[IDX.hand_R]));
+      const dv = V.sub(handGoal(Gp, g.right, [-0.8, -1, -0.15]).wrist, sh), d = V.len(dv);
+      if (d > reachMax && t >= PICK.grab) Gp.p = V.sub(Gp.p, V.mul(dv, (d - reachMax) / d)); }
     let right = handGoal(Gp, g.right, [-0.8, -1, -0.15]);
     const tap = 0.07 * Math.abs(Math.sin((t - PICK.reach) * 13)) * poking, away = smooth(PICK.tapEnd - 0.02, PICK.tapEnd + 0.1, t) * (1 - smooth(PICK.backEnd, PICK.grab, t));
     right = Object.assign({}, right, { wrist: V.add(right.wrist, [0, tap, 0]) });
@@ -318,7 +323,7 @@ function holsterPose(f, g, G, h) {
   const M = mountLocal(f, h.id), pistol = isPistol(g);
   const e = smooth(0, 1, h.a), s = Math.sin(Math.PI * e);
   // up and back past the shoulder on the way (the hip for a pistol), so it never cuts through him
-  const arc = pistol ? [-0.1 * s, -0.05 * s, 0.14 * s] : [-0.14 * s, 0.34 * s, -0.10 * s];
+  const arc = pistol ? [-0.1 * s, -0.05 * s, 0.14 * s] : [-0.28 * s, 0.30 * s, -0.10 * s];          // round the outside of his shoulder, not through his body
   const Gp = Object.assign({}, G, { R: M3.mix(G.R, M.R, e), p: V.add(V.lerp(G.p, M.p, e), arc) });      // keeps the scale and aim the hands need
   const pole = V.lerp([-0.8, -1, -0.15], pistol ? [-1, -0.2, 0.1] : [-1, 0.1, -0.7], e);
   const grip = P => handGoal(P, g.right, pole), left = P => handGoal(P, leftGrip(f, g), [0.75, -1, 0.1]);
