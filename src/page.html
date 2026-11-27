@@ -10,6 +10,31 @@ html, body { height: 100%; overflow: hidden; background: #dbdbdb; font: 14px/1.4
 canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
 [hidden] { display: none !important; }
 #hud, #hud > * { pointer-events: none; }
+#inv { position: fixed; inset: 0; z-index: 5; background: rgba(8,12,20,.38); display: flex; align-items: center; justify-content: center; touch-action: none; }
+#invpanel { background: linear-gradient(#26334a, #151b28); border: 2px solid #5d79a8; border-radius: 16px; padding: 14px 18px 12px; box-shadow: 0 18px 50px rgba(0,0,0,.55); text-align: center; width: min(640px, calc(100vw - 24px)); }
+#invpanel h2 { font-size: 20px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; margin-bottom: 10px; }
+#invslots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.invslot { position: relative; aspect-ratio: 1; border-radius: 10px; border: 3px solid transparent; cursor: grab; overflow: hidden;
+  background: radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--r) 40%, #222c3d), #1b2331 78%); box-shadow: inset 0 -5px 0 var(--r); }
+.invslot:hover { filter: brightness(1.2); }
+.invslot.rare { background: radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--r) 85%, #fff), color-mix(in srgb, var(--r) 45%, #10151f) 80%); }
+.invslot.on { border-color: #fff; }
+.invslot.into { border-color: #ffd23f; transform: scale(1.04); }
+.invslot.empty { cursor: default; background: rgba(255,255,255,.05); box-shadow: none; border: 2px dashed rgba(255,255,255,.22); }
+.invslot.empty.into { border-color: #ffd23f; }
+.invslot.lifted > img, .invslot.lifted > b, .invslot.lifted > span { opacity: .2; }
+.invslot > * { pointer-events: none; }
+.invslot > i { position: absolute; left: 7px; top: 3px; font-style: normal; font-weight: 800; font-size: 15px; text-shadow: 0 1px 3px #000; }
+.invslot > img { position: absolute; left: 5%; top: 12%; width: 90%; height: 58%; object-fit: contain; filter: drop-shadow(0 4px 4px rgba(0,0,0,.55)); }
+.invslot > b { position: absolute; left: 2px; right: 2px; bottom: 24px; font-size: 13px; text-shadow: 0 1px 3px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.invslot > span { position: absolute; right: 7px; bottom: 8px; font-size: 12px; font-weight: 700; text-shadow: 0 1px 3px #000; }
+#invinfo { margin-top: 10px; font-weight: 600; font-size: 15px; }
+.invhint { margin-top: 3px; font-size: 12px; opacity: .65; }
+#invghost { position: fixed; width: 130px; height: 100px; transform: translate(-50%, -50%) rotate(-5deg); pointer-events: none; border-radius: 10px; background: color-mix(in srgb, var(--r) 45%, rgba(20,26,38,.85)); border: 2px solid #fff; }
+#invghost img { width: 100%; height: 100%; object-fit: contain; padding: 6px; }
+#invghost b { position: absolute; left: 50%; bottom: -13px; transform: translateX(-50%); background: #d63c34; border-radius: 6px; padding: 1px 10px; font-size: 12px; display: none; }
+#invghost.drop { border-color: #ff5a50; }
+#invghost.drop b { display: block; }
 .panel { background: rgba(20,22,26,.62); border-radius: 8px; padding: 8px 14px; }
 #status { position: fixed; left: 18px; bottom: 18px; width: 220px; }
 #hpbar { height: 10px; background: rgba(255,255,255,.2); border-radius: 5px; overflow: hidden; margin-top: 4px; }
@@ -139,6 +164,14 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
   <div id="slots"></div>
   <div id="gunbox" class="panel"><div id="weapon"></div><div id="ammo"></div></div>
 </div>
+<div id="inv" hidden>
+  <div id="invpanel">
+    <h2>Inventory</h2>
+    <div id="invslots"></div>
+    <div id="invinfo"></div>
+    <div class="invhint">Drag to move · drag outside to drop · right-click drops · Tab closes</div>
+  </div>
+</div>
 <div id="cine" hidden>
   <div id="eyelids"><i></i><i></i></div>
   <div id="cinefade"></div>
@@ -189,6 +222,7 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
       <tr><td>Pick C4, then click</td><td>plant it (on a knocked-out caveman too)</td></tr>
       <tr><td>R / V</td><td>reload / show off your gun</td></tr>
       <tr><td>1, 2, 3, 4 or wheel</td><td>your four pockets</td></tr>
+      <tr><td>Tab</td><td>inventory: drag to move, drag outside to drop</td></tr>
       <tr><td>H or 5</td><td>fists</td></tr>
       <tr><td>F</td><td>fullscreen</td></tr>
       <tr><td>N</td><td>fly (testing): Space up, C down, wheel speed</td></tr>

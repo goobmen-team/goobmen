@@ -570,7 +570,7 @@ function startReload(f) {
 const cam = { yaw: 0, pitch: 0.12, dist: 2.25, side: 0.92, fov: 0.95, height: 1.70, recoil: 0, shake: 0 };
 const keys = new Set();
 const mouse = { fire: false, pressed: false, aim: false, drag: null };
-const game = { running: false, locked: false, lockWorked: false, aimToggle: false, enemiesShoot: true, godMode: false, kills: 0, deaths: 0, marker: 0, hurtFade: 0, note: 0, time: 0 };
+const game = { running: false, locked: false, lockWorked: false, aimToggle: false, inv: false, enemiesShoot: true, godMode: false, kills: 0, deaths: 0, marker: 0, hurtFade: 0, note: 0, time: 0 };
 const ui = {};
 for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'msg', 'alive', 'alivecount', 'results', 'restitle', 'resplace', 'reskills', 'tabplay', 'tabsettings', 'panelplay', 'panelsettings', 'shadowpick', 'dist', 'distlabel', 'reloadbar', 'boomflash', 'minimap', 'killcount']) ui[id] = document.getElementById(id);
 let hudDirty = true;
@@ -580,7 +580,7 @@ function setRunning(on) {
   game.running = on;
   ui.menu.hidden = on; ui.hud.hidden = !on || cine.on;
   Sound.hush(!on);
-  if (!on) { keys.clear(); mouse.fire = mouse.pressed = mouse.aim = false; askMap(false); }
+  if (!on) { keys.clear(); mouse.fire = mouse.pressed = mouse.aim = false; askMap(false); closeInventory(false); }
   hudDirty = true;
 }
 function lockMouse() {
@@ -641,7 +641,9 @@ showSettings();
 
 document.addEventListener('pointerlockchange', () => {
   game.locked = document.pointerLockElement === canvas;
-  if (game.locked) game.lockWorked = true; else if (game.running) setRunning(false);
+  if (game.locked) { game.lockWorked = true; if (game.inv) document.exitPointerLock(); }
+  // losing the mouse pauses, unless it was the inventory letting go of it (these events can arrive late)
+  else if (game.running && !game.inv && performance.now() - invToggled > 500) setRunning(false);
 });
 document.addEventListener('mousemove', e => {
   if (!game.running) return;
@@ -653,7 +655,11 @@ function look(dx, dy) { if (cine.on) return; cam.yaw -= dx; cam.pitch = clamp(ca
 canvas.addEventListener('mousedown', e => {
   if (!game.running) return;
   Sound.init();
-  if (!game.locked) { mouse.drag = [e.clientX, e.clientY]; if (!game.lockWorked) { /* stays in drag mode if refused */ } lockMouse(); }
+  if (!game.locked) {
+    lockMouse();
+    if (game.lockWorked) return;                             // that click was only to get the mouse back
+    mouse.drag = [e.clientX, e.clientY];                     // stays in drag mode if refused
+  }
   if (e.button === 0) { mouse.fire = true; mouse.pressed = true; }
   if (e.button === 2) mouse.aim = true;
 });
@@ -661,7 +667,7 @@ addEventListener('mouseup', e => { if (e.button === 0) mouse.fire = false; if (e
 addEventListener('contextmenu', e => e.preventDefault());
 addEventListener('blur', () => { keys.clear(); mouse.fire = mouse.aim = false; });
 addEventListener('wheel', e => {
-  if (!game.running) return;
+  if (!game.running || game.inv) return;
   if (FLY.on) { e.preventDefault(); if (e.deltaY) flySpeed(-e.deltaY); return; }   // up is faster
   e.preventDefault();
   if (looting || player.ride || player.dead >= 0 || !e.deltaY) return;
@@ -689,6 +695,8 @@ addEventListener('keydown', e => {
   }
   if (e.key === 'Control') { if (!e.repeat) player.crouch = !player.crouch; return; }
   e.preventDefault();
+  if (e.code === 'Tab') { if (!e.repeat) toggleInventory(); return; }
+  if (e.code === 'Escape' && game.inv) { closeInventory(false); return; }
   keys.add(e.code);
   if (e.repeat) return;
   if (looting && !['Escape', 'KeyF', 'KeyP', 'KeyM'].includes(e.code)) return;
@@ -1265,6 +1273,7 @@ function project(p) {
 }
 function hud(dt) {
   drawMinimap();
+  if (game.inv) invCheck();
   if (hudDirty) {
     hudDirty = false;
     const g = player.weapon ? GUNS[player.weapon] : null, am = g && player.ammo[player.weapon];
@@ -1275,6 +1284,7 @@ function hud(dt) {
     ui.hp.textContent = Math.ceil(player.hp); ui.hpfill.style.width = player.hp + '%';
     ui.vestbox.hidden = !player.hasVest && !(player.vest > 0); ui.vest.textContent = player.vest > 0 ? Math.ceil(player.vest) : 'broken'; ui.vestfill.style.width = player.vest / VEST * 100 + '%';
     ui.slots.innerHTML = slotsHtml();
+    if (game.inv) invRender();
     ui.score.textContent = `Knockouts ${game.kills} · Deaths ${game.deaths}`;
     ui.killcount.textContent = game.kills;
     ui.alive.hidden = !royaleOn(); ui.alivecount.textContent = playersLeft();

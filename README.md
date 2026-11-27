@@ -32,6 +32,7 @@ The **Settings** tab on the menu (also there when you pause with Esc) has shadow
 | E by a bike | ride the tiny bike: W/S pedal and brake, A/D or mouse steer, Shift faster, Space hop, click for the bell, E to get off |
 | 1, 2, 3, 4 or wheel | pick a pocket |
 | H or 5 | fists |
+| Tab | inventory: drag to rearrange, drag outside (or right-click) to drop |
 | Left click with food or a plate | eat it / put it in your vest |
 | Left click with C4 | plant it (5 s fuse; on a knocked-out caveman too) |
 | R / V | reload / show off your gun |
@@ -47,6 +48,7 @@ The **Settings** tab on the menu (also there when you pause with Esc) has shadow
 - `assets/`: the caveman model and gun data (`guns2.json` is made by `tools/make_guns.py`)
 - `assets/c4.json`: the bomb, made from a Sketchfab model by `tools/make_c4.py`
 - `assets/house.json`, `assets/bike.json`: the abandoned house and the BMX bike, made by `tools/make_scenery.py`
+- `src/inventory.js`: the Tab inventory
 - `src/items.js`, `src/royale.js`: pockets, rarities, food and plates; the battle royale and the other cavemen
 - `src/houses.js`, `src/bike.js`: house walls and drawing; riding, tricks and crashes
 - `src/cutscene.js`: the boat trip, the sea and the wreck on the beach
