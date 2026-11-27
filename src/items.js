@@ -193,7 +193,7 @@ function drawFloorLoot(prog, textured) {
     const q = pickFlyers[i], u = clamp((game.time - q.t0) / 0.30, 0, 2);
     if (u >= 1) { pickFlyers.splice(i, 1); continue; }
     const e = smooth(0, 1, u), to = q.hand && player.wp[IDX.hand_R] ? bonePos(player, 'hand_R') : toWorld(player, [-0.28, 0.95, 0.12]), sc = 1 - (q.hand ? 0 : 0.75) * e;
-    const at = V.add(V.lerp(q.from, to, e), [0, 0.35 * Math.sin(Math.PI * e), 0]), spin = M3.ry(q.a + game.time * 6 * (1 - 0.8 * e));
+    const at = V.add(V.lerp(q.from, to, e), [0, 0.35 * Math.sin(Math.PI * e), 0]), spin = q.hand ? M3.mix(M3.ry(q.a), M3.ry(player.yaw), e) : M3.ry(q.a + game.time * 0.9);     // keeps the slow turn it had on the floor, then settles pointing the way he faces
     if (q.item.t === 'gun') { const g = GUNS[q.item.id]; drawGun(prog, textured, g, spin.map(x => x * g.scale * sc), V.add(at, M3.vec(spin, [0, 0, -0.18 * g.scale * sc])), {}); }
     else drawThing(prog, q.item.t, spin.map(x => x * 1.15 * sc), at);
   }

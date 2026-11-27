@@ -230,7 +230,7 @@ function pickUp(o) {
   if (at < 0) return;
   list.splice(at, 1);
   if (!takeItem(f, it, true)) { list.push(o.loot || o.prop); Sound.play('nope', 0.7); return; }
-  pickFlyers.push({ item: it, from: V.add(o.p, [0, 0.3, 0]), t0: game.time, a: rand(0, 6.3) });
+  pickFlyers.push({ item: it, from: V.add(o.p, [0, 0.3, 0]), t0: game.time, a: o.loot ? o.loot.a + game.time * 0.9 : rand(0, 6.3) });
   Sound.play(it.t === 'gun' ? 'rarity' : it.t === 'vest' ? 'vest' : 'grab', 0.8, it.rarity);
   // a gun off the floor flies into his hand and stays there: no reaching round to his back for it. one already in his hands goes to his back first
   let delay = 0;
