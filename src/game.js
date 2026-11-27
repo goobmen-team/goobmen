@@ -92,7 +92,7 @@ await loadGun(ROLL, window.TAPE_DATA);
 const LOOT = {};
 for (const k of ['fish', 'meat', 'plate', 'vest']) { LOOT[k] = { size: window.LOOT_DATA[k].size }; await loadGun(LOOT[k], window.LOOT_DATA[k]); }
 // turning each from lying on the ground to the way it is held: fish and meat stand on their belly, the plate faces front, the vest hangs front first
-const LOOT_PRE = { fish: M3.rz(Math.PI / 2), meat: M3.rz(Math.PI / 2), plate: M3.rx(Math.PI / 2), vest: M3.cols([-1, 0, 0], [0, 0, 1], [0, 1, 0]) };
+const LOOT_PRE = { fish: M3.rz(Math.PI / 2), meat: M3.rz(Math.PI / 2), plate: M3.rx(Math.PI / 2), vest: M3.cols([1, 0, 0], [0, 0, -1], [0, 1, 0]) };
 // a strip of tape: a unit box textured with the plain tape from the roll's texture (x across, y thickness, z along)
 ROLL.seg = (() => { const d = boxData(1, 1, 1); for (let i = 0; i < d.v.length; i += 8) { d.v[i + 6] = 0.03 + (d.v[i] + 0.5) * 0.17; d.v[i + 7] = 0.12 + (d.v[i + 2] + 0.5) * 0.25; } return mergeMesh([d]); })();
 C4.parts.panel = staticMesh(new Float32Array(b64bytes(window.C4_DATA.panel.v).buffer), new Uint32Array(b64bytes(window.C4_DATA.panel.i).buffer));
