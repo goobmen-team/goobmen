@@ -320,9 +320,9 @@ function smoothPose(f, dt) {
       const a = prev[i], b = loc[i];
       const tr = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3] + a[4] * b[4] + a[5] * b[5] + a[6] * b[6] + a[7] * b[7] + a[8] * b[8];
       const ang = Math.acos(Math.max(-1, Math.min(1, (tr - 1) / 2)));
-      if (ang > maxA) {
+      if (ang > maxA * 0.3) {                                  // beyond a third of the limit it is eased in (tanh), so there is no jolt where the limit starts to bite
         if (!changed) { changed = true; for (let k = 0; k < NB; k++) { _old[k] = wr[k]; } for (let k = 0; k < NB; k++) _offs[k] = par[k] < 0 ? wp[k] : M3.vec(M3.tr(_old[par[k]]), V.sub(wp[k], wp[par[k]])); }
-        loc[i] = M3.mix(a, b, maxA / ang);
+        loc[i] = M3.mix(a, b, maxA * Math.tanh(ang / maxA) / ang);
       }
     }
     if (changed) {                                             // the bones below a slowed one follow it
@@ -433,7 +433,10 @@ function poseFighter(f) {
       }
     }
   }
-  let R = M3.mul(M3.ry(f.yaw), M3.rx(f.tilt)), root = [f.pos[0], f.pos[1] + f.air, f.pos[2]];
+  // the height he is lifted off the ground eases by a few hundredths of a second, so a jump's take-off and landing never start or stop in one frame
+  f.airS = f.airS === undefined ? f.air : f.airS + (f.air - f.airS) * (1 - Math.exp(-dtp / 0.04));
+  if (Math.abs(f.airS - f.air) < 0.0005) f.airS = f.air;
+  let R = M3.mul(M3.ry(f.yaw), M3.rx(f.tilt)), root = [f.pos[0], f.pos[1] + f.airS, f.pos[2]];
   let held = null;
   if (f.dead >= 0 && f.rag) {                                 // a ragdoll: the bones follow the physics, in world space
     ragPose(f); R = M3.id(); root = [0, 0, 0];
@@ -975,7 +978,8 @@ function playerStep(dt) {
   const aimHit = trace(view.eye, c.fwd, f, near);
   f.target = aimHit.p;
 
-  if (g) {
+  if (g && !f.ammo[f.weapon]) mouse.pressed = false;             // the gun was put away just now (a vest being put on, a pickup)
+  if (g && f.ammo[f.weapon]) {
     const am = f.ammo[f.weapon];
     const trigger = g.auto ? firing : mouse.pressed;
     if (trigger && f.cool <= 0 && f.equip >= 1 && f.reload < 0 && f.sprintW < 0.25 && f.gun) {
@@ -1472,6 +1476,7 @@ window.__game = {
   draw() { manual = true; render(); hud(0); },
   tick(dt) { manual = true; update(dt); },                    // the world only, no drawing
   ensure(f) { f.posedT = -1; ensurePosed(f); },
+  pose(f) { f.vis = true; f.away = f.isPlayer ? 0 : f.away; poseFighter(f); },     // for the animation audit
   resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE, bikes, HOUSES, houseWorld,
   look(eye, at) { testView = eye ? { eye, at } : null; },
   raid, addPiece, newPiece, placeBlock, removePiece, buildRay, surfaceHit, canSee, trace, caveShift, caveWide, explode, planted, benchBuy, openInventory, closeInventory,

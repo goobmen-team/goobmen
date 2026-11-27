@@ -343,7 +343,12 @@ function blendPose(f, other, w) {
     const la = p < 0 ? f.wr[i] : M3.mul(M3.tr(f.wr[p]), f.wr[i]), lb = p < 0 ? other.wr[i] : M3.mul(M3.tr(other.wr[p]), other.wr[i]);
     const l = M3.mix(la, lb, w);
     if (p < 0) { wr[i] = l; wp[i] = V.lerp(f.wp[i], other.wp[i], w); }
-    else { wr[i] = M3.mul(wr[p], l); wp[i] = V.add(wp[p], M3.vec(wr[p], Rig.offset[i])); }
+    else {
+      // each pose's own distance from its parent (the hips are carried lower or higher than their rest place) is blended too,
+      // not thrown away for the rest place, which made the hips snap when a script faded in or out
+      const oa = M3.vec(M3.tr(f.wr[p]), V.sub(f.wp[i], f.wp[p])), ob = M3.vec(M3.tr(other.wr[p]), V.sub(other.wp[i], other.wp[p]));
+      wr[i] = M3.mul(wr[p], l); wp[i] = V.add(wp[p], M3.vec(wr[p], V.lerp(oa, ob, w)));
+    }
   }
   for (let i = 0; i < NB; i++) { f.wr[i] = wr[i]; f.wp[i] = wp[i]; }
 }
@@ -463,6 +468,7 @@ function bodyStep(L) {
 // He has never seen one. He thinks, headbutts it, headbutts it again until it flies open, dives in head first, throws
 // all the junk out and holds up the prize. After that one he has learned how a chest works.
 const CHEST_FIRST = { hold: 4.5, end: 6.5, label: 'open the chest' };
+const rootBlend = (a, b, w) => !a ? b : { R: M3.mix(a.R, b.R, w), p: V.lerp(a.p, b.p, w) };
 function chestFunny(L) {
   const t = L.t, c = L.chest, hips0 = restAt('hips');
   const S = { arms: {}, legs: {} };
@@ -511,8 +517,9 @@ function chestFunny(L) {
       S.arms[s] = Object.assign(goal, { wrist: V.lerp(S.arms[s].wrist, goal.wrist, take) });
     }
     S.bend = S.bend * (1 - w) - 0.2 * w; S.head = M3.rx(-0.3 * w); S.hips = V.lerp(S.hips, hips0, take);
-    S.root = { R: M3.ry(L.face), p: V.add(L.spot, [0, hop * 0.14, 0]) };
-    for (const s of ['R', 'L']) S.legs[s] = { ankle: V.add(restAt('foot_' + s), [0, hop * 0.07, 0]) };
+    { const up = smooth(4.75, 4.97, t);                                // out of the chest and onto his feet: blended, not snapped
+      S.root = rootBlend(S.root, { R: M3.ry(L.face), p: V.add(L.spot, [0, hop * 0.14, 0]) }, up);
+      for (const s of ['R', 'L']) S.legs[s] = { ankle: V.lerp(S.legs[s] ? S.legs[s].ankle : restAt('foot_' + s), V.add(restAt('foot_' + s), [0, hop * 0.07, 0]), up) }; }
   } else if (t >= 4.75 && !GUNS[L.gun]) {                       // food, ammo or a plate, held up like treasure
     const take = smooth(4.75, 5.0, t), w = smooth(4.85, 5.2, t), hop = t > 5.15 && t < 6.15 ? Math.abs(Math.sin((t - 5.15) * Math.PI * 2)) : 0;
     const gp = V.lerp([0, 0.8, 0.4], [0, 1.96 + hop * 0.04, 0.14], w);
@@ -522,8 +529,9 @@ function chestFunny(L) {
       S.arms[s] = Object.assign(goal, { wrist: V.lerp(S.arms[s].wrist, goal.wrist, take) });
     }
     S.bend = S.bend * (1 - w) - 0.2 * w; S.head = M3.rx(-0.3 * w); S.hips = V.lerp(S.hips, hips0, take);
-    S.root = { R: M3.ry(L.face), p: V.add(L.spot, [0, hop * 0.14, 0]) };
-    for (const s of ['R', 'L']) S.legs[s] = { ankle: V.add(restAt('foot_' + s), [0, hop * 0.07, 0]) };
+    { const up = smooth(4.75, 4.97, t);                                // out of the chest and onto his feet: blended, not snapped
+      S.root = rootBlend(S.root, { R: M3.ry(L.face), p: V.add(L.spot, [0, hop * 0.14, 0]) }, up);
+      for (const s of ['R', 'L']) S.legs[s] = { ankle: V.lerp(S.legs[s] ? S.legs[s].ankle : restAt('foot_' + s), V.add(restAt('foot_' + s), [0, hop * 0.07, 0]), up) }; }
   } else if (t >= 4.75) {
     const id = L.gun, take = smooth(4.75, 5.0, t), w = smooth(4.85, 5.2, t), hop = t > 5.15 && t < 6.15 ? Math.abs(Math.sin((t - 5.15) * Math.PI * 2)) : 0;
     const R = M3.mul(M3.ry(Math.PI / 2), M3.rx(-0.08 + Math.sin(t * 9) * 0.1));
@@ -533,8 +541,9 @@ function chestFunny(L) {
     const other = id === 'glock' ? hand([0.34, 0.86, 0.06], [-0.4, -1, 0], [-1, 0, 0], [1, 0, -0.2], 1.1) : H.L;
     for (const [s, goal] of [['R', H.R], ['L', other]]) S.arms[s] = Object.assign(goal, { wrist: V.lerp(S.arms[s].wrist, goal.wrist, take) });
     S.bend = S.bend * (1 - w) - 0.2 * w; S.head = M3.rx(-0.3 * w); S.hips = V.lerp(S.hips, hips0, take);
-    S.root = { R: M3.ry(L.face), p: V.add(L.spot, [0, hop * 0.14, 0]) };
-    for (const s of ['R', 'L']) S.legs[s] = { ankle: V.add(restAt('foot_' + s), [0, hop * 0.07, 0]) };
+    { const up = smooth(4.75, 4.97, t);                                // out of the chest and onto his feet: blended, not snapped
+      S.root = rootBlend(S.root, { R: M3.ry(L.face), p: V.add(L.spot, [0, hop * 0.14, 0]) }, up);
+      for (const s of ['R', 'L']) S.legs[s] = { ankle: V.lerp(S.legs[s] ? S.legs[s].ankle : restAt('foot_' + s), V.add(restAt('foot_' + s), [0, hop * 0.07, 0]), up) }; }
   }
   L.f.script = S;
 
