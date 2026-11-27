@@ -123,7 +123,7 @@ const skinProg = program(`${SKINVS}
 layout(location=5) in float aTorso; uniform float uInflate;
 uniform mat4 uViewProj; out vec3 vW; out vec3 vN; out vec2 vUv; out vec3 vRest; out float vTorso;
 void main() { mat4 m = skin(); vec4 w = m * vec4(aPos + aNrm * uInflate, 1.0); vW = w.xyz; vN = mat3(m) * aNrm; vUv = aUv; vRest = aPos; vTorso = aTorso; gl_Position = uViewProj * w; }`, `
-in vec3 vW; in vec3 vN; in vec2 vUv; in vec3 vRest; in float vTorso; out vec4 o; uniform int uVest;
+in vec3 vW; in vec3 vN; in vec2 vUv; in vec3 vRest; in float vTorso; out vec4 o; uniform int uVest, uPaint;
 uniform sampler2D uTex, uNormalMap; uniform int uHasTex, uHasNormal; uniform vec3 uColor, uTint; uniform float uRough, uHurt;
 ${COMMON}
 void main() {
@@ -138,6 +138,35 @@ void main() {
     if (vTorso < 0.45 || !(body || strap)) discard;
     if (body && fract((y - 0.86) * 13.0) < 0.16) base *= 0.45;
     if (body && (y < 0.885 || ax > 0.225 - max(0.0, y - 1.10) * 0.55)) base *= 0.4;
+  }
+  if (uPaint > 0 && vTorso > 0.55) {                  // a bulletproof vest painted onto his skin (1: whole, 2: broken)
+    float ax = abs(vRest.x), y = vRest.y, front = step(-0.02, vRest.z);
+    bool shell = y > 0.775 && y < 1.30 && !(y > 1.13 && ax > 0.205);          // all the way round, open at the arm holes
+    bool strap = y >= 1.15 && y < 1.40 && ax > 0.095 && ax < 0.165;           // straps over the shoulders
+    if (shell || strap) {
+      vec3 olive = vec3(0.107, 0.122, 0.054), dark = vec3(0.075, 0.087, 0.040), web = vec3(0.025, 0.027, 0.018), pouch = vec3(0.034, 0.040, 0.021), metal = vec3(0.16, 0.15, 0.13);
+      float weave = 0.9 + 0.1 * sin(vRest.x * 240.0) * sin(vRest.y * 240.0);
+      vec3 c = olive * weave;
+      if (ax < 0.165 && y > 0.87 && y < 1.255) {                              // the plate panel, with rows of webbing
+        c = dark * weave;
+        if (fract(y * 36.0) < 0.22 && fract(vRest.x * 30.0 + 0.5) < 0.6) c *= 0.55;
+        if (ax > 0.153 || y < 0.882 || y > 1.243) c = web;
+      }
+      if (front > 0.5) {                                                       // three ammo pouches
+        for (int k = -1; k <= 1; k++) {
+          float d = abs(vRest.x - float(k) * 0.092);
+          if (d < 0.04 && y > 0.885 && y < 0.975) {
+            c = (d > 0.035 || y < 0.892 || y > 0.968) ? web : (y > 0.947 ? pouch * 1.5 : pouch);
+            if (d < 0.006 && y > 0.938 && y < 0.956) c = metal;
+          }
+        }
+      }
+      if (y < 0.835) c = web;                                                  // a belt round the waist
+      if (front > 0.5 && ax < 0.028 && y > 0.79 && y < 0.826) c = metal;
+      if (strap) { c = web; if (abs(ax - 0.13) < 0.004) c = olive * 0.6; }
+      if (uPaint == 2) c *= 0.5;
+      base = c;
+    }
   }
   float sh = shadowAt(vW + N * 0.012), ndl = max(dot(N, uSun), 0.0);
   vec3 hemi = mix(vec3(0.28, 0.25, 0.23), vec3(0.60, 0.62, 0.66), N.y * 0.5 + 0.5);

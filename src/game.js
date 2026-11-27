@@ -91,7 +91,6 @@ await loadGun(ROLL, window.TAPE_DATA);
 // the fish, meat, plate and vest (from tools/make_loot.py): each lies on the ground the way it rests, y up, its lowest point at y = 0
 const LOOT = {};
 for (const k of ['fish', 'meat', 'plate', 'vest']) { LOOT[k] = { size: window.LOOT_DATA[k].size }; await loadGun(LOOT[k], window.LOOT_DATA[k]); }
-LOOT.vestWorn = skinnedMesh(window.LOOT_DATA.vestWorn);      // the vest reshaped to his torso and skinned to his bones
 // turning each from lying on the ground to the way it is held: fish and meat stand on their belly, the plate faces front, the vest hangs front first
 const LOOT_PRE = { fish: M3.rz(Math.PI / 2), meat: M3.rz(Math.PI / 2), plate: M3.rx(Math.PI / 2), vest: M3.cols([1, 0, 0], [0, 0, -1], [0, 1, 0]) };
 // a strip of tape: a unit box textured with the plain tape from the roll's texture (x across, y thickness, z along)
@@ -1070,6 +1069,7 @@ function drawFighters(prog, textured, hideSelf) {
       if (far && !p.lod) continue;
       if (textured) {
         gl.uniform1i(prog.u.uHasTex, p.tex ? 1 : 0); gl.uniform1i(prog.u.uHasNormal, p.normal ? 1 : 0);
+        gl.uniform1i(prog.u.uPaint, p.name === 'skin' && !(f.script && f.script.vest && f.scriptW > 0.3) ? (f.vest > 0 ? 1 : f.hasVest ? 2 : 0) : 0);
         gl.uniform3fv(prog.u.uColor, p.color); gl.uniform1f(prog.u.uRough, p.rough);
         gl.uniform3fv(prog.u.uTint, (p.name === 'cloth' || p.name === 'skin' ? (p.name === 'skin' ? f.tint.map(t => 1 + (t - 1) * 0.35) : f.tint) : [1, 1, 1]).map(t => t * dim));
         if (p.tex) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, p.tex); }
@@ -1078,7 +1078,6 @@ function drawFighters(prog, textured, hideSelf) {
       gl.bindVertexArray(far ? p.lod.vao : p.vao);
       gl.drawElements(gl.TRIANGLES, far ? p.lod.count : p.count, gl.UNSIGNED_SHORT, 0);
     }
-    if (!far) drawWornVest(prog, textured, f, hideSelf);
   }
 }
 const modelM = new Float32Array(16);
