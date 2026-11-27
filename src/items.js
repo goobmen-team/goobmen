@@ -59,7 +59,7 @@ function syncC4(f) {
 // put something in a pocket. swap: with no room, what is in your hand goes on the floor. false if it would not fit
 function takeItem(f, it, swap) {
   hudDirty = true;
-  if (it.t === 'vest') { f.vest = VEST; f.hasVest = true; return true; }
+  if (it.t === 'vest') { f.vest = VEST; f.hasVest = true; if (f.isPlayer) f.wearing = { t: 0, started: false }; return true; }
   if (it.t === 'ammo') {
     if (!f.inv.length) f.bank = (f.bank || 0) + 1;             // saved for the next gun you get
     else for (const id of f.inv) addAmmo(f, id, GUNS[id].mag * 2);
@@ -230,7 +230,11 @@ function lootNear(p, reachOut) {
 const LOOT_SEEN = 45;                                          // metres
 const lootSeen = o => Math.abs(o.p[0] - player.pos[0]) < LOOT_SEEN && Math.abs(o.p[2] - player.pos[2]) < LOOT_SEEN;
 function drawFloorLoot(prog, textured) {
-  for (const f of fighters) if (f.pickNext) {                  // the gun he is about to pick up still lies where it was
+  for (const f of fighters) {                                  // food, plates and vests he is about to pick up still lie where they were
+    const q = f.pickIt || f.pickNext;
+    if (q && q.kind && !(f.pickIt && f.pickIt.t >= PICKIT.grab)) drawLoot(prog, q.kind, M3.mul(M3.ry(q.a), M3.rz(0.1 * Math.sin((q.t || 0) * 30) * (f.pickIt && q.t > PICKIT.reach && q.t < PICKIT.poke ? 1 : 0))), V.add(q.floorP, [0, 0.0, 0]), 0);
+  }
+  for (const f of fighters) if (f.pickNext && !f.pickNext.kind) {                  // the gun he is about to pick up still lies where it was
     const st = f.pickNext, g = GUNS[st.id], spin = M3.ry(st.a), lift = 0.04 * Math.sin(game.time * 2.2);
     drawGun(prog, textured, g, spin.map(x => x * g.scale), V.add(st.floorP, V.add([0, 0.30 + lift, 0], M3.vec(spin, [0, 0, -0.18 * g.scale]))), {});
   }
@@ -338,6 +342,70 @@ function holdBlend(f, h) {
   if (c.R) f.carry.R = mixGoal(idleArm(-1), c.R, e);
   if (c.L) f.carry.L = mixGoal(idleArm(1), c.L, e);
   if (f.thing) f.thing = Object.assign({}, f.thing, { p: V.lerp(POCKET, f.thing.p, e) });
+}
+// ---------------------------------------------------------------- picking things up off the floor, caveman style
+// leans over it, sniffs it, pokes it, jumps back (huh?), grabs it, and: food gets a bite and goes in the pocket, a plate gets a knock and
+// goes in the pocket, a vest is held up for the putting on
+const PICKIT = { reach: 0.30, poke: 0.62, grab: 0.90, dur: 1.80 };
+function startItemPick(f, st) {
+  return { kind: st.kind, t: 0, a: st.a, floorP: st.floorP, item: toLocalPos(f, V.add(st.floorP, [0, 0.04, 0])) };
+}
+function pickItStep(f, dt) {
+  const q = f.pickIt;
+  if (!q) { if (f.bendX) f.bendX = 0; return; }
+  if (f.dead >= 0 || looting || f.ride) { f.pickIt = null; f.bendX = 0; return; }
+  const before = q.t, t = (q.t += dt), crossed = at => before < at && t >= at, food = q.kind === 'fish' || q.kind === 'meat';
+  const loud = 0.8, snd = (n, v) => Sound.play(n, loud * (v || 1));
+  if (crossed(0.40)) snd(food ? 'huh' : 'clank', 0.6);
+  if (crossed(0.52) && !food) snd('bonk', 0.5);
+  if (crossed(PICKIT.poke)) snd('huh', 0.8);
+  if (crossed(PICKIT.grab)) snd('grab');
+  if (food && crossed(1.32)) snd('chomp');
+  if (food && crossed(1.50)) snd('huh', 0.6);
+  if (crossed(1.62)) snd('rustle', 0.7);
+  const head = f.wp[IDX.head] || Rig.rest[IDX.head], mouth = V.add(head, [-0.03, 0.04, 0.2]), pocket = POCKET;
+  const poking = smooth(PICKIT.reach, PICKIT.reach + 0.04, t) * (1 - smooth(PICKIT.poke - 0.04, PICKIT.poke, t));
+  const tap = 0.06 * Math.abs(Math.sin((t - PICKIT.reach) * 13)) * poking;
+  let p;
+  if (t < PICKIT.grab) p = V.add(q.item, [0, tap, 0]);
+  else if (q.kind === 'vest') p = flow([[PICKIT.grab, q.item], [1.2, [0, 1.0, 0.42]], [PICKIT.dur, [0, 1.0, 0.42]]], t);
+  else p = flow(food ? [[PICKIT.grab, q.item], [1.12, [-0.12, 1.02, 0.5]], [1.3, mouth], [1.5, mouth], [1.62, pocket], [PICKIT.dur, pocket]]
+                      : [[PICKIT.grab, q.item], [1.15, [0, 1.05, 0.48]], [1.4, [0, 1.1, 0.4]], [1.62, pocket], [PICKIT.dur, pocket]], t);
+  if (food) p = V.add(p, [0, 0, 0.05 * Math.max(0, Math.sin((t - 1.3) / 0.2 * Math.PI)) * (t > 1.3 && t < 1.5 ? 1 : 0)]);
+  const shrink = 1 - 0.85 * smooth(1.55, 1.74, t);                            // into the pocket
+  f.carry = q.kind === 'fish' || q.kind === 'meat' ? foodGoal(p) : plateGoals(p);
+  f.thing = t >= PICKIT.grab && t < PICKIT.dur - 0.06 ? { kind: q.kind, p, R: M3.mul(M3.ry(food ? 1.35 : 0), M3.rx(food ? 0.1 : -0.25)).map(x => x * shrink) } : null;
+  f.bendX = 1.15 * smooth(0, PICKIT.reach, t) * (1 - smooth(PICKIT.grab + 0.05, 1.3, t));
+  const sniff = smooth(0.3, 0.45, t) * (1 - smooth(0.58, 0.64, t)), puzzled = smooth(PICKIT.poke - 0.04, PICKIT.poke + 0.1, t) * (1 - smooth(0.82, PICKIT.grab + 0.04, t));
+  f.headTilt = M3.mul(M3.rx(0.3 * sniff), M3.rz(0.4 * puzzled));
+  if (t >= PICKIT.dur) { f.pickIt = null; f.bendX = 0; f.headTilt = null; f.thing = null; f.carry = null; hudDirty = true; }
+}
+// putting the vest on: he holds it up, looks at it, pulls it down over his head, gets stuck, wriggles, and pops out wearing it
+const WEAR = { put: 1.45, dur: 2.0 };
+function wearStep(f, dt) {
+  const w = f.wearing;
+  if (!w) return;
+  if (f.dead >= 0) { f.wearing = null; return; }
+  if (!w.started) {                                            // wait until his hands are free
+    if (looting || f.ride || f.pickIt || f.pickNext || f.hol) return;
+    if (f.weapon) { equip(f, null); return; }
+    if (f.hand || f.holdC4) fists(f);
+    w.started = true;
+  }
+  const before = w.t, t = (w.t += dt), crossed = at => before < at && t >= at;
+  if (crossed(0.1)) Sound.play('velcro', 0.6);
+  if (crossed(0.85)) Sound.play('whoosh', 0.5);
+  if (crossed(1.0)) Sound.play('oogaq', 0.6);
+  if (crossed(WEAR.put)) { Sound.play('velcro', 0.9); Sound.play('thud', 0.4); }
+  const head = f.wp[IDX.head] || Rig.rest[IDX.head];
+  const p = flow([[0, [0, 1.0, 0.42]], [0.35, [0, 1.08, 0.38]], [0.8, [0, 1.85, 0.12]], [1.0, V.add(head, [0, 0.05, 0.02])], [1.3, V.add(head, [0, 0.02, 0.02])], [WEAR.put, [0, 1.0, 0]]], t);
+  const stuck = smooth(0.95, 1.05, t) * (1 - smooth(1.28, 1.4, t));
+  const wriggle = Math.sin(t * 26) * stuck;
+  f.carry = plateGoals(V.add(p, [0.012 * wriggle, 0, 0]));
+  f.thing = t < WEAR.put ? { kind: 'vest', p: V.add(p, [0.01 * wriggle, 0, 0]), R: M3.mul(M3.rz(0.12 * wriggle), M3.rx(-0.1)).map(x => x * (1 - 0.25 * smooth(1.0, 1.4, t))) } : null;
+  f.headTilt = M3.mul(M3.rz(0.3 * wriggle), M3.rx(-0.2 * stuck));
+  f.bendX = 0.2 * stuck;
+  if (t >= WEAR.dur) { f.wearing = null; f.headTilt = null; f.thing = null; f.carry = null; f.bendX = 0; hudDirty = true; }
 }
 // yours: runs inside playerStep, after the C4 code has had its say about your arms
 function itemStep(f, dt) {

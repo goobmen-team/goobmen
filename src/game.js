@@ -330,7 +330,7 @@ function poseFighter(f) {
       if (i === IDX.hips) { wr[i] = yawOf(wr[i], f.legYaw); wp[i] = M3.vec(M3.ry(f.legYaw), wp[i]); }
       else if (UP_CHEST.includes(i)) wr[i] = yawOf(wr[i], -f.legYaw / 2);
     }
-    if (UP_CHEST.includes(i) && hol && hol.mode === 'pick') wr[i] = M3.mul(M3.rx(pickBend(hol) / 2), wr[i]);
+    if (UP_CHEST.includes(i) && ((hol && hol.mode === 'pick') || f.bendX)) wr[i] = M3.mul(M3.rx((hol && hol.mode === 'pick' ? pickBend(hol) : f.bendX) / 2), wr[i]);
     if (i === IDX.head && hol && hol.mode === 'pick') wr[i] = M3.mul(M3.mul(M3.rz(0.42 * pickPuzzled(hol)), M3.rx(0.22 * pickPuzzled(hol))), wr[i]);
     if (UP_CHEST.includes(i) && (g || punching)) {
       wr[i] = M3.mul(M3.mul(M3.ry(blade / 2 + (punching ? 0.2 * Math.sin(Math.PI * f.punch / 0.4) : 0)), M3.rx(-lean * 0.22)), wr[i]);
@@ -817,8 +817,8 @@ function weaponStep(f, dt) {
   if (f.hol) holsterStep(f, dt);
   if (f.pickNext) {                                            // a gun lies waiting while the one in his hands goes to his back
     const q = f.pickNext;
-    if (f.weapon || f.hand || f.holdC4 || f.dead >= 0 || !f.inv.includes(q.id)) f.pickNext = null;
-    else if (!f.hol) { f.pickNext = null; f.hol = pickHol(f, q); }
+    if (f.weapon || f.hand || f.holdC4 || f.dead >= 0 || (!q.kind && !f.inv.includes(q.id))) f.pickNext = null;
+    else if (!f.hol) { f.pickNext = null; if (q.kind) f.pickIt = startItemPick(f, q); else f.hol = pickHol(f, q); }
   }
   if (f.inspect >= 0) { f.inspect += dt; if (f.inspect > 2.6) f.inspect = -1; }
   if (f.cycle >= 0) {
@@ -908,6 +908,8 @@ function playerStep(dt) {
   weaponStep(f, dt);
   c4Step(f, dt);
   itemStep(f, dt);
+  pickItStep(f, dt);
+  wearStep(f, dt);
   seaStep(f, dt);
   if (f.dead >= 0) return;
 
@@ -1069,7 +1071,7 @@ function drawFighters(prog, textured, hideSelf) {
       if (far && !p.lod) continue;
       if (textured) {
         gl.uniform1i(prog.u.uHasTex, p.tex ? 1 : 0); gl.uniform1i(prog.u.uHasNormal, p.normal ? 1 : 0);
-        gl.uniform1i(prog.u.uPaint, p.name === 'skin' && !(f.script && f.script.vest && f.scriptW > 0.3) ? (f.vest > 0 ? 1 : f.hasVest ? 2 : 0) : 0);
+        gl.uniform1i(prog.u.uPaint, p.name === 'skin' && !(f.script && f.script.vest && f.scriptW > 0.3) && !(f.wearing && (!f.wearing.started || f.wearing.t < WEAR.put)) ? (f.vest > 0 ? 1 : f.hasVest ? 2 : 0) : 0);
         gl.uniform3fv(prog.u.uColor, p.color); gl.uniform1f(prog.u.uRough, p.rough);
         gl.uniform3fv(prog.u.uTint, (p.name === 'cloth' || p.name === 'skin' ? (p.name === 'skin' ? f.tint.map(t => 1 + (t - 1) * 0.35) : f.tint) : [1, 1, 1]).map(t => t * dim));
         if (p.tex) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, p.tex); }

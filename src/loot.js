@@ -230,12 +230,15 @@ function pickUp(o) {
   if (at < 0) return;
   list.splice(at, 1);
   if (!takeItem(f, it, true)) { list.push(o.loot || o.prop); Sound.play('nope', 0.7); return; }
-  pickFlyers.push({ item: it, from: V.add(o.p, [0, 0.3, 0]), t0: game.time, a: o.loot ? o.loot.a + game.time * 0.9 : rand(0, 6.3) });
   Sound.play(it.t === 'gun' ? 'rarity' : it.t === 'vest' ? 'vest' : 'grab', 0.8, it.rarity);
   // a gun off the floor: he leans over it, pokes it, grabs it and brings it up. one already in his hands goes to his back first
   if (it.t === 'gun' && (f.weapon !== it.id) && !f.hand && !f.holdC4) {
     const st = { id: it.id, floorP: o.p.slice(), a: o.loot ? o.loot.a + game.time * 0.9 : rand(0, 6.3) };
     if (f.weapon) { equip(f, null); f.pickNext = st; } else if (!f.hol) f.hol = pickHol(f, st); else f.pickNext = st;
+  } else if (LOOT[it.t] && !f.hand && !f.holdC4 && !f.pickIt && !f.wearing) {
+    // food, plates and vests: he leans over it, sniffs and pokes it, grabs it, and stuffs it in his pocket (a vest he puts on)
+    const st = { kind: it.t, floorP: o.p.slice(), a: o.loot ? o.loot.a + game.time * 0.9 : rand(0, 6.3) };
+    if (f.weapon) { equip(f, null); f.pickNext = st; } else if (!f.hol) f.pickIt = startItemPick(f, st); else f.pickNext = st;
   } else pickFlyers.push({ item: it, from: V.add(o.p, [0, 0.3, 0]), t0: game.time, a: o.loot ? o.loot.a + game.time * 0.9 : rand(0, 6.3) });
   hudDirty = true;
 }
