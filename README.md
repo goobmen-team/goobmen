@@ -73,3 +73,4 @@ The map is being made in phases. So far: a big island with two mountains, a mesa
 - Abandoned House by Sengchor (sketchfab.com/Sengchor) and BMX Bike by Erdem Dağdelen (sketchfab.com/erdemdagdelen), licence CC BY 4.0, adapted.
 - Shotgun by Jonathan Steylaerts (sketchfab.com/JonathanSteylaerts) and P90 by charles.cla (sketchfab.com/charles.cla), licence CC BY-NC 4.0 (no commercial use), adapted.
 - The caveman, AK-74 and Glock 17 are third-party models. Their licences have not been checked, so do not reuse them from here.
+- The fish, meat, ESAPI level IV plate and modular tactical vest are third-party models supplied by the team (converted with `tools/make_loot.py`). Their authors and licences have not been recorded yet, so do not reuse them from here.

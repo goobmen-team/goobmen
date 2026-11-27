@@ -88,6 +88,11 @@ const HOUSE = await loadHouse(window.HOUSE_DATA);       // the abandoned house a
 const BIKE = await loadBike(window.BIKE_DATA);
 const ROLL = {};                                         // the roll of duct tape (model from tools/make_tape.py)
 await loadGun(ROLL, window.TAPE_DATA);
+// the fish, meat, plate and vest (from tools/make_loot.py): each lies on the ground the way it rests, y up, its lowest point at y = 0
+const LOOT = {};
+for (const k of ['fish', 'meat', 'plate', 'vest']) { LOOT[k] = { size: window.LOOT_DATA[k].size }; await loadGun(LOOT[k], window.LOOT_DATA[k]); }
+// turning each from lying on the ground to the way it is held: fish and meat stand on their belly, the plate faces front, the vest hangs front first
+const LOOT_PRE = { fish: M3.rz(Math.PI / 2), meat: M3.rz(Math.PI / 2), plate: M3.rx(Math.PI / 2), vest: M3.cols([-1, 0, 0], [0, 0, 1], [0, 1, 0]) };
 // a strip of tape: a unit box textured with the plain tape from the roll's texture (x across, y thickness, z along)
 ROLL.seg = (() => { const d = boxData(1, 1, 1); for (let i = 0; i < d.v.length; i += 8) { d.v[i + 6] = 0.03 + (d.v[i] + 0.5) * 0.17; d.v[i + 7] = 0.12 + (d.v[i + 2] + 0.5) * 0.25; } return mergeMesh([d]); })();
 C4.parts.panel = staticMesh(new Float32Array(b64bytes(window.C4_DATA.panel.v).buffer), new Uint32Array(b64bytes(window.C4_DATA.panel.i).buffer));
@@ -1002,6 +1007,7 @@ function effectsStep(dt) {
 function update(dt) {
   if (cine.on) return;
   game.time += dt;
+  lootPhysics(dt);
   stars.length = 0;
   playerStep(dt);
   if (royaleOn()) royaleStep(dt); else bots.forEach((b, i) => botStep(b, i, dt));
@@ -1071,7 +1077,6 @@ function drawFighters(prog, textured, hideSelf) {
       gl.bindVertexArray(far ? p.lod.vao : p.vao);
       gl.drawElements(gl.TRIANGLES, far ? p.lod.count : p.count, gl.UNSIGNED_SHORT, 0);
     }
-    if (textured && f.away < 45) drawWornVest(prog, f);
   }
 }
 const modelM = new Float32Array(16);
@@ -1131,6 +1136,7 @@ function drawStatics(prog, textured, hideSelf) {
     if (f.holdThing) drawThing(prog, f.holdThing.kind, f.holdThing.R, f.holdThing.p);
   }
   drawFloorLoot(prog, textured);
+  for (const f of fighters) drawWornVest(prog, textured, f, hideSelf);
   drawGrenades(prog);
   const chestRange = !textured ? 16 : world.low ? 60 : 110;
   for (const c of chests) {
@@ -1389,7 +1395,7 @@ requestAnimationFrame(frame);
 
 // hooks used by the automated checks
 window.__game = {
-  ready: true, rig: Rig, player, bots, fighters, chests, floorLoot, takeItem, selectSlot, rollLoot, rollRarity, newMatch, get match() { return match; }, playersLeft, footstep, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
+  ready: true, rig: Rig, player, bots, fighters, chests, floorLoot, dropLoot, takeItem, selectSlot, rollLoot, rollRarity, newMatch, get match() { return match; }, playersLeft, footstep, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
   tick(dt) { manual = true; update(dt); },                    // the world only, no drawing

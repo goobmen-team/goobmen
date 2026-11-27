@@ -246,6 +246,7 @@ function drawProps(prog, textured) {
     if (o.kind === 'c4') { drawC4(prog, o.p, o.R.map(x => x * Math.min(1, o.life / 0.4)), false, 0); continue; }
     if (o.kind === 'gun') { const g = GUNS[o.gun]; drawGun(prog, textured, g, S.map(x => x * g.scale / 1.25), V.add(o.p, M3.vec(S, [0, -0.04, -0.1])), {}); continue; }
     if (o.kind === 'mag') { const g = GUNS[o.gun], M = S.map(x => x * g.scale); drawMag(prog, textured, g, M, V.sub(o.p, M3.vec(M, g.magMid))); continue; }
+    if (LOOT[o.kind]) { if (o.rest) drawLoot(prog, o.kind, S, [o.p[0], o.p[1] - o.floor, o.p[2]], 0); else drawLoot(prog, o.kind, S, o.p, 1); continue; }
     for (const part of JUNK[o.kind]) { flat(prog, part.color, part.rough, 0.05); drawMesh(prog, part.mesh, S, o.p); }
   }
   // seeing stars
