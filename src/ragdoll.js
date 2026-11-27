@@ -114,7 +114,10 @@ function ragStep(f, dt) {
         R.p[a] = V.mad(pa, d, k); R.p[b] = V.mad(pb, d, -k);
       }
       hinges(R);
-      if (drag) { const g = R.p[drag.pt], to = drag.to; R.p[drag.pt] = V.lerp(g, to, 0.35); }
+      if (drag) {                                                // pulled along at a walking pace at most, so grabbing him never yanks a limb across the room
+        const g = R.p[drag.pt], d = V.sub(drag.to, g), l = V.len(d);
+        if (l > 1e-6) R.p[drag.pt] = V.mad(g, d, Math.min(0.35 * l, 4 * h / 7) / l);
+      }
       if (R.pin) R.p[R.pin.pt] = V.lerp(R.p[R.pin.pt], R.pin.to, R.pin.k || 0.35);     // someone holding a hand or a foot
       for (let i = 0; i < n; i++) {                               // the ground, and the things standing on it
         const p = R.p[i], r = def.rad[i], g = floorAt(p[0], p[2], p[1]) + r;
