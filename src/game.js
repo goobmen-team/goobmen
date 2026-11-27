@@ -316,8 +316,9 @@ function smoothPose(f, dt) {
   if (prev && dt > 0 && dt < 0.1) {
     let changed = false;
     for (let i = 0; i < NB; i++) {
-      const maxA = SLEW_OF[i] * dt;
+      const maxA = SLEW_OF[i] * dt * (f.rag ? 2.6 : 1);                          // a ragdoll is turned by physics: only its flips are stopped
       const a = prev[i], b = loc[i];
+      if (!a) continue;
       const tr = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3] + a[4] * b[4] + a[5] * b[5] + a[6] * b[6] + a[7] * b[7] + a[8] * b[8];
       const ang = Math.acos(Math.max(-1, Math.min(1, (tr - 1) / 2)));
       if (ang > maxA * 0.3) {                                  // beyond a third of the limit it is eased in (tanh), so there is no jolt where the limit starts to bite
@@ -342,6 +343,7 @@ function poseFighter(f) {
     poseAdd(P, n, gait ? f.phase * Rig.clips[n].T : f.time, f.weights[n]);
   }
   const J = jumpShape(f);
+  if (!J) f.ankS = null;
   if (f.hol && (f.dead >= 0 || !f.inv.includes(f.hol.id))) f.hol = null;
   // how long since this fighter was last posed: everything below that eases in or out uses it
   const dtp = clamp(game.time - (f.goalT === undefined ? game.time : f.goalT), 0, 0.1); f.goalT = game.time;
@@ -388,7 +390,11 @@ function poseFighter(f) {
       if (UP_CHEST.includes(i)) wr[i] = M3.mul(M3.rx(J.bend * J.w / 2), wr[i]);
       if (i === IDX.head) wr[i] = M3.mul(M3.rx(J.head * J.w), wr[i]);
       for (const s of ['R', 'L']) {
-        const l = LEGS[s], leg = J.legs[s], a = ARMS[s];
+        const l = LEGS[s], a = ARMS[s];
+        // the feet follow their jump targets with a short ease, so drawing a knee up never starts in one frame
+        const ank = f.ankS && f.ankS[s] ? V.lerp(f.ankS[s], J.legs[s].ankle, 1 - Math.exp(-dtp / 0.035)) : J.legs[s].ankle;
+        (f.ankS || (f.ankS = {}))[s] = ank;
+        const leg = Object.assign({}, J.legs[s], { ankle: ank });
         if (i === l.up) { jumpIK['leg' + s] = solveLeg(l, wp[i], leg); wr[i] = M3.mix(wr[i], jumpIK['leg' + s][0], J.w); }
         else if (i === l.low) wr[i] = M3.mix(wr[i], jumpIK['leg' + s][1], J.w);
         else if (i === l.foot) wr[i] = M3.mix(wr[i], leg.foot, J.w);
@@ -434,7 +440,7 @@ function poseFighter(f) {
     }
   }
   // the height he is lifted off the ground eases by a few hundredths of a second, so a jump's take-off and landing never start or stop in one frame
-  f.airS = f.airS === undefined ? f.air : f.airS + (f.air - f.airS) * (1 - Math.exp(-dtp / 0.055));
+  f.airS = f.airS === undefined ? f.air : f.airS + (f.air - f.airS) * (1 - Math.exp(-dtp / 0.08));
   if (Math.abs(f.airS - f.air) < 0.0005) f.airS = f.air;
   let R = M3.mul(M3.ry(f.yaw), M3.rx(f.tilt)), root = [f.pos[0], f.pos[1] + f.airS, f.pos[2]];
   let held = null;
@@ -456,7 +462,12 @@ function poseFighter(f) {
     if (S.root) { R = M3.mix(R, S.root.R, w); root = V.lerp(root, S.root.p, w); }
     if (S.gun && w >= 0.3) held = S.gun;
   }
-  if (!f.rag && (f.isPlayer || f.away === undefined || f.away < 28)) smoothPose(f, dtp); else f.prevLoc = null;
+  // a ragdoll's bones are turned by its physics and can flip as a limb swings past straight up or down; smoothed too (in its own frame: it is not
+  // smoothed on the frame it starts or ends, when the frame changes)
+  { const fk = f.rag ? (f.script && f.scriptW > 0.001 && f.script.root ? 2 : 1) : 0;        // which frame the bones are in: his own, the world's (ragdoll), or the animation's
+    if (fk !== f.prevFk && f.prevLoc) { f.prevLoc[IDX.hips] = null; for (let i = 0; i < NB; i++) if (Rig.parent[i] < 0) f.prevLoc[i] = null; }   // the limbs go on smoothly, the body as a whole changes frame
+    f.prevFk = fk; }
+  if (f.isPlayer || f.away === undefined || f.away < 28) smoothPose(f, dtp); else f.prevLoc = null;
   for (let i = 0; i < NB; i++) {
     const R = wr[i], t = V.sub(wp[i], M3.vec(R, Rig.rest[i]));
     m4(R, t, f.bones.subarray(i * 16, i * 16 + 16));
@@ -1481,7 +1492,7 @@ window.__game = {
   draw() { manual = true; render(); hud(0); },
   tick(dt) { manual = true; update(dt); },                    // the world only, no drawing
   ensure(f) { f.posedT = -1; ensurePosed(f); },
-  newBike,
+  newBike, raid,
   pose(f) { f.vis = true; f.away = f.isPlayer ? 0 : f.away; poseFighter(f); },     // for the animation audit
   resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE, bikes, HOUSES, houseWorld,
   look(eye, at) { testView = eye ? { eye, at } : null; },
