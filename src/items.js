@@ -189,6 +189,10 @@ function lootNear(p, reachOut) {
 const LOOT_SEEN = 45;                                          // metres
 const lootSeen = o => Math.abs(o.p[0] - player.pos[0]) < LOOT_SEEN && Math.abs(o.p[2] - player.pos[2]) < LOOT_SEEN;
 function drawFloorLoot(prog, textured) {
+  for (const f of fighters) if (f.pickNext) {                  // the gun he is about to pick up still lies where it was
+    const st = f.pickNext, g = GUNS[st.id], spin = M3.ry(st.a), lift = 0.04 * Math.sin(game.time * 2.2);
+    drawGun(prog, textured, g, spin.map(x => x * g.scale), V.add(st.floorP, V.add([0, 0.30 + lift, 0], M3.vec(spin, [0, 0, -0.18 * g.scale]))), {});
+  }
   for (let i = pickFlyers.length - 1; i >= 0; i--) {
     const q = pickFlyers[i], u = clamp((game.time - q.t0) / 0.30, 0, 2);
     if (u >= 1) { pickFlyers.splice(i, 1); continue; }

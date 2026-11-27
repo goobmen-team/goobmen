@@ -263,6 +263,7 @@ function drawStowed(prog, textured, f, hideSelf) {
   for (const id of f.inv) {
     const g = GUNS[id];
     if (f.gun && f.gun.g === g) continue;                        // that one is in his hands (or on its way)
+    if ((f.hol && f.hol.id === id) || (f.pickNext && f.pickNext.id === id)) continue;     // still on the floor, or being picked up
     const m = mountLocal(f, id);
     drawGun(prog, textured, g, M3.mul(f.R, m.R).map(x => x * g.scale), toWorld(f, m.p), {});
   }
@@ -277,6 +278,15 @@ function equipNow(f, id) {
   f.weapon = id; f.equip = 1; f.reload = -1; f.cool = Math.max(f.cool, 0.2); f.bolt = 0; f.cycle = -1; f.inspect = -1;
   if (f.isPlayer) { Sound.play('rack', 0.5); hudDirty = true; }
 }
+// picking a gun up off the floor, caveman style: leans over it, pokes it a few times, jumps back, tilts his head, grabs it,
+// turns it the right way up and brings it to the ready position
+const PICK = { reach: 0.30, tapEnd: 0.60, startle: 0.60, backEnd: 0.82, grab: 0.92, dur: 1.50 };
+const toLocalPos = (f, w) => M3.vec(M3.tr(f.R), V.sub(w, [f.model[12], f.model[13], f.model[14]]));
+function pickHol(f, st) {
+  return { mode: 'pick', id: st.id, t: 0, a: st.a, item: toLocalPos(f, V.add(st.floorP, [0, 0.3, 0])) };
+}
+const pickBend = h => 1.2 * smooth(0, PICK.reach, h.t) * (1 - smooth(PICK.grab + 0.1, PICK.dur, h.t));
+const pickPuzzled = h => smooth(PICK.startle - 0.05, PICK.startle + 0.12, h.t) * (1 - smooth(PICK.backEnd, PICK.grab + 0.05, h.t));
 const HOL = { carry: 0.30, release: 0.16, reach: 0.20 };
 function holsterOnEquip(f, id) {
   const h = f.hol, now = f.weapon;
@@ -288,7 +298,15 @@ function holsterOnEquip(f, id) {
 }
 function holsterStep(f, dt) {
   const h = f.hol;
-  if (h.mode === 'stow') {
+  if (h.mode === 'pick') {
+    const before = h.t; h.t += dt;
+    const loud = f.isPlayer ? 0.8 : 0.35;
+    if (before < PICK.startle && h.t >= PICK.startle) Sound.play('huh', loud);
+    if (before < PICK.grab && h.t >= PICK.grab) Sound.play('grab', loud);
+    if (h.t >= PICK.dur) { equipNow(f, h.id); return; }
+    f.equip = 0;
+    return;
+  } else if (h.mode === 'stow') {
     if (h.a < 1) h.a = Math.min(1, h.a + dt / HOL.carry);
     else if ((h.rel += dt / HOL.release) >= 1) f.hol = f.weapon ? { mode: 'draw', id: f.weapon, a: 1, reach: 0 } : null;
   } else if (h.reach < 1) h.reach += dt / HOL.reach;
@@ -298,6 +316,23 @@ function holsterStep(f, dt) {
 }
 // the gun's place and both hands for this moment of the holster, given where the gun sits in the hands (G)
 function holsterPose(f, g, G, h) {
+  if (h.mode === 'pick') {
+    const t = h.t, restR0 = idleArm(-1), restL0 = idleArm(1);
+    const lift = smooth(PICK.grab, PICK.dur, t), poking = smooth(PICK.reach, PICK.reach + 0.05, t) * (1 - smooth(PICK.tapEnd - 0.04, PICK.tapEnd, t));
+    const R0 = M3.mul(M3.ry(h.a - f.yaw), M3.mul(M3.rz(0.12 * Math.sin(t * 31) * poking), M3.rx(0.08 * Math.sin(t * 23) * poking)));   // it jiggles when poked
+    const onFloor = V.add(h.item, V.add([0, 0.03 * Math.abs(Math.sin(t * 13)) * poking, 0], M3.vec(R0, [0, 0, -0.18 * g.scale])));
+    const flip = Math.PI * (1 - smooth(0.25, 0.8, lift));                                // he picks it up the wrong way round and turns it over
+    const R = M3.mul(M3.mix(R0, G.R, lift), M3.rx(flip));
+    const p = V.add(V.lerp(onFloor, G.p, lift), [0, 0.1 * Math.sin(Math.PI * lift), 0]);
+    const Gp = Object.assign({}, G, { R, p });
+    let right = handGoal(Gp, g.right, [-0.8, -1, -0.15]);
+    const tap = 0.07 * Math.abs(Math.sin((t - PICK.reach) * 13)) * poking, away = smooth(PICK.tapEnd - 0.02, PICK.tapEnd + 0.1, t) * (1 - smooth(PICK.backEnd, PICK.grab, t));
+    right = Object.assign({}, right, { wrist: V.add(right.wrist, [0, tap, 0]) });
+    right = mixGoal(restR0, right, smooth(0, PICK.reach, t));
+    right = mixGoal(right, restR0, 0.65 * away);                                        // jumps back from it
+    const left = mixGoal(restL0, handGoal(Gp, leftGrip(f, g), [0.75, -1, 0.1]), smooth(PICK.grab + 0.3, PICK.dur, t));
+    return { G: Gp, goals: { R: right, L: left } };
+  }
   const M = mountLocal(f, h.id), pistol = isPistol(g);
   const e = smooth(0, 1, h.a), s = Math.sin(Math.PI * e);
   // up and back past the shoulder on the way (the hip for a pistol), so it never cuts through him

@@ -325,6 +325,8 @@ function poseFighter(f) {
       if (i === IDX.hips) { wr[i] = yawOf(wr[i], f.legYaw); wp[i] = M3.vec(M3.ry(f.legYaw), wp[i]); }
       else if (UP_CHEST.includes(i)) wr[i] = yawOf(wr[i], -f.legYaw / 2);
     }
+    if (UP_CHEST.includes(i) && hol && hol.mode === 'pick') wr[i] = M3.mul(M3.rx(pickBend(hol) / 2), wr[i]);
+    if (i === IDX.head && hol && hol.mode === 'pick') wr[i] = M3.mul(M3.mul(M3.rz(0.42 * pickPuzzled(hol)), M3.rx(0.22 * pickPuzzled(hol))), wr[i]);
     if (UP_CHEST.includes(i) && (g || punching)) {
       wr[i] = M3.mul(M3.mul(M3.ry(blade / 2 + (punching ? 0.2 * Math.sin(Math.PI * f.punch / 0.4) : 0)), M3.rx(-lean * 0.22)), wr[i]);
     }
@@ -808,10 +810,10 @@ function weaponStep(f, dt) {
   f.cool = Math.max(0, f.cool - dt);
   f.equip = Math.min(1, f.equip + dt / (f.weapon && GUNS[f.weapon].draw || 0.38));
   if (f.hol) holsterStep(f, dt);
-  if (f.pendEq) {                                              // a gun is on its way into his hand
-    const q = f.pendEq;
-    if (f.weapon || f.hand || f.holdC4 || f.dead >= 0 || !f.inv.includes(q.id)) f.pendEq = null;
-    else if (!f.hol && game.time >= q.at) { f.pendEq = null; equipNow(f, q.id); }
+  if (f.pickNext) {                                            // a gun lies waiting while the one in his hands goes to his back
+    const q = f.pickNext;
+    if (f.weapon || f.hand || f.holdC4 || f.dead >= 0 || !f.inv.includes(q.id)) f.pickNext = null;
+    else if (!f.hol) { f.pickNext = null; f.hol = pickHol(f, q); }
   }
   if (f.inspect >= 0) { f.inspect += dt; if (f.inspect > 2.6) f.inspect = -1; }
   if (f.cycle >= 0) {
