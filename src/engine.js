@@ -219,6 +219,17 @@ function staticMesh(verts, idx) {          // interleaved pos, normal, uv
   gl.bindVertexArray(null);
   return { vao, count: idx.length };
 }
+// a mesh skinned to the caveman's bones (pos, normal, uv interleaved; bone numbers and weights beside them)
+function skinnedMesh(d) {
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  buffer(gl.ARRAY_BUFFER, new Float32Array(b64bytes(d.v).buffer));
+  attrib(0, null, 3, gl.FLOAT, false, 32, 0); attrib(1, null, 3, gl.FLOAT, false, 32, 12); attrib(2, null, 2, gl.FLOAT, false, 32, 24);
+  attrib(3, new Uint8Array(b64bytes(d.j).buffer), 4, gl.UNSIGNED_BYTE, true);
+  attrib(4, new Float32Array(b64bytes(d.w).buffer), 4, gl.FLOAT);
+  const idx = new Uint32Array(b64bytes(d.i).buffer); buffer(gl.ELEMENT_ARRAY_BUFFER, idx);
+  gl.bindVertexArray(null);
+  return { vao, count: idx.length };
+}
 function boxData(sx, sy, sz, ox, oy, oz) {
   const v = [], i = [];
   const faces = [[[1, 0, 0], [0, 0, -1], [0, 1, 0]], [[-1, 0, 0], [0, 0, 1], [0, 1, 0]], [[0, 1, 0], [1, 0, 0], [0, 0, -1]], [[0, -1, 0], [1, 0, 0], [0, 0, 1]], [[0, 0, 1], [1, 0, 0], [0, 1, 0]], [[0, 0, -1], [-1, 0, 0], [0, 1, 0]]];

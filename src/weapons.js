@@ -216,20 +216,18 @@ const pouches = (() => {
   gl.bindVertexArray(null);
   return { vao, count: i.length };
 })();
-// the vest he is wearing, on his chest
+// the vest he is wearing. It is skinned to his own bones (tools/make_loot.py), so it moves with his belly, back and chest;
+// called while the skinned program is drawing this fighter (his bones and model matrix are already set)
 function drawWornVest(prog, textured, f, hideSelf) {
-  if (!(f.vest > 0 || f.hasVest) || (hideSelf && f.isPlayer) || f.gone || !f.vis || f.rag || f.away > 40 || !f.wr[IDX.chest]) return;
-  if (f.script && f.script.vest && f.scriptW > 0.3) return;
-  const Rb = M3.mul(f.R, f.wr[IDX.chest]);
-  // the vest was reshaped to his torso (tools/make_loot.py), in the space of his chest bone, so it simply goes where the bone goes
-  if (prog.u.uHasTex) {
+  if (!(f.vest > 0 || f.hasVest) || (f.script && f.script.vest && f.scriptW > 0.3) || f.rag && false) return;
+  if (textured) {
     const m = LOOT.vest;
-    gl.uniform1i(prog.u.uHasTex, 1);
+    gl.uniform1i(prog.u.uHasTex, 1); gl.uniform1i(prog.u.uHasNormal, 0); gl.uniform1f(prog.u.uRough, 0.85);
+    gl.uniform3fv(prog.u.uTint, f.vest > 0 ? [1, 1, 1] : [0.35, 0.35, 0.35]);          // a broken one hangs there dark
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, m.tex);
-    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, m.normal);
-    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, m.orm);
   }
-  drawMesh(prog, LOOT.vestWorn, Rb, toWorld(f, f.wp[IDX.chest]));
+  gl.bindVertexArray(LOOT.vestWorn.vao);
+  gl.drawElements(gl.TRIANGLES, LOOT.vestWorn.count, gl.UNSIGNED_INT, 0);
 }
 function drawHeldVest(prog, R, p) { drawLoot(prog, 'vest', R, p, 2); }
 const itemName = id => id === 'vest' ? 'bulletproof vest' : GUNS[id].name;

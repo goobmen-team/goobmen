@@ -60,7 +60,11 @@ def load(path):
                 F = acc(p['indices']).reshape(-1, 3).astype(np.int64)
                 if np.linalg.det(M[:3, :3]) < 0:
                     F = F[:, ::-1]
-                parts.append(dict(P=P, N=N, UV=UV, F=F, m=p.get('material', 0)))
+                part = dict(P=P, N=N, UV=UV, F=F, m=p.get('material', 0))
+                if 'JOINTS_0' in at:
+                    part['J'] = acc(at['JOINTS_0']).astype(np.uint8)
+                    part['W'] = acc(at['WEIGHTS_0']).astype(float)
+                parts.append(part)
         for c in nd.get('children', []):
             walk(c, M)
 
