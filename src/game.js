@@ -77,6 +77,7 @@ const GUNS = {
     item: { kind: 'round', grab: [0.1, 0.0, 0.2], mouth: [0, 0, 1], pull: [0.1, -0.03, -0.02] }
   }
 };
+for (const id in GUNS) GUNS[id].id = id;
 const SLOTS = ['ak', 'glock', 'awp', 'mp5', 'p90', 'shotgun', 'mgl'];   // number keys: 1 2 3, then 4 fists and 5 C4, then 6 7 8 9
 await loadCaveman(window.MODEL_B64);
 await loadGun(GUNS.ak, window.GUN_DATA.ak);
@@ -448,8 +449,8 @@ function puff(p, n, color, speed, size, life, grav) {
   for (let i = 0; i < n; i++) particles.push({ p: p.slice(), v: [rand(-1, 1) * speed, rand(-0.2, 1) * speed, rand(-1, 1) * speed], life: rand(0.5, 1) * life, max: life, size: rand(0.6, 1.3) * size, color, grav: grav === undefined ? 4 : grav });
 }
 function muzzleFx(f) {
-  const g = f.gun.g, m = V.add(f.gun.p, M3.vec(f.gun.S, g.muzzle)), fwd = M3.vec(f.gun.R, [0, 0, 1]);
-  flashes.push({ f, life: 0.05, spin: rand(0, Math.PI), size: g.flash * rand(0.85, 1.15), p: m, fwd });
+  const g = f.gun.g, quiet = silenced(f), m = V.add(f.gun.p, M3.vec(f.gun.S, quiet ? V.add(g.muzzle, [0, 0, silencerModel.len]) : g.muzzle)), fwd = M3.vec(f.gun.R, [0, 0, 1]);
+  if (!quiet) flashes.push({ f, life: 0.05, spin: rand(0, Math.PI), size: g.flash * rand(0.85, 1.15), p: m, fwd });
   for (let i = 0; i < 2; i++) particles.push({ p: V.mad(m, fwd, 0.04), v: [fwd[0] * rand(0.3, 1) + rand(-0.2, 0.2), rand(0.15, 0.5), fwd[2] * rand(0.3, 1) + rand(-0.2, 0.2)], life: 0.5, max: 0.5, size: 0.03, color: [0.42, 0.42, 0.45, 0.22], grav: -0.3, grow: 0.22 });
   if (!g.boltAction && !g.pumpAction && !g.noEject) eject(f);
   return m;
@@ -522,6 +523,7 @@ function damage(victim, amount, from, head, exotic) {
   if (!victim.isPlayer && royaleOn()) royaleHurt(victim, from);
   if (victim.ride) bikeHurt(victim, amount);                 // knocked off the bike
   if (victim.isPlayer) {
+    if (royaleOn()) playerHurt(from.br ? bots.find(b => b.br === from.br) : from);
     Sound.play('hurt', 0.8); hudDirty = true;
     const to = V.sub(from.pos, victim.pos), a = Math.atan2(to[0], to[2]) - (cam.yaw + Math.PI);
     ui.hurtDir.style.transform = `rotate(${-a}rad)`; ui.hurtDir.style.opacity = 1; ui.vignette.style.opacity = 1;
@@ -538,13 +540,14 @@ function damage(victim, amount, from, head, exotic) {
 function knockOut(victim, why) {
   victim.hp = 0; victim.dead = 0; victim.reload = -1; victim.crouch = false; victim.tilt = 0;
   victim.hand = null; victim.use = null; victim.thing = null; victim.headTilt = null;
-  if (victim.isPlayer) { game.deaths++; hudDirty = true; abortLoot(); notify(why); if (royaleOn()) royaleLost(); startSend(victim, 1.2); aimDeathCam(); }
+  if (victim.isPlayer) { game.deaths++; hudDirty = true; abortLoot(); notify(why); if (royaleOn()) { closeInventory(false); royaleLost(); dropEverything(victim); } startSend(victim, 1.2); aimDeathCam(); }
   else if (royaleOn()) royaleDeath(victim);
 }
 function fire(f, origin, dir, spread, minT) {
   const g = GUNS[f.weapon], am = f.ammo[f.weapon], rarity = am.rarity || 0, exotic = rarity === EXOTIC;
   am.clip--; f.cool = 60 / g.rate;
-  if (f.isPlayer) f.shotAt = game.time;
+  if (f.isPlayer && !silenced(f)) f.shotAt = game.time;
+  if (f.isPlayer && royaleOn()) hearShot(f);
   const muzzle = muzzleFx(f);
   // a knocked-out body in the way gets shoved
   const shot = d => {
@@ -578,17 +581,18 @@ function fire(f, origin, dir, spread, minT) {
     }
   }
   // recoil on the gun itself
-  f.kickV += g.kickBack * 22; f.riseV += g.climb * 16 * (1 - 0.35 * f.ads); f.roll += rand(-0.05, 0.05); f.bolt = 1;
-  f.bloom = Math.min(g.maxBloom, f.bloom + g.bloom);
+  const grip = attOf(f, f.weapon) && attOf(f, f.weapon).grip ? 0.6 : 1;
+  f.kickV += g.kickBack * 22 * grip; f.riseV += g.climb * 16 * grip * (1 - 0.35 * f.ads); f.roll += rand(-0.05, 0.05) * grip; f.bolt = 1;
+  f.bloom = Math.min(g.maxBloom, f.bloom + g.bloom * grip);
   if (g.boltAction || g.pumpAction) f.cycle = 0;
   f.inspect = -1;
-  if (f.isPlayer) { Sound.play(g.sound, 0.9); if (exotic) Sound.play('exoticshot', 0.7); Sound.play('shell', 0.6); hudDirty = true; }
+  if (f.isPlayer) { Sound.play(silenced(f) ? 'silenced' : g.sound, 0.9); if (exotic) Sound.play('exoticshot', 0.7); Sound.play('shell', 0.6); hudDirty = true; }
   else gunHeard(f, g);
 }
 function startReload(f) {
   if (!f.weapon || f.reload >= 0 || f.equip < 1 || f.cycle >= 0) return;
   const g = GUNS[f.weapon], am = f.ammo[f.weapon];
-  if (am.clip >= g.mag || am.spare <= 0) return;
+  if (am.clip >= magSize(f, f.weapon) || am.spare <= 0) return;
   f.reload = 0; f.inspect = -1;
 }
 
@@ -598,7 +602,7 @@ const keys = new Set();
 const mouse = { fire: false, pressed: false, aim: false, drag: null };
 const game = { running: false, locked: false, lockWorked: false, aimToggle: false, inv: false, enemiesShoot: true, godMode: false, kills: 0, deaths: 0, marker: 0, hurtFade: 0, note: 0, time: 0 };
 const ui = {};
-for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'msg', 'alive', 'alivecount', 'results', 'restitle', 'resplace', 'reskills', 'tabplay', 'tabsettings', 'panelplay', 'panelsettings', 'shadowpick', 'dist', 'distlabel', 'reloadbar', 'boomflash', 'minimap', 'killcount', 'hplag', 'vestlag']) ui[id] = document.getElementById(id);
+for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'msg', 'alive', 'alivecount', 'buildbar', 'results', 'restitle', 'resplace', 'reskills', 'tabplay', 'tabsettings', 'panelplay', 'panelsettings', 'shadowpick', 'dist', 'distlabel', 'reloadbar', 'boomflash', 'minimap', 'killcount', 'hplag', 'vestlag']) ui[id] = document.getElementById(id);
 let hudDirty = true;
 function notify(text) { }                                    // the messages in the middle of the screen are switched off
 
@@ -708,7 +712,6 @@ function fullscreen() {
   if (p && p.then) p.then(() => { if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['KeyW', 'ControlLeft', 'ControlRight']).catch(() => {}); lockMouse(); }).catch(() => {});
 }
 addEventListener('keydown', e => {
-  if (game.running && matchKey(e)) return;                      // the results screen
   if (!game.running) { if (e.code === 'Escape' && !game.lockWorked && game.started) setRunning(true); return; }
   if (e.metaKey || e.altKey) return;
   if (cine.on) {                                              // watching: only pause, sound and fullscreen (no skipping)
@@ -722,21 +725,24 @@ addEventListener('keydown', e => {
   if (e.key === 'Control') { if (!e.repeat) player.crouch = !player.crouch; return; }
   e.preventDefault();
   if (e.code === 'Tab') { if (!e.repeat) toggleInventory(); return; }
+  if (game.running && matchKey(e)) return;                      // the "you lost" screen
   if (e.code === 'Escape' && game.inv) { closeInventory(false); return; }
+  if (e.code === 'KeyE' && game.inv && (game.stash || game.bench)) { if (!e.repeat) closeInventory(true); return; }
   keys.add(e.code);
   if (e.repeat) return;
   if (looting && !['Escape', 'KeyF', 'KeyP', 'KeyM'].includes(e.code)) return;
   if (player.ride && !['Escape', 'KeyF', 'KeyP', 'KeyM', 'KeyT'].includes(e.code) && !(world.asking && e.code.length === 6)) return;   // both hands on the bars
   if (e.code === 'Escape') setRunning(false);
   else if (e.code === 'Space') { if (!FLY.on && !player.pickIt && !player.pickNext && !(player.wearing && player.wearing.started) && !(player.hol && player.hol.mode === 'pick')) startJump(player); }
-  else if (e.code === 'KeyR') startReload(player);
+  else if (e.code === 'KeyR') { if (player.hand === 'hammer') { raid.kind = (raid.kind + 1) % PIECE_ORDER.length; Sound.play('uiclick', 0.8); } else startReload(player); }
   else if (world.asking && ['Digit1', 'Digit2', 'Numpad1', 'Numpad2'].includes(e.code)) { setMap('island', e.code.endsWith('2')); menuTiles(); cineStart(); }
   else if (['Digit1', 'Digit2', 'Digit3', 'Digit4'].includes(e.code)) selectSlot(player, +e.code.slice(5) - 1);
+  else if (/^Digit[567]$/.test(e.code) && player.slots.length > SLOT_COUNT) selectSlot(player, +e.code.slice(5) - 1);
   else if (e.code === 'Digit5' || e.code === 'KeyH') fists(player);
   else if (e.code === 'KeyG') dropGun(player);
   else if (e.code === 'KeyV') { if (player.weapon && player.reload < 0 && player.cycle < 0 && player.equip >= 1 && player.inspect < 0) player.inspect = 0; }
   else if (e.code === 'KeyT') { if (world.map === 'island') { setMap('plate'); menuTiles(); } else askMap(!world.asking); }   // temporary, while the map is being made
-  else if (e.code === 'KeyQ') game.aimToggle = !game.aimToggle;
+  else if (e.code === 'KeyQ') { if (player.hand === 'hammer') { raid.turn = (raid.turn + 1) % 4; Sound.play('uiclick', 0.8); } else game.aimToggle = !game.aimToggle; }
   else if (e.code === 'KeyF') fullscreen();
   else if (e.code === 'KeyN') setFly(!FLY.on);                // developer testing
   else if (e.code === 'KeyP') { game.enemiesShoot = !game.enemiesShoot; ui.shootback.checked = game.enemiesShoot; notify(game.enemiesShoot ? 'Enemies shoot back' : 'Enemies hold fire'); }
@@ -861,7 +867,7 @@ function weaponStep(f, dt) {
     const t = f.reload / g.reload;
     reloadCues(f, g, t0, t);
     if (t >= 1) {
-      const am = f.ammo[f.weapon], n = Math.min(g.mag - am.clip, am.spare);
+      const am = f.ammo[f.weapon], n = Math.min(magSize(f, f.weapon) - am.clip, am.spare);
       am.clip += n; am.spare -= n; f.reload = -1;
       if (f.isPlayer) hudDirty = true;
     }
@@ -877,7 +883,7 @@ function cameraEye() {
   const { fwd, right } = camVectors();
   const at = [player.pos[0] + right[0] * cam.side, player.pos[1] + cam.height + (player.dead < 0 ? player.air * 0.45 : 0), player.pos[2] + right[2] * cam.side];
   if (world.map === 'island') at[1] = Math.max(at[1], floorAt(at[0], at[2], at[1]) + 0.4);     // beside a steep bank
-  if (world.map === 'island' && !FLY.on && houseBlocks(at)) { at[0] = player.pos[0]; at[2] = player.pos[2]; }   // not through a wall
+  if (world.map === 'island' && !FLY.on && (houseBlocks(at) || buildBlocks(at))) { at[0] = player.pos[0]; at[2] = player.pos[2]; }   // not through a wall
   if (world.map === 'island' && !FLY.on) caveShoulder(at);
   let dist = cam.dist;
   if (fwd[1] > 0) dist = Math.min(dist, (at[1] - 0.18) / fwd[1]);
@@ -888,6 +894,8 @@ function respawnPlayer() {
   abortLoot(); endRide(true);
   const f = player;
   if (world.map === 'island') freshPockets(f);
+  else if (f.hasBag) { f.hasBag = false; f.slots.length = SLOT_COUNT; syncInv(f); }
+  if (world.map !== 'island') f.rocks = 0;
   f.holdC4 = false; f.plantT = -1; f.hand = null; f.use = null; f.carry = null; f.thing = null; f.headTilt = null; f.gone = false; f.rag = null;
   f.dead = -1; f.hp = 100; f.vest = 0; f.hasVest = false; grenades.length = 0; f.pos = world.map === 'island' ? [START[0], groundAt(START[0], START[2]), START[2]] : [0, 0, 0]; f.air = 0; f.jump = -1; f.equip = 0;
   deathCam = 0; deathShot = null; hudDirty = true;
@@ -911,10 +919,10 @@ function playerStep(dt) {
   const working = !!g && !!g.boltAction && f.cycle > 0.28 && f.cycle < g.cycle * 0.9;
   const aiming = !!g && (mouse.aim || game.aimToggle) && f.reload < 0 && !working && f.equip > 0.85;
   if (aiming) f.inspect = -1;
-  if (aiming && g.scoped && f.ads < 0.1) Sound.play('scope', 0.9);
+  if (aiming && hasScope(f) && f.ads < 0.1) Sound.play('scope', 0.9);
   const firing = mouse.fire || mouse.pressed;
   const sprint = (keys.has('ShiftLeft') || keys.has('ShiftRight')) && !aiming && !firing && f.reload < 0 && !f.crouch;
-  f.ads += ((aiming ? 1 : 0) - f.ads) * Math.min(1, dt * (g && g.scoped ? 9 : 12));
+  f.ads += ((aiming ? 1 : 0) - f.ads) * Math.min(1, dt * (g && hasScope(f) ? 9 : 12));
   const sprinting = sprint && my > 0 && f.speed > 2.7;
   f.sprintW += ((sprinting && g ? 1 : 0) - f.sprintW) * Math.min(1, dt * 9);
   f.yaw += wrap(cam.yaw + Math.PI - f.yaw) * Math.min(1, dt * 18);
@@ -939,12 +947,13 @@ function playerStep(dt) {
     const trigger = g.auto ? firing : mouse.pressed;
     if (trigger && f.cool <= 0 && f.equip >= 1 && f.reload < 0 && f.sprintW < 0.25 && f.gun) {
       if (am.clip > 0) {
-        const moving = f.speed / 3.8, base = g.scoped ? (scopeAmount() > 0.85 ? 0.0004 : g.spread) : (g.spread + f.bloom) * (1 - 0.65 * f.ads);
+        const att = attOf(f, f.weapon) || {};
+        const moving = f.speed / 3.8, base = hasScope(f) ? (scopeAmount() > 0.85 ? (g.scoped ? 0.0004 : 0.002) : g.spread) : (g.spread + f.bloom) * (1 - (att.dot ? 0.88 : 0.65) * f.ads);
         const spread = base + moving * 0.018 + (f.jump >= 0 ? 0.05 : 0) - (f.crouch ? 0.002 : 0);
         fire(f, view.eye, c.fwd, Math.max(0.001, spread), near);
         // camera recoil: climbs with every round, only part of it settles back
-        const k = g.kickUp * (1 - 0.3 * f.ads) * (f.crouch ? 0.7 : 1);
-        cam.pitch = clamp(cam.pitch - k, -0.75, 1.05); cam.recoil += k * 0.6; cam.yaw += rand(-1, 1) * g.kickSide; cam.shake = Math.min(1, cam.shake + 0.45);
+        const k = g.kickUp * (1 - 0.3 * f.ads) * (f.crouch ? 0.7 : 1) * (att.grip ? 0.55 : 1);
+        cam.pitch = clamp(cam.pitch - k, -0.75, 1.05); cam.recoil += k * 0.6; cam.yaw += rand(-1, 1) * g.kickSide * (att.grip ? 0.55 : 1); cam.shake = Math.min(1, cam.shake + (att.grip ? 0.25 : 0.45));
         mouse.pressed = false;
       } else if (mouse.pressed) { Sound.play('click', 0.9); startReload(f); mouse.pressed = false; }
       else startReload(f);
@@ -1026,6 +1035,8 @@ function update(dt) {
   if (cine.on) return;
   game.time += dt;
   lootPhysics(dt);
+  buildsStep(dt);
+  matchStep();
   stars.length = 0;
   playerStep(dt);
   if (royaleOn()) royaleStep(dt); else bots.forEach((b, i) => botStep(b, i, dt));
@@ -1033,7 +1044,8 @@ function update(dt) {
   sendsStep(dt);
   deathCamStep(dt);
   for (const c of chests) {
-    if (c.t >= 0) { c.t += dt; if (c.t > 25 && !royaleOn()) { c.t = -1; c.loot = null; } }     // on the island an opened chest stays open
+    // on the island a chest fills up again after a few minutes, when you are not there to see it
+    if (c.t >= 0) { c.t += dt; if (c.t > (royaleOn() ? 200 : 25) && (!royaleOn() || Math.hypot(c.pos[0] - player.pos[0], c.pos[2] - player.pos[2]) > 70)) { c.t = -1; c.loot = null; c.open = 0; c.openV = 0; } }
     // the lid is on a spring, so it bounces when it is knocked open
     const to = c.t >= 0 || c.forced ? 1 : 0;
     c.openV += ((to - c.open) * 140 - c.openV * (to ? 11 : 20)) * dt; c.open += c.openV * dt;
@@ -1043,7 +1055,6 @@ function update(dt) {
   }
   effectsStep(dt);
   grenadesStep(dt);
-  matchStep(dt);
   bikesStep(dt);
   wreckStep(dt);
   const k = 1 - Math.exp(-dt * 11), a = player.ads;
@@ -1116,7 +1127,7 @@ function drawGun(prog, textured, g, R, p, o) {
     gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, g.orm);
   }
   drawMesh(prog, g.parts.body, R, p);
-  if (!o.noMag) drawMesh(prog, g.parts.mag, R, o.magOff ? V.add(p, M3.vec(R, o.magOff)) : p);
+  if (!o.noMag && g.parts.mag) { const [mR, mp] = magFrame(g, R, p, o.att); drawMesh(prog, g.parts.mag, mR, o.magOff ? V.add(mp, M3.vec(R, o.magOff)) : mp); }
   drawMesh(prog, g.parts.trigger, R, p);
   if (g.parts.pump) drawMesh(prog, g.parts.pump, R, V.add(p, M3.vec(R, [0, 0, -g.pumpTravel * (o.pump || 0)])));
   if (g.parts.drum) {                                       // the cylinder turns about its own middle
@@ -1128,6 +1139,7 @@ function drawGun(prog, textured, g, R, p, o) {
     drawMesh(prog, g.parts.bolt, M3.mul(R, turn), V.add(p, M3.vec(R, boltMove(g, [0, 0, 0], o.bolt))));
   } else drawMesh(prog, g.parts.bolt, R, V.add(p, M3.vec(R, [0, 0, -g.boltTravel * (o.slide || 0)])));
   if (g.parts.lens) { flat(prog, [0.02, 0.05, 0.09], 0.12, 0.85); drawMesh(prog, g.parts.lens, R, p); }
+  if (o.att) drawAttachments(prog, textured, g, R, p, o.att);
 }
 function drawStatics(prog, textured, hideSelf) {
   for (const f of fighters) {
@@ -1145,8 +1157,10 @@ function drawStatics(prog, textured, hideSelf) {
         o.slide = slide;
       }
     }
+    o.att = attOf(f, g.id);
     drawGun(prog, textured, g, R, p, o);
   }
+  drawBags(prog, textured, hideSelf);
   for (const f of fighters) drawStowed(prog, textured, f, hideSelf);
   for (const f of fighters) {
     if ((hideSelf && f.isPlayer) || f.gone || !f.vis || f.away > 30) continue;
@@ -1155,6 +1169,7 @@ function drawStatics(prog, textured, hideSelf) {
     if (f.holdThing) drawThing(prog, f.holdThing.kind, f.holdThing.R, f.holdThing.p);
   }
   drawFloorLoot(prog, textured);
+  drawBuilds(prog, textured);
   drawGrenades(prog);
   const chestRange = !textured ? 16 : world.low ? 60 : 110;
   for (const c of chests) {
@@ -1241,7 +1256,8 @@ function render() {
   const sh = cam.shake * cam.shake * 0.012;
   const eye = V.add(view.eye, [rand(-sh, sh), rand(-sh, sh), rand(-sh, sh)]);
   if (world.map === 'island') eye[1] = Math.max(eye[1], floorAt(eye[0], eye[2], eye[1]) + 0.18);   // never inside a hill
-  const fov = cam.fov + (0.17 - cam.fov) * smooth(0.45, 1, sc);
+  const zoom = player.weapon && GUNS[player.weapon].scoped ? 0.17 : 0.34;
+  const fov = cam.fov + (zoom - cam.fov) * smooth(0.45, 1, sc);
   const proj = perspective(fov, w / Math.max(1, h), 0.08, settings.chunks ? viewRange() + 8 : world.map !== 'island' ? 160 : FLY.on ? 2200 : world.low ? 300 : 600);
   const vp = mul4(proj, lookAt(eye, V.add(eye, view.fwd)));
   lastView = { vp, w: canvas.clientWidth, h: canvas.clientHeight };
@@ -1301,6 +1317,7 @@ function hotbarRender() {
   }
   const held = heldSlot(player), put = (t, cls, rarity) => { if (t.cls !== cls) { t.el.className = cls; t.cls = cls; } t.el.style.setProperty('--r', rarity || ''); };
   put(hotTiles[0], 'hot' + (held < 0 ? ' on' : ''), '');
+  for (let k = 1; k < hotTiles.length; k++) hotTiles[k].el.hidden = k > player.slots.length;
   player.slots.forEach((q, k) => {
     const t = hotTiles[k + 1];
     if (!q) { put(t, 'hot empty', ''); t.img.hidden = true; t.count.textContent = ''; return; }
@@ -1312,7 +1329,7 @@ function hotbarRender() {
   });
 }
 // the item pictures take a moment to draw, so they are made a few at a time while the game is quiet
-const iconQueue = [...Object.keys(GUNS).map(id => 'gun:' + id), 'c4', 'plate', ...Object.keys(FOOD)];
+const iconQueue = [...Object.keys(GUNS).map(id => 'gun:' + id), 'c4', 'plate', ...Object.keys(FOOD), 'hammer', 'bag', 'rocks'];
 function project(p) {
   const m = lastView.vp, x = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], y = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
   return w > 0.1 ? [(x / w * 0.5 + 0.5) * lastView.w, (0.5 - y / w * 0.5) * lastView.h] : null;
@@ -1325,16 +1342,16 @@ function hud(dt) {
     hudDirty = false;
     const g = player.weapon ? GUNS[player.weapon] : null, am = g && player.ammo[player.weapon];
     const r = g ? RARITY[rarityOf(player, player.weapon)] : null;
-    ui.weapon.textContent = player.ride ? 'Tiny bike' : g ? r.name + ' ' + g.name : player.holdC4 ? 'C4' : player.hand ? (player.hand === 'plate' ? 'Vest plate' : FOOD[player.hand].name) : 'Fists';
+    ui.weapon.textContent = player.ride ? 'Tiny bike' : g ? r.name + ' ' + g.name : player.holdC4 ? 'C4' : player.hand ? (player.hand === 'plate' ? 'Vest plate' : player.hand === 'hammer' ? 'Hammer' : FOOD[player.hand].name) : 'Fists';
     ui.weapon.style.color = g && !player.ride ? r.css : '';
-    ui.ammo.innerHTML = g ? `<b class="${am.clip <= g.mag * 0.2 ? 'low' : ''}">${am.clip}</b> / ${am.spare}` : '';
+    ui.ammo.innerHTML = g ? `<b class="${am.clip <= magSize(player, player.weapon) * 0.2 ? 'low' : ''}">${am.clip}</b> / ${am.spare}` : '';
     ui.hp.textContent = Math.ceil(player.hp); ui.hpfill.style.width = ui.hplag.style.width = player.hp + '%'; ui.hp.parentNode.classList.toggle('low', player.hp < 30);
     ui.vestbox.hidden = !player.hasVest && !(player.vest > 0); ui.vest.textContent = player.vest > 0 ? Math.ceil(player.vest) : 'broken'; ui.vestfill.style.width = ui.vestlag.style.width = player.vest / VEST * 100 + '%';
     hotbarRender();
     if (game.inv) invRender();
     ui.score.textContent = `Knockouts ${game.kills} · Deaths ${game.deaths}`;
     ui.killcount.textContent = game.kills;
-    ui.alive.hidden = !royaleOn(); ui.alivecount.textContent = playersLeft();
+    ui.alive.hidden = !royaleOn(); ui.alivecount.textContent = (player.rocks || 0).toLocaleString('en-US');
   }
   const g = player.weapon ? GUNS[player.weapon] : null;
   if (lastView) {
@@ -1349,6 +1366,7 @@ function hud(dt) {
   ui.hurtDir.style.opacity = game.hurtFade;
   game.note = Math.max(0, game.note - dt); if (!game.note) ui.note.style.opacity = 0;
   hudLoot(dt);
+  buildBar();
   const sc = scopeAmount();
   ui.scope.style.opacity = smooth(0.5, 0.9, sc);
   if (sc > 0.4 || looting) ui.cross.style.opacity = 0;
@@ -1361,8 +1379,9 @@ function healthBars() {
   const want = [], most = Math.min(60, viewRange()), br = royaleOn();
   if (lastView && scopeAmount() < 0.5) for (const b of bots) {
     if (b.gone) continue;
-    const alive = b.dead < 0, body = b.dead >= 1.2 && !b.looted && !looting && !b.send && (!br || b.inv.length > 0);
-    if (!(alive ? !br || (game.time - (b.hitByYou || -99) < 5) : body)) continue;
+    const alive = b.dead < 0, body = b.dead >= 1.2 && !b.looted && !looting && !b.send && (!br || b.inv.length > 0 || b.rocks > 0);
+    const friend = br && b.br && (b.br.crew || b.br.friendly);
+    if (!(alive ? !br || (game.time - (b.hitByYou || -99) < 5) || (friend && b.away < 30) : body)) continue;
     const at = alive ? V.add(b.pos, [0, b.crouch ? 1.6 : 1.92, 0]) : [b.pos[0] - Math.sin(b.yaw) * 0.8, b.pos[1] + 0.75 + Math.sin(game.time * 5) * 0.08, b.pos[2] - Math.cos(b.yaw) * 0.8];
     const d = Math.hypot(at[0] - player.pos[0], at[2] - player.pos[2]);
     if (d < (br && body ? 14 : most)) want.push({ b, at, d, body });
@@ -1377,6 +1396,8 @@ function healthBars() {
     const el = barEls[used++];
     el.style.display = 'block';
     el.classList.toggle('loot', q.body);
+    el.classList.toggle('friend', !q.body && !!q.b.br && !!q.b.br.friendly && !q.b.br.crew);
+    el.classList.toggle('crew', !q.body && !!q.b.br && !!q.b.br.crew);
     el.classList.toggle('soon', q.body && q.b.dead > (br ? 40 : LOOT_WINDOW) - 3);
     el.style.left = p[0] + 'px'; el.style.top = p[1] + 'px'; el.firstElementChild.style.width = q.b.hp + '%';
   }
@@ -1413,13 +1434,14 @@ requestAnimationFrame(frame);
 
 // hooks used by the automated checks
 window.__game = {
-  ready: true, rig: Rig, player, bots, fighters, chests, floorLoot, dropLoot, takeItem, selectSlot, rollLoot, rollRarity, newMatch, get match() { return match; }, playersLeft, footstep, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
+  ready: true, icon: itemIcon, rig: Rig, player, bots, fighters, chests, floorLoot, dropLoot, takeItem, selectSlot, rollLoot, rollRarity, newMatch, get match() { return match; }, footstep, cam, game, mouse, keys, GUNS, world, setMap, groundAt, solids,
   step(seconds) { manual = true; for (let t = 0; t < seconds - 1e-6; t += 1 / 60) { update(1 / 60); render(); hud(1 / 60); } },
   draw() { manual = true; render(); hud(0); },
   tick(dt) { manual = true; update(dt); },                    // the world only, no drawing
   ensure(f) { f.posedT = -1; ensurePosed(f); },
   resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE, bikes, HOUSES, houseWorld,
   look(eye, at) { testView = eye ? { eye, at } : null; },
+  raid, addPiece, newPiece, placeBlock, removePiece, buildRay, explode, planted, benchBuy, openInventory, closeInventory,
   cine, CINE, TRIP, Sound, cineStart, settings, setShadows, setDistance, get wreck() { return wreck; },
   watch(t) { manual = true; if (!cine.on || t < cine.t) { cineStart(); render(); } while (cine.on && cine.t < t - 1e-6) cineStep(Math.min(1 / 20, t - cine.t)); render(); if (cine.on) cineOverlay(0); },
   get looting() { return looting; },

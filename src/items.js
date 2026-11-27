@@ -21,9 +21,16 @@ function rollRarity() {
 const FOOD = { fish: { name: 'Fish', heal: 35 }, meat: { name: 'Meat stick', heal: 60 } };
 const GUN_ODDS = [['glock', 0.25], ['mp5', 0.18], ['ak', 0.19], ['shotgun', 0.13], ['p90', 0.12], ['awp', 0.09], ['mgl', 0.04]];
 function rollGun() { let r = Math.random(); for (const [id, share] of GUN_ODDS) if ((r -= share) < 0) return id; return 'glock'; }
-const gunItem = (id, rarity, clip, spare) => ({ t: 'gun', id, rarity: rarity || 0, clip: clip === undefined ? GUNS[id].mag : clip, spare: spare === undefined ? GUNS[id].mag * 2 : spare });
+const gunItem = (id, rarity, clip, spare, att) => ({ t: 'gun', id, rarity: rarity || 0, clip: clip === undefined ? GUNS[id].mag : clip, spare: spare === undefined ? GUNS[id].mag * 2 : spare, att });
 // what is in one chest: a gun is likely, never certain
 function rollLoot() {
+  if (royaleOn()) {                                            // on the island there is also something to build with and to carry it in
+    const k = Math.random();
+    if (k < 0.07) return { t: 'hammer' };
+    if (k < 0.11) return { t: 'bag' };
+    if (k < 0.18) return { t: 'c4' };
+    if (k < 0.30) return { t: 'rocks', n: 10 + Math.floor(Math.random() * 50) };
+  }
   const r = Math.random();
   if (r < 0.46) return gunItem(rollGun(), rollRarity());
   if (r < 0.575) return { t: 'fish' };
@@ -35,7 +42,8 @@ function rollLoot() {
 function lootName(it) {
   if (it.t === 'gun') return RARITY[it.rarity].name + ' ' + GUNS[it.id].name;
   const n = it.n > 1 ? ' ×' + it.n : '';
-  return (it.t === 'vest' ? 'bulletproof vest' : it.t === 'ammo' ? 'ammo box' : it.t === 'plate' ? 'vest plate' : it.t === 'c4' ? 'C4' : FOOD[it.t].name.toLowerCase()) + n;
+  if (it.t === 'rocks') return it.n + ' shiny rocks';
+  return (it.t === 'vest' ? 'bulletproof vest' : it.t === 'ammo' ? 'ammo box' : it.t === 'plate' ? 'vest plate' : it.t === 'c4' ? 'C4' : it.t === 'hammer' ? 'stone hammer' : it.t === 'bag' ? 'black duffel bag' : FOOD[it.t].name.toLowerCase()) + n;
 }
 const rarityOf = (f, id) => (f.ammo[id] && f.ammo[id].rarity) || 0;
 
@@ -59,6 +67,15 @@ function syncC4(f) {
 // put something in a pocket. swap: with no room, what is in your hand goes on the floor. false if it would not fit
 function takeItem(f, it, swap) {
   hudDirty = true;
+  if (it.t === 'rocks') {                                      // shiny rocks go in their own pouch, up to ROCK_MAX
+    const room = ROCK_MAX - (f.rocks || 0);
+    if (room <= 0) return false;
+    f.rocks = addRocks(f.rocks || 0, it.n || 1);
+    if ((it.n || 1) > room) dropLoot({ t: 'rocks', n: it.n - room }, f.pos, 0.5);
+    return true;
+  }
+  if (it.t === 'bag') return putOnBag(f);
+  if (it.t === 'hammer' && findSlot(f, 'hammer') >= 0) return false;
   if (it.t === 'vest') { f.vest = VEST; f.hasVest = true; if (f.isPlayer) f.wearing = { t: 0, started: false }; return true; }
   if (it.t === 'ammo') {
     if (!f.inv.length) f.bank = (f.bank || 0) + 1;             // saved for the next gun you get
@@ -68,6 +85,7 @@ function takeItem(f, it, swap) {
   if (it.t === 'gun' && findSlot(f, 'gun', it.id) >= 0) {      // one of each: keep the better colour, pocket the bullets
     const am = f.ammo[it.id];
     if (it.rarity > (am.rarity || 0)) am.rarity = it.rarity;
+    if (it.att) am.att = Object.assign({}, it.att, am.att);
     addAmmo(f, it.id, it.clip + it.spare);
     return true;
   }
@@ -88,7 +106,7 @@ function takeItem(f, it, swap) {
   }
   if (it.t === 'gun') {
     f.slots[k] = { t: 'gun', id: it.id };
-    f.ammo[it.id] = { clip: it.clip, spare: it.spare, rarity: it.rarity };
+    f.ammo[it.id] = { clip: it.clip, spare: it.spare, rarity: it.rarity, att: it.att };
     syncInv(f);
     if (f.bank) { addAmmo(f, it.id, GUNS[it.id].mag * 2 * f.bank); f.bank = 0; }
   } else if (it.t === 'c4') { f.slots[k] = { t: 'c4' }; f.c4 = Math.min(C4_MAX, it.n || 1); }
@@ -100,7 +118,7 @@ function emptySlot(f, k) {
   const s = f.slots[k];
   if (!s) return null;
   let it;
-  if (s.t === 'gun') { const am = f.ammo[s.id]; it = gunItem(s.id, am.rarity, am.clip, am.spare); }
+  if (s.t === 'gun') { const am = f.ammo[s.id]; it = gunItem(s.id, am.rarity, am.clip, am.spare, am.att); }
   else if (s.t === 'c4') it = { t: 'c4', n: f.c4 };
   else it = { t: s.t, n: s.n };
   const held = heldSlot(f) === k;
@@ -126,7 +144,7 @@ function selectSlot(f, k) {
 }
 // what you set out with: nothing
 function freshPockets(f) {
-  f.slots = emptySlots(); f.inv = []; f.ammo = {}; f.weapon = null; f.hand = null; f.use = null; f.holdC4 = false; f.bank = 0; f.c4 = 0; f.vest = 0; f.hasVest = false;
+  f.slots = emptySlots(); f.inv = []; f.ammo = {}; f.weapon = null; f.hand = null; f.use = null; f.holdC4 = false; f.bank = 0; f.c4 = 0; f.vest = 0; f.hasVest = false; f.hasBag = false; f.rocks = 0;
   hudDirty = true;
 }
 
@@ -176,7 +194,8 @@ function drawLoot(prog, kind, R, p, mode) {
 }
 // kind: fish, meat, plate, ammo, vest, c4. R may already be scaled; held things turn about their middle
 function drawThing(prog, kind, R, p) {
-  if (kind === 'ammo') { for (const part of ammoShape) { flat(prog, part.color, part.rough, part.metal); drawMesh(prog, part.mesh, R, p); } }
+  if (RAID_THINGS[kind]) drawRaidThing(prog, kind, R, p);
+  else if (kind === 'ammo') { for (const part of ammoShape) { flat(prog, part.color, part.rough, part.metal); drawMesh(prog, part.mesh, R, p); } }
   else if (kind === 'c4') drawC4(prog, p, R, false, 0);
   else drawLoot(prog, kind, R, p, 2);
 }
@@ -241,21 +260,22 @@ function drawFloorLoot(prog, textured) {
   }
   for (const f of fighters) if (f.pickNext && !f.pickNext.kind) {                  // the gun he is about to pick up still lies where it was
     const st = f.pickNext, g = GUNS[st.id], spin = M3.ry(st.a), lift = 0.04 * Math.sin(game.time * 2.2);
-    drawGun(prog, textured, g, spin.map(x => x * g.scale), V.add(st.floorP, V.add([0, 0.30 + lift, 0], M3.vec(spin, [0, 0, -0.18 * g.scale]))), {});
+    drawGun(prog, textured, g, spin.map(x => x * g.scale), V.add(st.floorP, V.add([0, 0.30 + lift, 0], M3.vec(spin, [0, 0, -0.18 * g.scale]))), { att: st.att });
   }
   for (let i = pickFlyers.length - 1; i >= 0; i--) {
     const q = pickFlyers[i], u = clamp((game.time - q.t0) / 0.30, 0, 2);
     if (u >= 1) { pickFlyers.splice(i, 1); continue; }
     const e = smooth(0, 1, u), to = q.hand && player.wp[IDX.hand_R] ? bonePos(player, 'hand_R') : toWorld(player, [-0.28, 0.95, 0.12]), sc = 1 - (q.hand ? 0 : 0.75) * e;
     const at = V.add(V.lerp(q.from, to, e), [0, 0.35 * Math.sin(Math.PI * e), 0]), spin = q.hand ? M3.mix(M3.ry(q.a), M3.ry(player.yaw), e) : M3.ry(q.a + game.time * 0.9);     // keeps the slow turn it had on the floor, then settles pointing the way he faces
-    if (q.item.t === 'gun') { const g = GUNS[q.item.id]; drawGun(prog, textured, g, spin.map(x => x * g.scale * sc), V.add(at, M3.vec(spin, [0, 0, -0.18 * g.scale * sc])), {}); }
+    if (q.item.t === 'gun') { const g = GUNS[q.item.id]; drawGun(prog, textured, g, spin.map(x => x * g.scale * sc), V.add(at, M3.vec(spin, [0, 0, -0.18 * g.scale * sc])), { att: q.item.att }); }
     else drawThing(prog, q.item.t, spin.map(x => x * 1.15 * sc), at);
   }
   for (const o of floorLoot) {
     if (!lootSeen(o)) continue;
     const it = o.item, R = o.rest || o.settle !== undefined ? lootRestR(o) : o.R, loose = !o.rest && o.settle === undefined;
     // lying on the ground, not floating: a gun on its side, everything else on its underside
-    if (it.t === 'gun') { const g = GUNS[it.id], S = (o.rest ? R : o.R).map(x => x * g.scale); drawGun(prog, textured, g, S, V.add(o.p, M3.vec(S, [0, -0.04, -0.1])), {}); continue; }
+    if (it.t === 'gun') { const g = GUNS[it.id], S = (o.rest ? R : o.R).map(x => x * g.scale); drawGun(prog, textured, g, S, V.add(o.p, M3.vec(S, [0, -0.04, -0.1])), { att: it.att }); continue; }
+    if (RAID_THINGS[it.t]) { drawRaidLoot(prog, textured, o, R); continue; }
     if (it.t === 'c4') { drawC4(prog, V.add(o.p, [0, 0.02, 0]), R, false, 0); continue; }
     if (it.t === 'ammo') { drawThing(prog, 'ammo', R, V.add(o.p, [0, 0.06, 0])); continue; }
     drawLoot(prog, it.t, loose ? o.R : R, o.p, loose ? 1 : 0);
@@ -264,8 +284,8 @@ function drawFloorLoot(prog, textured) {
 // the coloured glow that says how good it is
 function drawLootGlow(quad, right) {
   for (const o of floorLoot) {
-    if (!lootSeen(o) || o.item.t !== 'gun') continue;
-    const it = o.item, c = it.t === 'gun' ? RARITY[it.rarity].col : FOOD[it.t] ? [0.9, 0.35, 0.2] : it.t === 'plate' || it.t === 'vest' ? [0.25, 0.55, 0.75] : [0.6, 0.55, 0.2];
+    if (!lootSeen(o) || (o.item.t !== 'gun' && o.item.t !== 'rocks')) continue;
+    const it = o.item, c = it.t === 'gun' ? RARITY[it.rarity].col : it.t === 'rocks' ? [0.2, 0.8, 0.9] : FOOD[it.t] ? [0.9, 0.35, 0.2] : it.t === 'plate' || it.t === 'vest' ? [0.25, 0.55, 0.75] : [0.6, 0.55, 0.2];
     const k = it.t === 'gun' ? 0.55 + 0.1 * it.rarity : 0.4;
     quad([o.p[0], o.p[1] + 0.03, o.p[2]], [0.42, 0, 0], [0, 0, 0.42], [c[0] * k, c[1] * k, c[2] * k, k]);
     if (it.t === 'gun' && it.rarity >= 2) {
@@ -293,6 +313,7 @@ function plateGoals(p) {
 const foodGoal = p => ({ R: hand(V.add(p, [-0.05, -0.03, -0.02]), [0.55, 0.35, 0.75], [0.3, 0.8, -0.5], [-1, -0.7, -0.2], 1.15) });
 const HOLD_PLATE = [0, 1.14, 0.36], HOLD_FOOD = [-0.2, 1.12, 0.36];
 function holdThingPose(f, t) {
+  if (t === 'hammer') { hammerPose(f); return; }
   if (t === 'plate') { f.carry = plateGoals(HOLD_PLATE); f.thing = { kind: t, p: HOLD_PLATE, R: M3.rx(-0.3) }; }
   else { f.carry = foodGoal(HOLD_FOOD); f.thing = { kind: t, p: HOLD_FOOD, R: M3.ry(1.2) }; }
 }
@@ -418,6 +439,7 @@ function itemStep(f, dt) {
   const h = f.hold || (f.hold = { kind: null, w: 0 });
   if (f.hand && findSlot(f, f.hand) < 0) { f.hand = null; f.use = null; }
   const free = f.dead < 0 && !looting && !f.ride && !f.hol && !f.weapon;      // hands not busy with a gun
+  if (f.hand !== 'hammer' || !free) { raid.ghost = null; raid.rightWas = mouse.aim; }
   if (!f.hand || !free) {
     f.use = null;
     if (!free) h.w = 0; else h.w = Math.max(0, h.w - dt / 0.22);
@@ -425,6 +447,11 @@ function itemStep(f, dt) {
     return;
   }
   if (h.kind !== f.hand) { h.kind = f.hand; h.w = 0; }
+  if (f.hand === 'hammer') {                                   // building
+    h.w = Math.min(1, h.w + dt / 0.30);
+    if (raidOn()) buildStep(f, dt);
+    hammerPose(f); holdBlend(f, h); return;
+  }
   if (!f.use) h.w = Math.min(1, h.w + dt / 0.30);
   if (!f.use && h.w >= 0.9 && mouse.pressed && !useBlock(f, f.hand)) { f.use = { t: f.hand, time: 0 }; mouse.pressed = false; }
   if (!f.use) { holdThingPose(f, f.hand); holdBlend(f, h); return; }

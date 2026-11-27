@@ -414,9 +414,14 @@ function explode(c, owner) {
   for (const v of [player, ...bots]) {
     const dd = Math.hypot(v.pos[0] - c[0], v.pos[2] - c[2]);
     // your own bomb counts as your knockout (but blowing yourself up doesn't)
-    if (v.dead < 0 && dd < 8) damage(v, dd < 3 ? 150 : Math.round(25 + 75 * (1 - dd / 8)), { pos: c, isPlayer: !!(owner && owner.isPlayer && v !== owner), blast: true });
+    if (v.dead < 0 && dd < 8) {
+      // a wall between takes most of it
+      const to = V.sub(V.add(v.pos, [0, 1, 0]), c), len = V.len(to) || 1, shield = buildRay(V.mad(c, to, 0.25 / len), V.mul(to, 1 / len), len - 0.3).piece ? 0.3 : 1;
+      damage(v, Math.round((dd < 3 ? 150 : 25 + 75 * (1 - dd / 8)) * shield), { pos: c, isPlayer: !!(owner && owner.isPlayer && v !== owner), blast: true, br: owner && owner.br });
+    }
     else if (v.rag && !v.gone) ragBlast(v, c, 10);            // bodies already down get thrown too
   }
+  raidBlast(c, owner);
 }
 // what an explosion keeps doing after the bang
 function blastsStep(dt) {
@@ -598,7 +603,7 @@ function bombStep(s, dt) {
       S.arms.L = hand(V.add(onBelly, [0.1, 0.09, 0.0]), [0, -0.6, 1], [0, -1, -0.6], [1, -0.6, -0.3], 0.3);
       const W = (wrist, dir, palm, pole, curl) => ({ wrist, dir: V.norm(dir), palm, pole, curl: [curl, curl] });
       const BACK = [-0.24, 0.38, -0.17], UP = [-0.13, 0.8, 0.34], OUT = [-0.5, 0.62, 0.32], SHOULDER = [-0.22, 1.12, -0.12];
-      const mouth = V.add(h.wp[IDX.head], [-0.03, 0.0, 0.12]);
+      const mouth = V.add(h.wp[IDX.head] || Rig.rest[IDX.head], [-0.03, 0.0, 0.12]);
       let R = null;
       if (u < TOSS) {                                           // reaches round to his back, grabs the roll off his hip, brings it out
         const reach = smooth(0, 0.26, u), out = smooth(GRAB + 0.04, TOSS, u);
@@ -730,6 +735,9 @@ function giveC4(f, n) { takeItem(f, { t: 'c4', n: n || 1 }, false); }
 // where it goes: a body's belly if there is one close in front, otherwise the ground in front of you
 function plantSpot(f) {
   const fwd = [Math.sin(f.yaw), 0, Math.cos(f.yaw)], at = V.mad(f.pos, fwd, 0.74);
+  // a wall right there: it sticks to the wall
+  const chest = V.add(f.pos, [0, 1.0, 0]), hit = buildRay(chest, fwd, 1.3);
+  if (hit.piece && (hit.piece.kind === 'wall' || hit.piece.kind === 'door')) { const p = V.mad(chest, fwd, hit.t - 0.015); p[1] = f.pos[1] + 0.8; return { p, wall: true }; }
   for (const b of bots) {
     if (b.dead < 1 || b.send || b.gone) continue;
     const belly = bellyTop(b);
@@ -785,7 +793,7 @@ function c4Step(f, dt) {
   f.scriptW = smooth(0, 0.12, t) * (1 - smooth(PLANT - 0.15, PLANT, t));
   if (crossed(PL.set)) {                                         // it's down
     f.c4--;
-    f.plantBomb = { p: f.plantAt.p.slice(), R: M3.ry(f.plantYaw), t: 0, owner: f, armed: false };
+    f.plantBomb = { p: f.plantAt.p.slice(), R: f.plantAt.wall ? M3.mul(M3.ry(f.plantYaw), M3.rx(-Math.PI / 2)) : M3.ry(f.plantYaw), t: 0, owner: f, armed: false };
     planted.push(f.plantBomb);
     Sound.play('set', 0.8); hudDirty = true;
   }
@@ -832,7 +840,7 @@ function sendsStep(dt) {
     if (s.t >= s.end) {
       const f = s.f;
       endSend(f);
-      if (royaleOn()) f.gone = true;                         // on the island there is no coming back
+      if (royaleOn()) f.gone = true;                         // you stay out; the others turn up again later
       else if (!f.isPlayer) spawnBot(f, bots.indexOf(f)); else respawnPlayer();
     }
   }

@@ -778,6 +778,12 @@ const Sound = (() => {
     plateout: v => { ping(520, 0.18, 0.16 * v); burst(0.07, 1700, 0.28 * v, 'bandpass', 0, 1.2); },
     clank: v => { ping(430 * r(0.95, 1.05), 0.7, 0.32 * v, 0, 'room'); burst(0.04, 2200, 0.5 * v, 'bandpass', 0, 2); },
     velcro: v => { let at = 0; for (let i = 0; i < 20; i++) { at += 0.009 + Math.random() * 0.004; burst(0.012, 1800 + i * 140 + Math.random() * 700, 0.24 * v, 'bandpass', at, 1.8); } },
+    // building, and the things you rob
+    hammer: v => { for (const at of [0, 0.13]) { tone(190, 85, 0.1, 0.65 * v, at, 'triangle'); burst(0.05, 1100, 0.55 * v, 'bandpass', at, 2.5); burst(0.02, 3600, 0.3 * v, 'bandpass', at, 4); } },
+    logbreak: v => { burst(0.45, 900, 1.0 * v, null); tone(120, 40, 0.35, 0.9 * v); for (let i = 0; i < 12; i++) burst(0.04, 700 + Math.random() * 2200, 0.4 * v, 'bandpass', Math.random() * 0.45, 4); },
+    rocks: v => { for (let i = 0; i < 5; i++) tone(2200 + Math.random() * 2200, 2000 + Math.random() * 2000, 0.09, 0.1 * v, i * 0.045 + Math.random() * 0.02, 'sine'); burst(0.05, 5200, 0.18 * v, 'bandpass', 0, 3); },
+    horn: v => { for (const [at, f] of [[0, 150], [0.55, 150], [1.1, 112]]) { tone(f, f * 1.03, 0.45, 0.3 * v, at, 'sawtooth'); tone(f * 1.5, f * 1.54, 0.45, 0.12 * v, at, 'sawtooth'); } },
+    silenced: v => { burst(0.07, 1500, 0.75 * v, 'bandpass', 0, 1.2); burst(0.13, 520, 0.6 * v, null); tone(160, 60, 0.07, 0.35 * v, 0, 'triangle'); burst(0.02, 4200, 0.2 * v, 'bandpass', 0.02, 4); },
     platein: v => { tone(150, 62, 0.14, 0.75 * v); burst(0.09, 900, 0.5 * v, 'bandpass', 0, 2); ping(700, 0.22, 0.14 * v, 0.02); burst(0.03, 3200, 0.5 * v, 'bandpass', 0.11, 5); },
     vestbreak: v => { burst(0.06, 4800, 0.9 * v, 'highpass', 0, 0, 'grit'); ping(620, 0.35, 0.28 * v, 0, 'room'); for (let i = 0; i < 9; i++) ping(r(900, 3400), 0.07, 0.07 * v, r(0.03, 0.35)); tone(180, 55, 0.2, 0.5 * v); },
     oogaq: v => { voice([[0, 175], [0.2, 150]], [[0, 'oo'], [0.2, 'oo']], 0.24, 0.65 * v); voice([[0, 160], [0.1, 190], [0.42, 360]], [[0, 'uh'], [0.1, 'ah'], [0.42, 'ah']], 0.48, 0.65 * v, 0.26); },

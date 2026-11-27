@@ -246,7 +246,7 @@ function drawStowed(prog, textured, f, hideSelf) {
     if (f.gun && f.gun.g === g) continue;                        // that one is in his hands (or on its way)
     if ((f.hol && f.hol.id === id) || (f.pickNext && f.pickNext.id === id)) continue;     // still on the floor, or being picked up
     const m = mountLocal(f, id);
-    drawGun(prog, textured, g, M3.mul(f.R, m.R).map(x => x * g.scale), toWorld(f, m.p), {});
+    drawGun(prog, textured, g, M3.mul(f.R, m.R).map(x => x * g.scale), toWorld(f, m.p), { att: attOf(f, id) });
   }
 }
 

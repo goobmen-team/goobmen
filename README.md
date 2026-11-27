@@ -6,8 +6,13 @@ A third-person caveman fighting game with real guns. Loot chests, fight other ca
 
 On the menu pick **Baseplate** or **Island**. The island starts with a boat trip: you in your gold shades, your mate at the wheel, a boombox and a few cans, and then a rock. You wake up on the beach with the boat still burning, get up, and throw the shades in the sand. It can't be skipped.
 
-**The island is a battle royale:** 100 cavemen (you and 99 others), last one standing. Some hide in caves in little groups, the rest roam, loot chests, ride bikes and fight each other. The count of who is left sits beside your knockouts. You start with nothing. **Baseplate** stays as a practice floor.
+**The island is a robbing game:** 99 other cavemen live there. Tribes hole up in the caves behind a door with a stash at the back, others build little log forts, the rest roam. They loot chests, rob each other and you, and carry what they took home. A few are friendly and will join you (up to three). You start with nothing and have **one life**: if you die you lose, and Enter starts a new island. **Baseplate** stays as a practice floor.
 
+- **Shiny rocks** are the money. They take no pocket; you can carry 25,000.
+- **Building** takes the stone hammer (your first chest has one): log wall, door wall, stash, work table.
+- **Robbing:** hold E on a stash to break in. If walls are in the way, blow them up with C4.
+- **Work table:** silencer, red dot, scope, grip and bigger magazine for your guns (no silencer on an Exotic), plus C4, plates, a vest, a hammer or a duffel bag.
+- **Black duffel bag:** worn across your back, takes you from four pockets to seven.
 - Four pockets for weapons, food (fish and meat sticks heal you), plates and C4. Ammo takes no pocket.
 - Weapons come in Common (grey), Uncommon (green), Rare (blue), Epic (purple) and Legendary (gold). Rarer hits harder. Any weapon has a 0.5% chance to be Exotic, which knocks out in one shot, vest or not.
 - Plates mend your bulletproof vest.
@@ -30,8 +35,11 @@ The **Settings** tab on the menu (also there when you pause with Esc) has shadow
 | G / E | drop what you hold / pick it up |
 | Hold X | drag a knocked-out caveman (bodies are ragdolls: shove, shoot or blow them around) |
 | E by a bike | ride the tiny bike: W/S pedal and brake, A/D or mouse steer, Shift faster, Space hop, click for the bell, E to get off |
-| 1, 2, 3, 4 or wheel | pick a pocket |
-| H or 5 | fists |
+| 1, 2, 3, 4 or wheel (5 to 7 with a duffel bag) | pick a pocket |
+| H | fists |
+| Hammer, then left click | build (island). R: next piece, Q: turn it, right click: knock yours down |
+| E by a stash or work table | open it (hold E to break into someone else's stash) |
+| E by a friendly caveman | team up; again to make him guard or follow |
 | Tab | inventory: drag to rearrange, drag outside (or right-click) to drop |
 | Left click with food or a plate | eat it / put it in your vest |
 | Left click with C4 | plant it (5 s fuse; on a knocked-out caveman too) |
@@ -48,8 +56,9 @@ The **Settings** tab on the menu (also there when you pause with Esc) has shadow
 - `assets/`: the caveman model and gun data (`guns2.json` is made by `tools/make_guns.py`)
 - `assets/c4.json`: the bomb, made from a Sketchfab model by `tools/make_c4.py`
 - `assets/house.json`, `assets/bike.json`: the abandoned house and the BMX bike, made by `tools/make_scenery.py`
-- `src/inventory.js`: the Tab inventory
-- `src/items.js`, `src/royale.js`: pockets, rarities, food and plates; the battle royale and the other cavemen
+- `src/inventory.js`: the Tab inventory, stash and work table screens
+- `src/raid.js`, `src/raidmodels.js`: building, stashes, C4 on walls, weapon parts; their models, made in code
+- `src/items.js`, `src/royale.js`: pockets, rarities, food and plates; the other cavemen: tribes, forts, raids and friends
 - `src/houses.js`, `src/bike.js`: house walls and drawing; riding, tricks and crashes
 - `src/cutscene.js`: the boat trip, the sea and the wreck on the beach
 - `src/models.js`: the sunglasses, captain's hat, boat, boombox, cans and rocks, all made in code

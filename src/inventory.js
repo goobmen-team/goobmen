@@ -1,7 +1,9 @@
 // ======================================================================= the inventory (Tab)
 // Your four pockets, big. Drag one onto another to swap them round, drag it off the panel to throw it on the
 // floor. The world does not stop while you are looking.
-const invEl = { box: document.getElementById('inv'), panel: document.getElementById('invpanel'), slots: document.getElementById('invslots'), info: document.getElementById('invinfo') };
+const invEl = { box: document.getElementById('inv'), panel: document.getElementById('invpanel'), slots: document.getElementById('invslots'), info: document.getElementById('invinfo'), title: document.querySelector('#invpanel h2'),
+  stash: document.getElementById('invstash'), stashSlots: document.getElementById('stashslots'), stashWords: document.getElementById('stashwords'), stashIn: document.getElementById('stashin'), stashOut: document.getElementById('stashout'),
+  bench: document.getElementById('invbench'), benchGun: document.getElementById('benchgun'), benchList: document.getElementById('benchlist') };
 let invToggled = -1e9;         // when it last opened or shut
 let invHover = -1;
 let invDrag = null;            // { k, thing, x, y, moved, ghost }
@@ -18,7 +20,8 @@ function iconShot(kind, from, half, mid) {
   globals(pbrProg, vp, NO_SHADOW, eye);
   gl.uniform1i(pbrProg.u.uTex, 0); gl.uniform1i(pbrProg.u.uNormalMap, 1); gl.uniform1i(pbrProg.u.uOrm, 2);
   const one = M3.ry(0);
-  if (kind.startsWith('gun:')) { const g = GUNS[kind.slice(4)]; drawGun(pbrProg, true, g, one.map(x => x * g.scale), [0, 0, 0], {}); }
+  if (RAID_PICS[kind]) { const q = RAID_PICS[kind]; for (const [m, at, R] of q.parts) drawModel(pbrProg, true, m, R || one, V.sub(at || [0, 0, 0], q.mid)); }
+  else if (kind.startsWith('gun:')) { const [, id, parts] = kind.split(':'), g = GUNS[id], att = parts ? Object.fromEntries(parts.split(',').map(k => [k, true])) : null; drawGun(pbrProg, true, g, one.map(x => x * g.scale), [0, 0, 0], { att }); }
   else drawThing(pbrProg, kind, one, [0, 0, 0]);
   const px = new Uint8Array(ICON_W * ICON_H * 4);
   gl.readPixels(0, 0, ICON_W, ICON_H, gl.RGBA, gl.UNSIGNED_BYTE, px);
@@ -37,7 +40,7 @@ function itemIcon(kind) {
   gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.CULL_FACE); gl.disable(gl.BLEND);
   gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, shadowTex);
   flashCol[0] = flashCol[1] = flashCol[2] = 0;
-  const from = kind === 'plate' || kind === 'vest' ? [0.3, 0.12, 1] : kind === 'c4' ? [0.45, 0.75, 0.6] : [-1, 0.16, 0.12];
+  const from = RAID_PICS[kind] ? RAID_PICS[kind].from : kind === 'plate' || kind === 'vest' ? [0.3, 0.12, 1] : kind === 'c4' ? [0.45, 0.75, 0.6] : [-1, 0.16, 0.12];
   // once from well back to find it, once more filling the picture
   const wide = 1.6, first = iconShot(kind, from, wide, [0, 0]);
   let x0 = ICON_W, y0 = ICON_H, x1 = -1, y1 = -1;
@@ -58,14 +61,15 @@ function itemIcon(kind) {
 }
 
 // ---------------------------------------------------------------- what is on the tiles
-const slotKind = s => s.t === 'gun' ? 'gun:' + s.id : s.t;
+const slotKind = s => { if (s.t !== 'gun') return s.t; const att = attOf(player, s.id); return 'gun:' + s.id + (att ? ':' + Object.keys(att).sort().join(',') : ''); };
 function slotWords(s) {
-  if (s.t === 'gun') { const am = player.ammo[s.id], r = RARITY[am.rarity || 0]; return { name: GUNS[s.id].name, count: am.clip + ' / ' + am.spare, css: r.css, info: r.name + ' ' + GUNS[s.id].name + (am.rarity === EXOTIC ? ' · one shot, vest or not' : ' · ' + am.clip + ' loaded, ' + am.spare + ' spare') }; }
+  if (s.t === 'gun') { const am = player.ammo[s.id], r = RARITY[am.rarity || 0]; return { name: GUNS[s.id].name, count: am.clip + ' / ' + am.spare, css: r.css, info: r.name + ' ' + GUNS[s.id].name + (am.rarity === EXOTIC ? ' · one shot, vest or not' : ' · ' + am.clip + ' loaded, ' + am.spare + ' spare') + (am.att ? ' · ' + attWords(am.att) : '') }; }
+  if (s.t === 'hammer') return { name: 'Hammer', count: '', css: '', info: 'Stone hammer · take it out to build' };
   if (s.t === 'c4') return { name: 'C4', count: '×' + player.c4, css: '', info: 'C4 · pick it, then click to plant' };
   if (s.t === 'plate') return { name: 'Vest plate', count: '×' + s.n, css: '', info: 'Vest plate · mends your vest' };
   return { name: FOOD[s.t].name, count: '×' + s.n, css: '', info: FOOD[s.t].name + ' · heals ' + FOOD[s.t].heal };
 }
-const invTiles = Array.from({ length: SLOT_COUNT }, (_, k) => {
+const invTiles = Array.from({ length: 7 }, (_, k) => {                // seven, for those with a duffel bag
   const d = document.createElement('div');
   d.className = 'invslot';
   d.dataset.k = k;
@@ -80,9 +84,68 @@ function invWords() {
   const k = invHover >= 0 && player.slots[invHover] ? invHover : heldSlot(player), s = k >= 0 && player.slots[k];
   invEl.info.textContent = s ? slotWords(s).info : ' ';
 }
+// ---------------------------------------------------------------- the other half of the panel: a stash, or the work table
+const stashTiles = Array.from({ length: 10 }, (_, i) => {
+  const d = document.createElement('div');
+  d.className = 'invslot stash';
+  d.innerHTML = '<img alt="" draggable="false" hidden><b></b><span></span>';
+  invEl.stashSlots.appendChild(d);
+  d.addEventListener('pointerdown', e => { e.preventDefault(); stashTake(i); invRender(); });
+  return d;
+});
+invEl.stashIn.addEventListener('click', () => { stashRocks(false); invRender(); });
+invEl.stashOut.addEventListener('click', () => { stashRocks(true); invRender(); });
+function itemWords(it) {
+  if (it.t === 'gun') return { kind: 'gun:' + it.id + (it.att ? ':' + Object.keys(it.att).sort().join(',') : ''), name: GUNS[it.id].name, count: it.att ? '+' + Object.keys(it.att).length : '', css: RARITY[it.rarity].css };
+  return { kind: it.t, name: it.t === 'c4' ? 'C4' : it.t === 'plate' ? 'Vest plate' : it.t === 'hammer' ? 'Hammer' : it.t === 'bag' ? 'Duffel bag' : it.t === 'vest' ? 'Vest' : FOOD[it.t] ? FOOD[it.t].name : it.t, count: it.n > 1 ? '×' + it.n : '', css: '' };
+}
+function stashRender() {
+  const b = game.stash;
+  invEl.stash.hidden = !b;
+  if (!b) return;
+  stashTiles.forEach((d, i) => {
+    const it = b.items[i], w = it && itemWords(it), img = d.children[0];
+    d.className = 'invslot stash' + (it ? '' : ' empty') + (w && w.css ? ' rare' : '');
+    d.style.setProperty('--r', w && w.css ? w.css : '#8b929b');
+    img.hidden = !it;
+    if (it) { const src = itemIcon(w.kind); if (img.getAttribute('src') !== src) img.src = src; }
+    d.children[1].textContent = w ? w.name : '';
+    d.children[2].textContent = w ? w.count : '';
+  });
+  invEl.stashWords.textContent = 'Shiny rocks in here: ' + b.rocks.toLocaleString('en-US') + ' · on you: ' + (player.rocks || 0).toLocaleString('en-US');
+  invEl.stashIn.disabled = !player.rocks; invEl.stashOut.disabled = !b.rocks;
+}
+let benchButtons = null;
+function benchRender() {
+  invEl.bench.hidden = !game.bench;
+  if (!game.bench) return;
+  if (!benchButtons) {
+    benchButtons = [...Object.entries(ATTS).map(([id, a]) => ({ id, part: true, name: a.name, cost: a.cost, info: a.info })), ...GOODS.map(g => ({ id: g.id, name: g.name, cost: g.cost, info: g.info }))];
+    for (const q of benchButtons) {
+      q.el = document.createElement('button'); q.el.type = 'button';
+      q.el.innerHTML = '<img alt="" draggable="false"><b></b><span></span>';
+      q.el.addEventListener('click', () => { benchBuy(q.id); invRender(); });
+      invEl.benchList.appendChild(q.el);
+    }
+  }
+  const f = player, id = f.weapon || bestGun(f), am = id && f.ammo[id];
+  invEl.benchGun.textContent = (id ? 'Fitting parts to your ' + RARITY[am.rarity || 0].name + ' ' + GUNS[id].name + (am.att ? ' (has ' + attWords(am.att) + ')' : '') : 'You have no gun to fit parts to') + ' · shiny rocks: ' + (f.rocks || 0).toLocaleString('en-US');
+  for (const q of benchButtons) {
+    const have = q.part && am && am.att && am.att[q.id], wrong = q.part && (!id || !canFit(id, am.rarity, q.id));
+    const img = q.el.children[0], src = itemIcon(q.id);
+    if (img.getAttribute('src') !== src) img.src = src;
+    q.el.children[1].textContent = q.name;
+    q.el.children[2].textContent = have ? 'fitted' : wrong ? (id ? 'does not fit' : 'needs a gun') : q.cost + ' rocks';
+    q.el.disabled = !!(have || wrong || (f.rocks || 0) < q.cost);
+    q.el.title = q.info;
+  }
+}
 function invRender() {
   const held = heldSlot(player);
+  invEl.slots.classList.toggle('seven', player.slots.length > 4);
+  stashRender(); benchRender();
   invTiles.forEach((d, k) => {
+    d.hidden = k >= player.slots.length;
     const s = player.slots[k], w = s && slotWords(s), img = d.children[1];
     d.className = 'invslot' + (s ? '' : ' empty') + (held === k ? ' on' : '') + (w && w.css ? ' rare' : '') + (invDrag && invDrag.moved && invDrag.k === k ? ' lifted' : '');
     d.style.setProperty('--r', w && w.css ? w.css : '#8b929b');
@@ -96,10 +159,14 @@ function invRender() {
 
 // ---------------------------------------------------------------- open and shut
 function canOpenInventory() {
-  return game.running && !cine.on && player.dead < 0 && !looting && !player.ride && !(player.plantT >= 0) && !world.asking && !(royaleOn() && match && match.shown);
+  return game.running && !cine.on && player.dead < 0 && !looting && !player.ride && !(player.plantT >= 0) && !world.asking;
 }
-function openInventory() {
+// what: { stash } or { bench } to have that open beside your pockets
+function openInventory(what) {
   if (game.inv || !canOpenInventory()) return;
+  game.stash = (what && what.stash) || null; game.bench = (what && what.bench) || null;
+  invEl.title.textContent = game.stash ? 'Stash' : game.bench ? 'Work table' : 'Inventory';
+  invEl.panel.classList.toggle('wide', !!what);
   game.inv = true; invToggled = performance.now(); game.aimToggle = false; mouse.fire = mouse.aim = mouse.pressed = false; mouse.drag = null;
   invHover = -1;
   invEl.box.hidden = false;
@@ -111,13 +178,16 @@ function openInventory() {
 function closeInventory(grabMouse) {
   if (!game.inv) return;
   invLetGo();
-  game.inv = false; invToggled = performance.now();
+  game.inv = false; game.stash = null; game.bench = null; invToggled = performance.now();
   invEl.box.hidden = true;
   if (grabMouse && game.running && game.lockWorked) lockMouse();
 }
 function toggleInventory() { if (game.inv) { closeInventory(true); Sound.play('rustle', 0.5); } else openInventory(); }
 // something happened that you need to see to
-function invCheck() { if (!canOpenInventory()) closeInventory(game.running && !cine.on); }
+function invCheck() {
+  const b = game.stash || game.bench;
+  if (!canOpenInventory() || (b && (b.gone || Math.hypot(b.x - player.pos[0], b.z - player.pos[2]) > 2.8))) closeInventory(game.running && !cine.on);
+}
 
 // ---------------------------------------------------------------- moving and throwing away
 function moveSlot(f, from, to) {
@@ -176,7 +246,8 @@ addEventListener('pointerup', e => {
   if (!d || e.button !== 0) return;
   invLetGo();
   if (player.slots[d.k] !== d.thing) { invRender(); return; }               // it went somewhere else meanwhile
-  if (!d.moved) { selectSlot(player, d.k); Sound.play('uiclick', 0.7); }    // a plain click: take it in your hand
+  if (!d.moved && game.stash) stashDeposit(d.k);                            // a plain click with a stash open: into it
+  else if (!d.moved) { selectSlot(player, d.k); Sound.play('uiclick', 0.7); }   // a plain click: take it in your hand
   else if (!overPanel(e)) throwSlot(player, d.k);
   else {
     const under = document.elementFromPoint(e.clientX, e.clientY), tile = under && under.closest('.invslot');

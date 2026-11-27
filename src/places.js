@@ -70,6 +70,7 @@ function pushSolids(f, pad) {
     const out = (e.d < 0 ? -pad : pad) / len;
     p[0] = e.at[0] + dx * out; p[2] = e.at[1] + dz * out;
   }
+  buildPush(f, pad);                                           // and whatever has been built
 }
 function rayTriangle(o, d, a, b, c) {
   const e1 = V.sub(b, a), e2 = V.sub(c, a), h = V.cross(d, e2), det = V.dot(e1, h);

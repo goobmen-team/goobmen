@@ -95,6 +95,12 @@ function drawMinimap() {
   for (let gx = Math.ceil((me[0] + lo) / step) * step; gx < me[0] - lo; gx += step) { g.strokeStyle = gx % 200 === 0 ? 'rgba(15,12,8,.6)' : 'rgba(15,12,8,.38)'; g.lineWidth = gx % 200 === 0 ? 1.4 : 1; g.beginPath(); g.moveTo((gx - me[0]) * scale, lo * scale); g.lineTo((gx - me[0]) * scale, -lo * scale); g.stroke(); }
   for (let gz = Math.ceil((me[2] + lo) / step) * step; gz < me[2] - lo; gz += step) { g.strokeStyle = gz % 200 === 0 ? 'rgba(15,12,8,.6)' : 'rgba(15,12,8,.38)'; g.lineWidth = gz % 200 === 0 ? 1.4 : 1; g.beginPath(); g.moveTo(lo * scale, (gz - me[2]) * scale); g.lineTo(-lo * scale, (gz - me[2]) * scale); g.stroke(); }
   g.restore();
+  if (world.map === 'island') {                                 // your stashes and your crew; a stash being robbed flashes
+    const mark = (p, col, size, round) => { let [x, y] = toMap(p); x = clamp(x, 6, S - 6); y = clamp(y, 6, S - 6); g.fillStyle = col; g.strokeStyle = '#1b130a'; g.lineWidth = 1.6; g.beginPath(); if (round) g.arc(x, y, size, 0, Math.PI * 2); else g.rect(x - size, y - size, size * 2, size * 2); g.fill(); g.stroke(); };
+    for (const b of raid.builds) if (b.kind === 'stash' && b.owner === player) mark([b.x, 0, b.z], '#ffd23f', 4);
+    for (const q of bots) if (q.br && q.br.crew && q.dead < 0) mark(q.pos, '#46d65a', 3, true);
+    if (raid.alarm && Math.sin(game.time * 12) > -0.2) mark([raid.alarm.x, 0, raid.alarm.z], '#ff3b30', 6.5, true);
+  }
   for (const b of planted) {                                    // your armed C4, blinking
     if (!b.armed || Math.sin(game.time * 14) < 0) continue;
     const [x, y] = toMap(b.p); if (x < 4 || y < 4 || x > S - 4 || y > S - 4) continue;

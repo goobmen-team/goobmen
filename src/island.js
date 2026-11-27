@@ -322,7 +322,7 @@ function surfaceHit(origin, dir) {
     const t = -origin[1] / dir[1], p = V.mad(origin, dir, t);
     return Math.abs(p[0]) < HALF && Math.abs(p[2]) < HALF ? { t, kind: 'ground' } : null;
   }
-  const solid = solidHit(origin, dir);
+  const solid = Math.min(solidHit(origin, dir), buildRay(origin, dir).t);
   const under = t => { const p = V.mad(origin, dir, t); return p[1] < floorAt(p[0], p[2], p[1] + 1) || caveRock(p); };
   for (let last = 0, t = 0.4; t < Math.min(90, solid); last = t, t += 0.4 + t * 0.012) {
     if (!under(t)) continue;
@@ -343,7 +343,7 @@ function cameraRoom(at, fwd, dist) {
   if (world.map !== 'island') return dist;
   for (let d = 0.2; d <= dist; d += 0.2) {
     const p = V.mad(at, fwd, -d);
-    if (caveCamera(p) || houseBlocks(p)) return Math.max(0.35, d - 0.25);
+    if (caveCamera(p) || houseBlocks(p) || buildBlocks(p)) return Math.max(0.35, d - 0.25);
     if (p[1] < floorAt(p[0], p[2], p[1]) + 0.2 || leaves.some(c => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]) < c[3])) return Math.max(0.4, d - 0.2);
   }
   return dist;
@@ -379,7 +379,8 @@ function setMap(name, low) {
   setBikes(name);
   grassNow = true;
   for (const q of pops) q.el.remove();
-  for (const list of [pops, props, stars, particles, tracers, shells, flashes, marks, floorLoot]) list.length = 0;
+  for (const list of [pops, props, stars, particles, tracers, shells, flashes, marks, floorLoot, planted]) list.length = 0;
+  match = null; ui.results.hidden = true; clearBuilds(); game.hammerGiven = false; closeInventory(false);
   player.yaw = Math.PI; cam.yaw = 0; cam.pitch = 0.12;
   player.hurt = 0; player.wet = 0; player.reload = -1; player.cycle = -1; game.hurtFade = 0;
   respawnPlayer();
