@@ -284,8 +284,15 @@ function groundHeight(x, z) {
 }
 const inSea = p => groundAt(p[0], p[2]) < SEA.level;
 // what loose things come to rest on
-// a drowned body starts down on the sea floor and floats up to the surface, instead of being thrown out of the water
-const ragdollFloor = (f, x, z, y) => f.drowned && f.dead >= 0 ? Math.max(groundAt(x, z, y), SEA.level - 1.0 * (1 - smooth(0, 0.7, f.dead))) : floorAt(x, z, y);
+// what a ragdoll lies on: the land, or the top of the sea, where he floats half under. A drowned body starts down on the sea floor and floats up
+// to the surface, instead of being thrown out of the water
+const ragdollFloor = (f, x, z, y) => {
+  if (world.map !== 'island') return 0;
+  const g = groundAt(x, z, y);
+  if (g >= SEA.level) return g;
+  const top = SEA.level - 0.12 + 0.02 * Math.sin(game.time * 1.9 + x * 0.7);
+  return f.drowned && f.dead >= 0 ? Math.max(g, top - 0.9 * (1 - smooth(0, 0.7, f.dead))) : top;
+};
 const floorAt = (x, z, y) => world.map === 'island' ? Math.max(groundAt(x, z, y), SEA.level) : 0;
 
 // keeps a fighter on the map: bots stay on land, you can wade out a bit further

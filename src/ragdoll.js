@@ -102,7 +102,7 @@ function ragStep(f, dt) {
   while (R.acc >= h) {
     R.acc -= h;
     for (let i = 0; i < n; i++) {                                 // move, with gravity and a little air
-      const p = R.p[i], q = R.q[i], v = V.mul(V.sub(p, q), 0.996);
+      const p = R.p[i], q = R.q[i], wet = world.map === 'island' && p[1] < SEA.level + 0.05 && groundAt(p[0], p[2]) < SEA.level, v = V.mul(V.sub(p, q), wet ? 0.92 : 0.996);   // the sea holds him back
       R.q[i] = p; R.p[i] = [p[0] + v[0], p[1] + v[1] - 9.8 * h * h, p[2] + v[2]];
     }
     for (let it = 0; it < 7; it++) {
@@ -144,8 +144,10 @@ function ragStep(f, dt) {
   if (speed > 2.2 && game.time - R.thudAt > 0.18) {
     R.thudAt = game.time;
     const vol = clamp(speed / 7, 0.15, 1) * (f.isPlayer ? 1 : 0.6) * clamp(1.4 - V.len(V.sub(R.p[0], player.pos)) / 30, 0.1, 1);
-    Sound.play('thud', vol);
-    if (speed > 3.5) puff([R.p[0][0], floorAt(R.p[0][0], R.p[0][2], R.p[0][1]) + 0.05, R.p[0][2]], 10, [0.52, 0.50, 0.46, 0.7], 1.0, 0.07, 0.5, 1.2);
+    const wet = world.map === 'island' && groundAt(R.p[0][0], R.p[0][2]) < SEA.level;
+    if (wet) { Sound.play('splash', vol * 0.8); puff([R.p[0][0], SEA.level + 0.04, R.p[0][2]], 8, [0.9, 0.96, 1, 0.75], 1.4, 0.05, 0.5, 5); }
+    else Sound.play('thud', vol);
+    if (speed > 3.5 && !wet) puff([R.p[0][0], floorAt(R.p[0][0], R.p[0][2], R.p[0][1]) + 0.05, R.p[0][2]], 10, [0.52, 0.50, 0.46, 0.7], 1.0, 0.07, 0.5, 1.2);
   }
   // fall asleep once he has stopped moving
   let move = 0; for (let i = 0; i < n; i++) move = Math.max(move, V.len(V.sub(R.p[i], R.q[i])) / h);
