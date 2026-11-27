@@ -731,7 +731,7 @@ function lootStep(dt) {
   if (!looting) {
     const target = pressed ? lootTarget() : null;
     if (!target) {
-      if (pressed && player.dead < 0) { const o = gunNear(player.pos), b = !o && bikeNear(player.pos); if (o) pickUp(o); else if (b) startRide(b); }
+      if (pressed && player.dead < 0) { const o = thingNear(player.pos), b = !o && bikeNear(player.pos); if (o) pickUp(o); else if (b) startRide(b); }
       return false;
     }
     startLoot(target);
