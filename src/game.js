@@ -158,8 +158,8 @@ function give(f, id, spare, rarity) {
 function equip(f, id) {
   if (f.weapon === id || (id && !f.inv.includes(id))) return;
   f.holdC4 = false; f.hand = null; f.use = null;
-  if (f.weapon && f.gun && !f.gun.held) f.stow = { id: f.weapon, t0: game.time, p: f.gun.p.slice(), R: f.gun.R.slice() };
-  if (id) f.drawAt = game.time;
+  if (f.weapon && f.gun && !f.gun.held) f.stow = { id: f.weapon, t0: null, p: f.gun.p.slice(), R: f.gun.R.slice() };
+  if (id) f.drawAt = null;                                       // stamped with the clock when it is first drawn (equip also runs before the game exists)
   f.weapon = id; f.equip = 0; f.reload = -1; f.cool = Math.max(f.cool, 0.2); f.bolt = 0; f.cycle = -1; f.inspect = -1;
   if (f.isPlayer) { Sound.play('rack', 0.5); hudDirty = true; }
 }
@@ -1112,6 +1112,7 @@ function drawStatics(prog, textured, hideSelf) {
       }
     }
     let Rg = R, pg = p;
+    if (f.drawAt === null) f.drawAt = game.time;
     const k = f.drawAt === undefined ? 1 : smooth(0, 1, (game.time - f.drawAt) / 0.34);
     if (k < 1 && !held && f.inv.includes(f.weapon)) {          // out from the back and into his hands
       const m = gunMount(f, f.weapon), Rm = M3.mix(m.R, f.gun.R, k);
