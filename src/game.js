@@ -158,6 +158,8 @@ function give(f, id, spare, rarity) {
 function equip(f, id) {
   if (f.weapon === id || (id && !f.inv.includes(id))) return;
   f.holdC4 = false; f.hand = null; f.use = null;
+  if (f.weapon && f.gun && !f.gun.held) f.stow = { id: f.weapon, t0: game.time, p: f.gun.p.slice(), R: f.gun.R.slice() };
+  if (id) f.drawAt = game.time;
   f.weapon = id; f.equip = 0; f.reload = -1; f.cool = Math.max(f.cool, 0.2); f.bolt = 0; f.cycle = -1; f.inspect = -1;
   if (f.isPlayer) { Sound.play('rack', 0.5); hudDirty = true; }
 }
@@ -572,7 +574,7 @@ const keys = new Set();
 const mouse = { fire: false, pressed: false, aim: false, drag: null };
 const game = { running: false, locked: false, lockWorked: false, aimToggle: false, inv: false, enemiesShoot: true, godMode: false, kills: 0, deaths: 0, marker: 0, hurtFade: 0, note: 0, time: 0 };
 const ui = {};
-for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'msg', 'alive', 'alivecount', 'results', 'restitle', 'resplace', 'reskills', 'tabplay', 'tabsettings', 'panelplay', 'panelsettings', 'shadowpick', 'dist', 'distlabel', 'reloadbar', 'boomflash', 'minimap', 'killcount']) ui[id] = document.getElementById(id);
+for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'msg', 'alive', 'alivecount', 'results', 'restitle', 'resplace', 'reskills', 'tabplay', 'tabsettings', 'panelplay', 'panelsettings', 'shadowpick', 'dist', 'distlabel', 'reloadbar', 'boomflash', 'minimap', 'killcount', 'hplag', 'vestlag']) ui[id] = document.getElementById(id);
 let hudDirty = true;
 function notify(text) { }                                    // the messages in the middle of the screen are switched off
 
@@ -1109,8 +1111,15 @@ function drawStatics(prog, textured, hideSelf) {
         o.slide = slide;
       }
     }
-    drawGun(prog, textured, g, R, p, o);
+    let Rg = R, pg = p;
+    const k = f.drawAt === undefined ? 1 : smooth(0, 1, (game.time - f.drawAt) / 0.34);
+    if (k < 1 && !held && f.inv.includes(f.weapon)) {          // out from the back and into his hands
+      const m = gunMount(f, f.weapon), Rm = M3.mix(m.R, f.gun.R, k);
+      Rg = Rm.map(x => x * g.scale); pg = V.lerp(m.p, p, k);
+    }
+    drawGun(prog, textured, g, Rg, pg, o);
   }
+  for (const f of fighters) drawStowed(prog, textured, f, hideSelf);
   for (const f of fighters) {
     if ((hideSelf && f.isPlayer) || f.gone || !f.vis || f.away > 30) continue;
     if (f.item) drawItem(prog, textured, f.item);
@@ -1254,17 +1263,40 @@ function render() {
 // ======================================================================= interface
 // health bars and loot arrows: a handful of them, handed to whoever needs one
 const barEls = Array.from({ length: 14 }, () => { const d = document.createElement('div'); d.className = 'bar'; d.innerHTML = '<i></i>'; ui.bars.appendChild(d); return d; });
-// what is in your pockets
-function slotsHtml() {
+// what is in your pockets: a hotbar of tiles that are built once and then only change class, so everything animates
+const FIST_ICON = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><g stroke="#2a1a0c" stroke-width="3" stroke-linejoin="round"><path fill="#e7b48a" d="M14 30c0-5 4-8 9-8h24c6 0 10 4 10 10v9c0 8-6 14-14 14H27c-8 0-13-5-13-12z"/><path fill="none" d="M26 23v12M37 22v13M48 25v10" stroke-linecap="round"/><path fill="#e7b48a" d="M10 33c-3 0-5 3-4 6 1 4 5 6 9 6V34c-1-1-3-1-5-1z"/></g></svg>');
+const hotTiles = [];
+function hotBuild() {
+  for (let k = -1; k < SLOT_COUNT; k++) {
+    const d = document.createElement('div');
+    d.className = 'hot empty';
+    d.innerHTML = `<i>${k < 0 ? 'H' : k + 1}</i><img alt="" draggable="false"><span></span><em></em>`;
+    ui.slots.appendChild(d);
+    hotTiles.push({ el: d, img: d.children[1], count: d.children[2], key: '', cls: '' });
+  }
+  const f = hotTiles[0]; f.img.src = FIST_ICON; f.el.className = 'hot'; f.cls = 'hot';
+}
+function hotbarRender() {
+  if (!hotTiles.length) hotBuild();
   const held = heldSlot(player);
-  const html = player.slots.map((q, k) => {
-    let text = '---', colour = '';
-    if (q && q.t === 'gun') { const r = RARITY[rarityOf(player, q.id)]; text = q.id === 'mgl' ? 'Launcher' : GUNS[q.id].name; colour = r.css; }
-    else if (q && q.t === 'c4') text = 'C4 ×' + player.c4;
-    else if (q) { text = (q.t === 'plate' ? 'Plate' : FOOD[q.t].name) + ' ×' + q.n; }
-    return `<span class="${held === k ? 'on' : q ? '' : 'none'}${colour ? ' rare' : ''}" style="--r:${colour}">${k + 1} ${text}</span>`;
-  }).join('');
-  return html + `<span class="${held < 0 ? 'on' : ''}">H Fists</span>`;
+  const set = (t, cls, key, rarity) => {
+    if (t.cls !== cls) { t.el.className = cls; t.cls = cls; }
+    t.el.style.setProperty('--r', rarity || '');
+    if (key !== t.key) {
+      if (key && t.key !== null && (t.key === '' || key.split('|')[0] !== t.key.split('|')[0] || +key.split('|')[1] > +t.key.split('|')[1])) { t.el.classList.remove('pop'); void t.el.offsetWidth; t.el.classList.add('pop'); t.cls = t.el.className; }
+      t.key = key;
+    }
+  };
+  set(hotTiles[0], 'hot' + (held < 0 ? ' on' : ''), 'fists|0', '');
+  player.slots.forEach((q, k) => {
+    const t = hotTiles[k + 1];
+    if (!q) { set(t, 'hot empty', '', ''); t.img.hidden = true; t.count.textContent = ''; return; }
+    const w = slotWords(q), src = itemIcon(slotKind(q));
+    if (t.img.getAttribute('src') !== src) t.img.src = src;
+    t.img.hidden = false;
+    t.count.textContent = q.t === 'gun' ? player.ammo[q.id].spare : w.count;
+    set(t, 'hot' + (held === k ? ' on' : '') + (w.css ? ' rare' : ''), slotKind(q) + '|' + (q.n || (q.t === 'c4' ? player.c4 : 1)), w.css);
+  });
 }
 function project(p) {
   const m = lastView.vp, x = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], y = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
@@ -1280,9 +1312,9 @@ function hud(dt) {
     ui.weapon.textContent = player.ride ? 'Tiny bike' : g ? r.name + ' ' + g.name : player.holdC4 ? 'C4' : player.hand ? (player.hand === 'plate' ? 'Vest plate' : FOOD[player.hand].name) : 'Fists';
     ui.weapon.style.color = g && !player.ride ? r.css : '';
     ui.ammo.innerHTML = g ? `<b class="${am.clip <= g.mag * 0.2 ? 'low' : ''}">${am.clip}</b> / ${am.spare}` : '';
-    ui.hp.textContent = Math.ceil(player.hp); ui.hpfill.style.width = player.hp + '%';
-    ui.vestbox.hidden = !player.hasVest && !(player.vest > 0); ui.vest.textContent = player.vest > 0 ? Math.ceil(player.vest) : 'broken'; ui.vestfill.style.width = player.vest / VEST * 100 + '%';
-    ui.slots.innerHTML = slotsHtml();
+    ui.hp.textContent = Math.ceil(player.hp); ui.hpfill.style.width = ui.hplag.style.width = player.hp + '%'; ui.hp.parentNode.classList.toggle('low', player.hp < 30);
+    ui.vestbox.hidden = !player.hasVest && !(player.vest > 0); ui.vest.textContent = player.vest > 0 ? Math.ceil(player.vest) : 'broken'; ui.vestfill.style.width = ui.vestlag.style.width = player.vest / VEST * 100 + '%';
+    hotbarRender();
     if (game.inv) invRender();
     ui.score.textContent = `Knockouts ${game.kills} · Deaths ${game.deaths}`;
     ui.killcount.textContent = game.kills;

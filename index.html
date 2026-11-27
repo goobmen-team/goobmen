@@ -36,16 +36,43 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; o
 #invghost.drop { border-color: #ff5a50; }
 #invghost.drop b { display: block; }
 .panel { background: rgba(20,22,26,.62); border-radius: 8px; padding: 8px 14px; }
-#status { position: fixed; left: 18px; bottom: 18px; width: 220px; }
-#hpbar { height: 10px; background: rgba(255,255,255,.2); border-radius: 5px; overflow: hidden; margin-top: 4px; }
-#hpfill { height: 100%; background: #58d66a; }
-#vestbox { margin-top: 6px; } .vestbar { height: 10px; background: rgba(255,255,255,.2); border-radius: 5px; overflow: hidden; margin-top: 4px; } #vestfill { height: 100%; background: #7ea6c4; }
-#gunbox { position: fixed; right: 18px; bottom: 18px; text-align: right; min-width: 170px; }
-#ammo { font-size: 22px; } #ammo b { font-size: 36px; } #ammo b.low { color: #ff6b5e; }
-#slots { position: fixed; left: 250px; right: 200px; bottom: 18px; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; white-space: nowrap; }
-#slots span { background: rgba(20,22,26,.55); border: 2px solid transparent; border-radius: 7px; padding: 4px 10px; }
-#slots span.on { border-color: #fff; background: rgba(20,22,26,.8); } #slots span.none { opacity: .45; }
 #score { position: fixed; left: 18px; top: 14px; }
+
+/* ---- the hotbar, health and shield: a Fortnite-style layout ---- */
+:root { --t: clamp(54px, 5.4vw, 78px); }
+#status { position: fixed; left: 24px; bottom: 26px; width: clamp(240px, 27vw, 380px); display: flex; flex-direction: column; gap: 6px; filter: drop-shadow(0 4px 8px rgba(0,0,0,.45)); }
+.meter { display: flex; align-items: center; gap: 10px; }
+.meter b { width: 46px; text-align: right; font-size: 24px; line-height: 1; font-weight: 900; font-style: italic; letter-spacing: -.02em; text-shadow: 0 2px 0 rgba(0,0,0,.6); }
+.track { position: relative; flex: 1; height: 15px; background: rgba(8,12,22,.66); border: 2px solid rgba(255,255,255,.92); border-radius: 2px; transform: skewX(-18deg); overflow: hidden; }
+.meter.health .track { height: 21px; }
+.fill, .lag { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; }
+.fill { transition: width .32s cubic-bezier(.2,.85,.25,1); background: linear-gradient(#8dff8a, #2fcf4a 55%, #1fa83a); box-shadow: inset 0 2px 0 rgba(255,255,255,.35); }
+.lag { transition: width .75s cubic-bezier(.4,0,.2,1) .28s; background: rgba(255,255,255,.88); }
+.shield .fill { background: linear-gradient(#a6dcff, #3aa3ff 55%, #1f73e0); }
+.meter.low .fill { background: linear-gradient(#ff9a8c, #ff4a3d 55%, #c9261b); animation: lowpulse .8s ease-in-out infinite alternate; }
+.meter.low b { color: #ff6b5e; }
+@keyframes lowpulse { to { filter: brightness(1.45); } }
+#gunbox { position: fixed; right: 24px; bottom: calc(26px + var(--t) + 30px); text-align: right; filter: drop-shadow(0 3px 6px rgba(0,0,0,.55)); transition: opacity .2s; }
+#weapon { font-size: 15px; font-weight: 800; font-style: italic; letter-spacing: .08em; text-transform: uppercase; text-shadow: 0 2px 0 rgba(0,0,0,.6); }
+#ammo { font-size: 24px; font-weight: 800; font-style: italic; opacity: .85; text-shadow: 0 2px 0 rgba(0,0,0,.6); min-height: 40px; }
+#ammo b { font-size: 46px; line-height: 1; font-weight: 900; opacity: 1; transition: color .15s; } #ammo b.low { color: #ff6b5e; }
+#slots { position: fixed; right: 24px; bottom: 26px; display: flex; gap: 8px; align-items: flex-end; }
+.hot { position: relative; width: var(--t); height: var(--t); border-radius: 7px; overflow: hidden; background: linear-gradient(160deg, rgba(48,62,92,.82), rgba(12,18,32,.9)); border: 2px solid rgba(255,255,255,.16);
+  box-shadow: 0 6px 14px rgba(0,0,0,.42); transform-origin: 50% 100%; transition: transform .2s cubic-bezier(.3,1.5,.5,1), border-color .15s, box-shadow .25s, opacity .2s, background .25s; }
+.hot::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: var(--r, transparent); box-shadow: 0 -3px 10px var(--r, transparent); }
+.hot.rare { background: linear-gradient(to top, color-mix(in srgb, var(--r) 62%, #0b1020), rgba(12,18,32,.9) 82%); }
+.hot.on { transform: translateY(-11px) scale(1.14); border-color: #fff; box-shadow: 0 12px 24px rgba(0,0,0,.5), 0 0 22px color-mix(in srgb, var(--r, #ffffff) 60%, transparent); }
+.hot.empty { opacity: .42; }
+.hot i { position: absolute; left: 6px; top: 3px; font-style: italic; font-weight: 900; font-size: 14px; text-shadow: 0 1px 0 #000, 0 0 4px #000; z-index: 2; }
+.hot img { position: absolute; left: 6%; top: 12%; width: 88%; height: 64%; object-fit: contain; filter: drop-shadow(0 3px 3px rgba(0,0,0,.65)); transition: transform .25s cubic-bezier(.3,1.5,.5,1); }
+.hot.on img { transform: scale(1.08) rotate(-3deg); }
+.hot span { position: absolute; right: 6px; bottom: 7px; font-style: italic; font-weight: 900; font-size: 14px; text-shadow: 0 1px 0 #000, 0 0 4px #000; z-index: 2; }
+.hot em { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 3; }
+.hot.pop em { animation: hotflash .55s ease-out; }
+@keyframes hotflash { 0% { opacity: .9; } 100% { opacity: 0; } }
+.hot.pop img { animation: hotpop .45s cubic-bezier(.3,1.6,.5,1); }
+@keyframes hotpop { 0% { transform: scale(.4) rotate(-14deg); } 100% { transform: scale(1); } }
+#score { padding: 4px 14px; font-weight: 800; font-style: italic; letter-spacing: .04em; border-radius: 3px; background: rgba(12,18,32,.55); text-shadow: 0 1px 0 #000; }
 /* the map: a dark plate with a frame of four bones */
 #mapframe { position: fixed; right: 10px; top: 8px; padding: 15px; background: #26211c; }
 #minimap { position: static; inset: auto; display: block; width: 180px; height: 180px; background: #2c6290; border: 2px solid #0e0c0a; }
@@ -53,7 +80,6 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; o
 #kills { position: fixed; right: 10px; top: 227px; width: 214px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 24px; font-weight: 900; color: #f1e3c0; -webkit-text-stroke: 5px #2a1a0c; paint-order: stroke fill; }
 #kills svg { width: 24px; height: 24px; overflow: visible; }
 #alive { display: flex; align-items: center; gap: 7px; margin-left: 20px; }
-#slots span.rare { border-bottom: 4px solid var(--r); background: linear-gradient(transparent 35%, color-mix(in srgb, var(--r) 42%, transparent)), rgba(20,22,26,.6); }
 #results { position: fixed; left: 50%; top: 24%; transform: translateX(-50%); text-align: center; padding: 18px 44px 16px; background: rgba(20,22,26,.78); border: 3px solid #ffd23f; border-radius: 16px; white-space: nowrap; }
 #restitle { font-size: clamp(34px, 7vw, 66px); line-height: 1.05; font-weight: 900; color: #ffd23f; -webkit-text-stroke: 8px #221708; paint-order: stroke fill; }
 #resplace { font-size: 26px; font-weight: 800; } #reskills { font-size: 18px; opacity: .9; margin-bottom: 8px; }
@@ -160,9 +186,12 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
   <div id="results" hidden><div id="restitle"></div><div id="resplace"></div><div id="reskills"></div><div class="small">Enter: play again · Esc: menu</div></div>
   <div id="mapask" class="panel" hidden>Which island?<br><b>1</b>Normal map<br><b>2</b>Optimized map, for low-end devices<br><span class="small">T to cancel</span></div>
   <div id="score" class="panel"></div>
-  <div id="status" class="panel">Health <b id="hp">100</b><div id="hpbar"><div id="hpfill"></div></div><div id="vestbox" hidden>Vest <b id="vest">100</b><div class="vestbar"><div id="vestfill"></div></div></div></div>
+  <div id="status">
+    <div id="vestbox" class="meter shield" hidden><b id="vest">100</b><div class="track"><div class="lag" id="vestlag"></div><div class="fill" id="vestfill"></div></div></div>
+    <div class="meter health"><b id="hp">100</b><div class="track"><div class="lag" id="hplag"></div><div class="fill" id="hpfill"></div></div></div>
+  </div>
+  <div id="gunbox"><div id="weapon"></div><div id="ammo"></div></div>
   <div id="slots"></div>
-  <div id="gunbox" class="panel"><div id="weapon"></div><div id="ammo"></div></div>
 </div>
 <div id="inv" hidden>
   <div id="invpanel">
@@ -3480,6 +3509,8 @@ function give(f, id, spare, rarity) {
 function equip(f, id) {
   if (f.weapon === id || (id && !f.inv.includes(id))) return;
   f.holdC4 = false; f.hand = null; f.use = null;
+  if (f.weapon && f.gun && !f.gun.held) f.stow = { id: f.weapon, t0: game.time, p: f.gun.p.slice(), R: f.gun.R.slice() };
+  if (id) f.drawAt = game.time;
   f.weapon = id; f.equip = 0; f.reload = -1; f.cool = Math.max(f.cool, 0.2); f.bolt = 0; f.cycle = -1; f.inspect = -1;
   if (f.isPlayer) { Sound.play('rack', 0.5); hudDirty = true; }
 }
@@ -3894,7 +3925,7 @@ const keys = new Set();
 const mouse = { fire: false, pressed: false, aim: false, drag: null };
 const game = { running: false, locked: false, lockWorked: false, aimToggle: false, inv: false, enemiesShoot: true, godMode: false, kills: 0, deaths: 0, marker: 0, hurtFade: 0, note: 0, time: 0 };
 const ui = {};
-for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'msg', 'alive', 'alivecount', 'results', 'restitle', 'resplace', 'reskills', 'tabplay', 'tabsettings', 'panelplay', 'panelsettings', 'shadowpick', 'dist', 'distlabel', 'reloadbar', 'boomflash', 'minimap', 'killcount']) ui[id] = document.getElementById(id);
+for (const id of ['vestbox', 'vest', 'vestfill', 'scope', 'ring', 'prompttext', 'pops', 'menu', 'hud', 'ammo', 'weapon', 'hp', 'hpfill', 'slots', 'prompt', 'note', 'cross', 'marker', 'vignette', 'hurtDir', 'score', 'bars', 'play', 'island', 'shootback', 'lowend', 'msg', 'alive', 'alivecount', 'results', 'restitle', 'resplace', 'reskills', 'tabplay', 'tabsettings', 'panelplay', 'panelsettings', 'shadowpick', 'dist', 'distlabel', 'reloadbar', 'boomflash', 'minimap', 'killcount', 'hplag', 'vestlag']) ui[id] = document.getElementById(id);
 let hudDirty = true;
 function notify(text) { }                                    // the messages in the middle of the screen are switched off
 
@@ -6322,6 +6353,40 @@ function drawHeldVest(prog, R, p) {
   flat(prog, BLACK, 0.6, 0.1); drawMesh(prog, vestShape.trim, R, p);
 }
 const itemName = id => id === 'vest' ? 'bulletproof vest' : GUNS[id].name;
+
+// ======================================================================= guns carried on the body
+// rifles ride on the back, crossed; pistols hang on the hip. Every gun keeps its own place however he switches.
+const BACK_SPOTS = [{ dir: [0.34, 1, 0], off: [0.03, 0.02, -0.20] }, { dir: [-0.34, 1, 0], off: [-0.03, 0.02, -0.235] }, { dir: [0.95, 0.28, 0], off: [0, -0.2, -0.205] }, { dir: [-0.95, 0.28, 0], off: [0, -0.26, -0.24] }];
+const isPistol = g => g.muzzle[2] < 0.3;
+function gunMount(f, id) {
+  const g = GUNS[id], pistol = isPistol(g), bone = pistol ? IDX.hips : IDX.chest;
+  const Rb = M3.mul(f.R, f.wr[bone]), base = toWorld(f, f.wp[bone]);
+  let Rl, off;
+  if (pistol) {                                                // muzzle down, slide to the back
+    const z = V.norm([0, -1, 0.1]), x = [-1, 0, 0];
+    Rl = M3.cols(x, V.cross(z, x), z); off = V.sub([-0.30, -0.02, 0.0], M3.vec(Rl, [0, 0, g.muzzle[2] * 0.4 * g.scale]));
+  } else {                                                     // side flat against the back, muzzle up and across
+    let n = 0; for (const other of f.inv) { if (other === id) break; if (!isPistol(GUNS[other])) n++; }
+    const spot = BACK_SPOTS[Math.min(n, BACK_SPOTS.length - 1)], z = V.norm(spot.dir), x = [0, 0, -1];
+    Rl = M3.cols(x, V.cross(z, x), z); off = V.sub(spot.off, M3.vec(Rl, [0, 0, g.muzzle[2] * 0.44 * g.scale]));
+  }
+  return { R: M3.mul(Rb, Rl), p: V.add(base, M3.vec(Rb, off)) };
+}
+function drawStowed(prog, textured, f, hideSelf) {
+  if ((hideSelf && f.isPlayer) || f.gone || !f.vis || f.rag || !f.wr[IDX.chest] || f.away > (textured ? 40 : 14)) return;
+  if (f.stow && game.time - f.stow.t0 >= 0.3) f.stow = null;
+  for (const id of f.inv) {
+    const g = GUNS[id];
+    if (f.gun && f.gun.g === g) continue;                        // that one is in his hands
+    const m = gunMount(f, id);
+    let R = m.R, p = m.p;
+    if (f.stow && f.stow.id === id) {                          // on its way from the hand to the back
+      const k = smooth(0, 1, (game.time - f.stow.t0) / 0.3);
+      R = M3.mix(f.stow.R, m.R, k); p = V.lerp(f.stow.p, m.p, k); p[1] += Math.sin(Math.PI * k) * 0.12;
+    }
+    drawGun(prog, textured, g, R.map(x => x * g.scale), p, {});
+  }
+}
 // ======================================================================= items: rarity, the four slots, food and plates
 // You carry four things (fists are free). Guns come in rarities, the better the colour the harder they hit, and one
 // in two hundred is exotic: one hit and he is out, vest or no vest. Chests can also hold food (that is how you
@@ -10124,8 +10189,15 @@ function drawStatics(prog, textured, hideSelf) {
         o.slide = slide;
       }
     }
-    drawGun(prog, textured, g, R, p, o);
+    let Rg = R, pg = p;
+    const k = f.drawAt === undefined ? 1 : smooth(0, 1, (game.time - f.drawAt) / 0.34);
+    if (k < 1 && !held && f.inv.includes(f.weapon)) {          // out from the back and into his hands
+      const m = gunMount(f, f.weapon), Rm = M3.mix(m.R, f.gun.R, k);
+      Rg = Rm.map(x => x * g.scale); pg = V.lerp(m.p, p, k);
+    }
+    drawGun(prog, textured, g, Rg, pg, o);
   }
+  for (const f of fighters) drawStowed(prog, textured, f, hideSelf);
   for (const f of fighters) {
     if ((hideSelf && f.isPlayer) || f.gone || !f.vis || f.away > 30) continue;
     if (f.item) drawItem(prog, textured, f.item);
@@ -10269,17 +10341,40 @@ function render() {
 // ======================================================================= interface
 // health bars and loot arrows: a handful of them, handed to whoever needs one
 const barEls = Array.from({ length: 14 }, () => { const d = document.createElement('div'); d.className = 'bar'; d.innerHTML = '<i></i>'; ui.bars.appendChild(d); return d; });
-// what is in your pockets
-function slotsHtml() {
+// what is in your pockets: a hotbar of tiles that are built once and then only change class, so everything animates
+const FIST_ICON = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><g stroke="#2a1a0c" stroke-width="3" stroke-linejoin="round"><path fill="#e7b48a" d="M14 30c0-5 4-8 9-8h24c6 0 10 4 10 10v9c0 8-6 14-14 14H27c-8 0-13-5-13-12z"/><path fill="none" d="M26 23v12M37 22v13M48 25v10" stroke-linecap="round"/><path fill="#e7b48a" d="M10 33c-3 0-5 3-4 6 1 4 5 6 9 6V34c-1-1-3-1-5-1z"/></g></svg>');
+const hotTiles = [];
+function hotBuild() {
+  for (let k = -1; k < SLOT_COUNT; k++) {
+    const d = document.createElement('div');
+    d.className = 'hot empty';
+    d.innerHTML = `<i>${k < 0 ? 'H' : k + 1}</i><img alt="" draggable="false"><span></span><em></em>`;
+    ui.slots.appendChild(d);
+    hotTiles.push({ el: d, img: d.children[1], count: d.children[2], key: '', cls: '' });
+  }
+  const f = hotTiles[0]; f.img.src = FIST_ICON; f.el.className = 'hot'; f.cls = 'hot';
+}
+function hotbarRender() {
+  if (!hotTiles.length) hotBuild();
   const held = heldSlot(player);
-  const html = player.slots.map((q, k) => {
-    let text = '---', colour = '';
-    if (q && q.t === 'gun') { const r = RARITY[rarityOf(player, q.id)]; text = q.id === 'mgl' ? 'Launcher' : GUNS[q.id].name; colour = r.css; }
-    else if (q && q.t === 'c4') text = 'C4 ×' + player.c4;
-    else if (q) { text = (q.t === 'plate' ? 'Plate' : FOOD[q.t].name) + ' ×' + q.n; }
-    return `<span class="${held === k ? 'on' : q ? '' : 'none'}${colour ? ' rare' : ''}" style="--r:${colour}">${k + 1} ${text}</span>`;
-  }).join('');
-  return html + `<span class="${held < 0 ? 'on' : ''}">H Fists</span>`;
+  const set = (t, cls, key, rarity) => {
+    if (t.cls !== cls) { t.el.className = cls; t.cls = cls; }
+    t.el.style.setProperty('--r', rarity || '');
+    if (key !== t.key) {
+      if (key && t.key !== null && (t.key === '' || key.split('|')[0] !== t.key.split('|')[0] || +key.split('|')[1] > +t.key.split('|')[1])) { t.el.classList.remove('pop'); void t.el.offsetWidth; t.el.classList.add('pop'); t.cls = t.el.className; }
+      t.key = key;
+    }
+  };
+  set(hotTiles[0], 'hot' + (held < 0 ? ' on' : ''), 'fists|0', '');
+  player.slots.forEach((q, k) => {
+    const t = hotTiles[k + 1];
+    if (!q) { set(t, 'hot empty', '', ''); t.img.hidden = true; t.count.textContent = ''; return; }
+    const w = slotWords(q), src = itemIcon(slotKind(q));
+    if (t.img.getAttribute('src') !== src) t.img.src = src;
+    t.img.hidden = false;
+    t.count.textContent = q.t === 'gun' ? player.ammo[q.id].spare : w.count;
+    set(t, 'hot' + (held === k ? ' on' : '') + (w.css ? ' rare' : ''), slotKind(q) + '|' + (q.n || (q.t === 'c4' ? player.c4 : 1)), w.css);
+  });
 }
 function project(p) {
   const m = lastView.vp, x = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], y = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
@@ -10295,9 +10390,9 @@ function hud(dt) {
     ui.weapon.textContent = player.ride ? 'Tiny bike' : g ? r.name + ' ' + g.name : player.holdC4 ? 'C4' : player.hand ? (player.hand === 'plate' ? 'Vest plate' : FOOD[player.hand].name) : 'Fists';
     ui.weapon.style.color = g && !player.ride ? r.css : '';
     ui.ammo.innerHTML = g ? `<b class="${am.clip <= g.mag * 0.2 ? 'low' : ''}">${am.clip}</b> / ${am.spare}` : '';
-    ui.hp.textContent = Math.ceil(player.hp); ui.hpfill.style.width = player.hp + '%';
-    ui.vestbox.hidden = !player.hasVest && !(player.vest > 0); ui.vest.textContent = player.vest > 0 ? Math.ceil(player.vest) : 'broken'; ui.vestfill.style.width = player.vest / VEST * 100 + '%';
-    ui.slots.innerHTML = slotsHtml();
+    ui.hp.textContent = Math.ceil(player.hp); ui.hpfill.style.width = ui.hplag.style.width = player.hp + '%'; ui.hp.parentNode.classList.toggle('low', player.hp < 30);
+    ui.vestbox.hidden = !player.hasVest && !(player.vest > 0); ui.vest.textContent = player.vest > 0 ? Math.ceil(player.vest) : 'broken'; ui.vestfill.style.width = ui.vestlag.style.width = player.vest / VEST * 100 + '%';
+    hotbarRender();
     if (game.inv) invRender();
     ui.score.textContent = `Knockouts ${game.kills} · Deaths ${game.deaths}`;
     ui.killcount.textContent = game.kills;
