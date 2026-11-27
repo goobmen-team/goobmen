@@ -91,7 +91,7 @@ await loadGun(ROLL, window.TAPE_DATA);
 // the fish, meat, plate and vest (from tools/make_loot.py): each lies on the ground the way it rests, y up, its lowest point at y = 0
 const LOOT = {};
 for (const k of ['fish', 'meat', 'plate', 'vest']) { LOOT[k] = { size: window.LOOT_DATA[k].size }; await loadGun(LOOT[k], window.LOOT_DATA[k]); }
-LOOT.vestWorn = packedMesh(window.LOOT_DATA.vestWorn);      // the vest reshaped to his torso, in the space of his chest bone
+LOOT.vestWorn = skinnedMesh(window.LOOT_DATA.vestWorn);      // the vest reshaped to his torso and skinned to his bones
 // turning each from lying on the ground to the way it is held: fish and meat stand on their belly, the plate faces front, the vest hangs front first
 const LOOT_PRE = { fish: M3.rz(Math.PI / 2), meat: M3.rz(Math.PI / 2), plate: M3.rx(Math.PI / 2), vest: M3.cols([1, 0, 0], [0, 0, -1], [0, 1, 0]) };
 // a strip of tape: a unit box textured with the plain tape from the roll's texture (x across, y thickness, z along)
@@ -1078,6 +1078,7 @@ function drawFighters(prog, textured, hideSelf) {
       gl.bindVertexArray(far ? p.lod.vao : p.vao);
       gl.drawElements(gl.TRIANGLES, far ? p.lod.count : p.count, gl.UNSIGNED_SHORT, 0);
     }
+    if (!far) drawWornVest(prog, textured, f, hideSelf);
   }
 }
 const modelM = new Float32Array(16);
@@ -1137,7 +1138,6 @@ function drawStatics(prog, textured, hideSelf) {
     if (f.holdThing) drawThing(prog, f.holdThing.kind, f.holdThing.R, f.holdThing.p);
   }
   drawFloorLoot(prog, textured);
-  for (const f of fighters) drawWornVest(prog, textured, f, hideSelf);
   drawGrenades(prog);
   const chestRange = !textured ? 16 : world.low ? 60 : 110;
   for (const c of chests) {

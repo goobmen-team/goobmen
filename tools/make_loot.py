@@ -79,9 +79,18 @@ def convert(name, path):
         U = np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0.0]])       # (x, z, -y)
         Pu, Nu = P @ U.T, N @ U.T
         Pu = Pu - (Pu.max(0) + Pu.min(0)) / 2
-        out['worn'] = worn_vest(Pu, Nu, p['UV'], F, str(ASSETS / 'caveman.glb'))
+        out['worn'] = worn_vest(Pu, Nu, p['UV'], F, str(ASSETS / 'caveman.glb'), image(m['base']))
     print(name, 'size', [round(x, 3) for x in size], 'verts', len(P), 'tris', len(F))
     return out
+
+
+def skinned_mesh(P, N, UV, F, J, W):
+    """like mesh(), with the bone numbers and weights of every vertex"""
+    V = np.concatenate([P[F], N[F], UV[F]], axis=2).reshape(-1, 8).astype('<f4')
+    Jc, Wc = J[F].reshape(-1, 4), W[F].reshape(-1, 4)
+    uniq, first, inv = np.unique(V.round(5), axis=0, return_index=True, return_inverse=True)
+    return {'v': b64(uniq.astype('<f4').tobytes()), 'j': b64(Jc[first].astype('u1').tobytes()), 'w': b64(Wc[first].astype('<f4').tobytes()),
+            'i': b64(inv.ravel().astype('<u4').tobytes()), 'n': int(inv.size)}
 
 
 def smooth(a, k=3):
@@ -112,15 +121,24 @@ def profile(P, ys, hw_limit):
 CHEST = np.array([0, 1.03, -0.062])          # where his chest bone sits (Rig.rest); the worn vest is built around it
 
 
-def worn_vest(vest_P, vest_N, vest_UV, vest_F, caveman_path):
+def worn_vest(vest_P, vest_N, vest_UV, vest_F, caveman_path, vest_tex):
     """The vest reshaped to hug the caveman's torso, slice by slice, in the space of his chest bone.
     vest_P is upright (front towards +z), y up, centred."""
     parts, _, _ = load(caveman_path)
     B = np.concatenate([q['P'] for q in parts])
-    ys_b = np.arange(0.70, 1.38, 0.01)
+    ys_b = np.arange(0.62, 1.38, 0.01)
     zf_b, zb_b, hw_b = profile(B, ys_b, 0.34)
+    # the model is a plate carrier seen from the front: its back is only straps. Copy the front plate onto the back so it is covered all round.
+    zc0 = (vest_P[:, 2].max() + vest_P[:, 2].min()) / 2
+    cz = vest_P[vest_F][:, :, 2].mean(1)
+    front = vest_F[cz > zc0 + 0.03]
+    nv = len(vest_P)
+    mir = vest_P.copy(); mir[:, 2] = 2 * zc0 - mir[:, 2]
+    mirN = vest_N.copy(); mirN[:, 2] = -mirN[:, 2]
+    vest_P = np.concatenate([vest_P, mir]); vest_N = np.concatenate([vest_N, mirN]); vest_UV = np.concatenate([vest_UV, vest_UV])
+    vest_F = np.concatenate([vest_F, front[:, ::-1] + nv])
     ylo, yhi = vest_P[:, 1].min(), vest_P[:, 1].max()
-    BODY_LO, BODY_HI = 0.74, 1.36
+    BODY_LO, BODY_HI = 0.66, 1.36                                  # right down over his belly
     t = (vest_P[:, 1] - ylo) / (yhi - ylo)
     yb = BODY_LO + t * (BODY_HI - BODY_LO)
     fb = lambda a: np.interp(yb, ys_b, a)
@@ -128,15 +146,74 @@ def worn_vest(vest_P, vest_N, vest_UV, vest_F, caveman_path):
     hw_v = np.abs(vest_P[:, 0]).max()
     zc_v, hd_v = (vest_P[:, 2].max() + vest_P[:, 2].min()) / 2, (vest_P[:, 2].max() - vest_P[:, 2].min()) / 2
     zc_b = fb((zf_b + zb_b) / 2)
-    hd_b = np.clip(fb((zf_b - zb_b) / 2), 0.12, 0.26)
-    sx = np.clip((fb(hw_b) + 0.012) / hw_v, 0.95, 1.5)
-    sz = np.clip((hd_b + 0.012) / hd_v, 0.75, 1.6)
+    hd_b = np.clip(fb((zf_b - zb_b) / 2), 0.12, 0.30)
+    sx = np.clip((fb(hw_b) + 0.03) / hw_v, 0.95, 1.5)
+    back = vest_P[:, 2] < zc_v
+    sz = np.clip((hd_b + np.where(back, 0.07, 0.03)) / hd_v, 0.75, 1.7)     # his back sticks out further than the profile says
     sy = (BODY_HI - BODY_LO) / (yhi - ylo)
     P = np.stack([vest_P[:, 0] * sx, yb, zc_b + (vest_P[:, 2] - zc_v) * sz], axis=1)
     N = vest_N / np.stack([sx, np.full_like(sx, sy), sz], axis=1)
     N /= np.linalg.norm(N, axis=1)[:, None] + 1e-12
     print('worn vest: vest half width %.2f half depth %.2f; scales x %.2f-%.2f z %.2f-%.2f y %.2f' % (hw_v, hd_v, sx.min(), sx.max(), sz.min(), sz.max(), sy))
-    return mesh(P - CHEST, N, vest_UV, vest_F)
+    # nothing of the vest may sit inside his body. Measure his outline at every height and angle (how far out his skin reaches
+    # from the middle of his torso), and push every vest vertex that is inside it out to just above it.
+    NB = 72
+    Bp0 = np.concatenate([parts[0]['P'], parts[1]['P']])
+    ysT = np.arange(0.58, 1.42, 0.01)
+    hull = np.zeros((len(ysT), NB))
+    for yi, y in enumerate(ysT):
+        sl = Bp0[np.abs(Bp0[:, 1] - y) < 0.02]
+        sl = sl[np.abs(sl[:, 0]) < (0.36 if y > 1.15 else 0.45)]
+        czy = float(np.interp(y, ys_b, (zf_b + zb_b) / 2))
+        ang = np.arctan2(sl[:, 2] - czy, sl[:, 0]); rad = np.hypot(sl[:, 0], sl[:, 2] - czy)
+        bins = ((ang + np.pi) / (2 * np.pi) * NB).astype(int) % NB
+        for b_ in range(NB):
+            m = bins == b_
+            if m.any():
+                hull[yi, b_] = rad[m].max()
+        for _ in range(2):                                                   # fill empty bins, then widen a little so thin gaps are covered
+            z0 = hull[yi] == 0
+            if z0.any() and (~z0).any():
+                hull[yi][z0] = np.interp(np.flatnonzero(z0), np.flatnonzero(~z0), hull[yi][~z0], period=NB)
+        hull[yi] = np.maximum.reduce([np.roll(hull[yi], k) for k in (-2, -1, 0, 1, 2)])
+    hull = np.array([smooth(h_, 1) for h_ in hull]) if False else hull
+    hull = (hull + np.roll(hull, 1, axis=0) + np.roll(hull, -1, axis=0)) / 3     # a little smoothing between heights
+    CL = 0.022
+    czv = np.interp(P[:, 1], ys_b, (zf_b + zb_b) / 2)
+    ang = np.arctan2(P[:, 2] - czv, P[:, 0]); rad = np.hypot(P[:, 0], P[:, 2] - czv)
+    yi = np.clip(np.round((P[:, 1] - ysT[0]) / 0.01).astype(int), 0, len(ysT) - 1)
+    bi = ((ang + np.pi) / (2 * np.pi) * NB).astype(int) % NB
+    need = hull[yi, bi] + CL
+    moved = rad < need
+    rad2 = np.where(moved, need, rad)
+    P = np.stack([rad2 * np.cos(ang), P[:, 1], czv + rad2 * np.sin(ang)], axis=1)
+    print('pushed out of his body: %d%% of the vest vertices (largest push %.3f)' % (100 * moved.mean(), (rad2 - rad).max()))
+    # the shape has changed, so work the surface directions out again from it, smoothed across shared corners and pointing away from his body
+    key = np.round(P, 4)
+    _, uid = np.unique(key, axis=0, return_inverse=True)
+    uid = uid.ravel()
+    fn = np.cross(P[vest_F[:, 1]] - P[vest_F[:, 0]], P[vest_F[:, 2]] - P[vest_F[:, 0]])
+    acc = np.zeros((uid.max() + 1, 3))
+    for c in range(3):
+        np.add.at(acc, uid[vest_F[:, c]], fn)
+    N = acc[uid]
+    N /= np.linalg.norm(N, axis=1)[:, None] + 1e-12
+    out_dir = np.stack([P[:, 0], np.zeros(len(P)), P[:, 2] - czv], axis=1)
+    N = N * np.where((N * out_dir).sum(1) < 0, -1.0, 1.0)[:, None]
+    allP, allN, allUV, allF = P, N, vest_UV, vest_F
+    # skin it to his bones: every vest vertex takes the bone numbers and weights of the nearest bit of his skin, so it moves with his belly, back and chest
+    skin = parts[0]
+    keep = (np.abs(skin['P'][:, 0]) < 0.45) & (skin['P'][:, 1] > 0.6) & (skin['P'][:, 1] < 1.4)
+    Sp, Sj, Sw = skin['P'][keep], skin['J'][keep], skin['W'][keep]
+    J = np.zeros((len(allP), 4), np.uint8)
+    W = np.zeros((len(allP), 4), np.float32)
+    for k in range(0, len(allP), 3000):
+        q = allP[k:k + 3000]
+        j = ((q[:, None, :] - Sp[None, :, :]) ** 2).sum(-1).argmin(1)
+        J[k:k + 3000], W[k:k + 3000] = Sj[j], Sw[j]
+    W /= W.sum(1)[:, None] + 1e-9
+    return skinned_mesh(allP, allN, allUV, allF, J, W)
+
 
 
 if __name__ == '__main__':
