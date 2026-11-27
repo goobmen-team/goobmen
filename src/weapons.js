@@ -259,6 +259,7 @@ function gunMount(f, id) {
 }
 function drawStowed(prog, textured, f, hideSelf) {
   if ((hideSelf && f.isPlayer) || f.gone || !f.vis || f.rag || !f.wr[IDX.chest] || f.away > (textured ? 40 : 14)) return;
+  if (f.stow && f.stow.t0 === null) f.stow.t0 = game.time;
   if (f.stow && game.time - f.stow.t0 >= 0.3) f.stow = null;
   for (const id of f.inv) {
     const g = GUNS[id];
