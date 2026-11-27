@@ -870,6 +870,8 @@ function groundKind(p) {
 }
 function footstep(f) {
   const heavy = f.speed > 2.8 ? 1 : f.crouch ? 0.35 : 0.6;
+  if (world.map === 'island' && inSea(f.pos) && f.away < 40)    // wading: a little splash round his shins
+    puff([f.pos[0] + rand(-0.15, 0.15), SEA.level + 0.04, f.pos[2] + rand(-0.15, 0.15)], f.speed > 2.8 ? 7 : 4, [0.88, 0.95, 0.98, 0.75], f.speed > 2.8 ? 1.3 : 0.8, 0.045, 0.45, 5);
   if (f.isPlayer) { Sound.play('step', 0.55 * heavy, groundKind(f.pos)); return; }
   playAt('step', f.pos, 0.9 * heavy, 20, groundKind(f.pos));
 }
@@ -1497,7 +1499,7 @@ window.__game = {
   resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE, bikes, HOUSES, houseWorld,
   look(eye, at) { testView = eye ? { eye, at } : null; },
   raid, addPiece, newPiece, placeBlock, removePiece, buildRay, surfaceHit, canSee, trace, caveShift, caveWide, explode, planted, benchBuy, openInventory, closeInventory,
-  cine, CINE, TRIP, Sound, cineStart, settings, setShadows, setDistance, get wreck() { return wreck; },
+  cine, CINE, TRIP, Sound, cineStart, cineStep, cineCamera, mate, skip, settings, setShadows, setDistance, get wreck() { return wreck; },
   watch(t) { manual = true; if (!cine.on || t < cine.t) { cineStart(); render(); } while (cine.on && cine.t < t - 1e-6) cineStep(Math.min(1 / 20, t - cine.t)); render(); if (cine.on) cineOverlay(0); },
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },

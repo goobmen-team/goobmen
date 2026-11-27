@@ -1583,6 +1583,8 @@ function groundHeight(x, z) {
 }
 const inSea = p => groundAt(p[0], p[2]) < SEA.level;
 // what loose things come to rest on
+// a drowned body starts down on the sea floor and floats up to the surface, instead of being thrown out of the water
+const ragdollFloor = (f, x, z, y) => f.drowned && f.dead >= 0 ? Math.max(groundAt(x, z, y), SEA.level - 1.0 * (1 - smooth(0, 0.7, f.dead))) : floorAt(x, z, y);
 const floorAt = (x, z, y) => world.map === 'island' ? Math.max(groundAt(x, z, y), SEA.level) : 0;
 
 // keeps a fighter on the map: bots stay on land, you can wade out a bit further
@@ -1655,6 +1657,8 @@ function cameraRoom(at, fwd, dist) {
 
 // ---------------------------------------------------------------- the sea bites
 function seaStep(f, dt) {
+  if (f.dead >= 0 && f.drowned) return;                      // (the body floats up from the sea floor: see ragdollFloor)
+  if (f.dead < 0) f.drowned = false;
   if (f.dead >= 0 || !inSea(f.pos)) { f.wet = 0; return; }
   const before = f.wet || 0;
   f.wet = before + dt;
@@ -1665,7 +1669,7 @@ function seaStep(f, dt) {
   ui.hurtDir.style.transform = 'scale(0)';                   // no attacker to point at
   puff([f.pos[0], SEA.level + 0.05, f.pos[2]], 10, [0.85, 0.93, 0.97, 0.8], 1.1, 0.05, 0.5, 4);
   if (f.hp > 0) notify('The water hurts! Get back to land');
-  else { f.pos[1] = SEA.level - 0.15; knockOut(f, 'The water got you'); }
+  else { f.drowned = true; knockOut(f, 'The water got you'); }
 }
 
 // ---------------------------------------------------------------- swapping maps
@@ -6190,7 +6194,7 @@ function ragStep(f, dt) {
       }
       if (R.pin) R.p[R.pin.pt] = V.lerp(R.p[R.pin.pt], R.pin.to, R.pin.k || 0.35);     // someone holding a hand or a foot
       for (let i = 0; i < n; i++) {                               // the ground, and the things standing on it
-        const p = R.p[i], r = def.rad[i], g = floorAt(p[0], p[2], p[1]) + r;
+        const p = R.p[i], r = def.rad[i], g = ragdollFloor(f, p[0], p[2], p[1]) + r;
         if (p[1] < g) {
           const sink = R.q[i][1] - p[1];
           if (sink > fall) fall = sink;
@@ -6227,7 +6231,7 @@ function ragStep(f, dt) {
   if (Math.hypot(back[0], back[2]) > 0.05) { back = V.norm(back); f.yaw = Math.atan2(-back[0], -back[2]); }
   else back = [-Math.sin(f.yaw), 0, -Math.cos(f.yaw)];
   const x = H[0] - back[0] * 0.72, z = H[2] - back[2] * 0.72;
-  f.pos = [x, floorAt(x, z, H[1]), z];
+  f.pos = [x, ragdollFloor(f, x, z, H[1]), z];
 }
 // knees bend forward, elbows bend back: if one went the wrong way, fold it back
 function hinges(R) {
@@ -7119,7 +7123,7 @@ function itemStep(f, dt) {
   const h = f.hold || (f.hold = { kind: null, w: 0 });
   if (f.hand && findSlot(f, f.hand) < 0) { f.hand = null; f.use = null; }
   const free = f.dead < 0 && !looting && !f.ride && !f.hol && !f.weapon;      // hands not busy with a gun
-  if (f.hand !== 'hammer' || !free) { raid.ghost = null; raid.rightWas = mouse.aim; }
+  if (f.hand !== 'hammer' || !free) { raid.ghost = null; raid.hit = null; raid.swing = 0; raid.rightWas = mouse.aim; }
   if (!f.hand || !free) {
     f.use = null;
     if (!free) h.w = 0; else h.w = Math.max(0, h.w - dt / 0.22);
@@ -9593,7 +9597,7 @@ const PIECES = {
   bench: { name: 'Work table', cost: 30, hw: 0.78, hd: 0.42, h: 0.95 }
 };
 const PIECE_ORDER = ['wall', 'door', 'stash', 'bench'];
-const raid = { builds: [], cells: new Map(), kind: 0, turn: 0, ghost: null, swing: 0, rightWas: false, use: null, alarm: null, nextRaid: 150 };
+const raid = { builds: [], cells: new Map(), kind: 0, turn: 0, ghost: null, swing: 0, hit: null, rightWas: false, use: null, alarm: null, nextRaid: 150 };
 const raidOn = () => world.map === 'island';
 const addRocks = (n, more) => Math.min(ROCK_MAX, n + more);
 
@@ -9761,29 +9765,39 @@ function buildAim(f) {
 function buildStep(f, dt) {
   raid.swing = Math.max(0, raid.swing - dt);
   raid.ghost = buildAim(f);
-  if (mouse.pressed && raid.swing <= 0.05) {
+  // whatever the swing does happens when the hammer lands, not when you click
+  if (raid.hit && raid.swing <= 0.4 * (1 - 0.6)) { const hit = raid.hit; raid.hit = null; hit(); }
+  const idle = raid.swing <= 0 && !raid.hit;
+  if (mouse.pressed && idle) {
     mouse.pressed = false;
     const b = raid.ghost;
     if (b.why) Sound.play('nope', 0.6);
     else {
-      f.rocks -= PIECES[b.kind].cost; b.born = game.time;
-      addPiece(b); buildSound(b); puffAt([b.x, b.y, b.z], 14);
-      raid.swing = 0.4; raid.ghost = null; hudDirty = true;
+      raid.swing = 0.4; raid.ghost = null;
+      raid.hit = () => {
+        if (placeBlock(b) || f.rocks < PIECES[b.kind].cost) { Sound.play('nope', 0.6); return; }      // it was blocked while he swung
+        f.rocks -= PIECES[b.kind].cost; b.born = game.time;
+        addPiece(b); buildSound(b); puffAt([b.x, b.y, b.z], 14); hudDirty = true;
+      };
     }
   }
   // right click: knock down one of your own that you are facing, and get half back
   const right = mouse.aim;
-  if (right && !raid.rightWas) {
+  if (right && !raid.rightWas && idle) {
     const from = V.add(f.pos, [0, 0.5, 0]), hit = buildRay(from, [Math.sin(f.yaw), 0, Math.cos(f.yaw)], 3);
     let q = hit.piece;
     if (!q) q = buildsNear(f.pos[0], f.pos[2]).find(p => (p.kind === 'stash' || p.kind === 'bench') && Math.hypot(p.x - f.pos[0], p.z - f.pos[2]) < 1.8);
     if (q && sameSide(f, q.owner)) {
-      if (q.kind === 'stash') spillStash(q);
-      removePiece(q); f.rocks = addRocks(f.rocks, Math.floor(PIECES[q.kind].cost / 2));
-      playAt('logbreak', [q.x, q.y, q.z], 0.8, 40); debris(q, 0.4); raid.swing = 0.4; hudDirty = true;
+      raid.swing = 0.4;
+      raid.hit = () => {
+        if (!raid.builds.includes(q)) return;
+        if (q.kind === 'stash') spillStash(q);
+        removePiece(q); f.rocks = addRocks(f.rocks, Math.floor(PIECES[q.kind].cost / 2));
+        playAt('logbreak', [q.x, q.y, q.z], 0.8, 40); debris(q, 0.4); hudDirty = true;
+      };
     } else Sound.play('nope', 0.6);
   }
-  raid.rightWas = right;
+  if (idle || !right) raid.rightWas = right;
 }
 // the hammer in your fist, and the swing when you put something up
 function hammerPose(f) {
@@ -12130,6 +12144,8 @@ function groundKind(p) {
 }
 function footstep(f) {
   const heavy = f.speed > 2.8 ? 1 : f.crouch ? 0.35 : 0.6;
+  if (world.map === 'island' && inSea(f.pos) && f.away < 40)    // wading: a little splash round his shins
+    puff([f.pos[0] + rand(-0.15, 0.15), SEA.level + 0.04, f.pos[2] + rand(-0.15, 0.15)], f.speed > 2.8 ? 7 : 4, [0.88, 0.95, 0.98, 0.75], f.speed > 2.8 ? 1.3 : 0.8, 0.045, 0.45, 5);
   if (f.isPlayer) { Sound.play('step', 0.55 * heavy, groundKind(f.pos)); return; }
   playAt('step', f.pos, 0.9 * heavy, 20, groundKind(f.pos));
 }
@@ -12757,7 +12773,7 @@ window.__game = {
   resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE, bikes, HOUSES, houseWorld,
   look(eye, at) { testView = eye ? { eye, at } : null; },
   raid, addPiece, newPiece, placeBlock, removePiece, buildRay, surfaceHit, canSee, trace, caveShift, caveWide, explode, planted, benchBuy, openInventory, closeInventory,
-  cine, CINE, TRIP, Sound, cineStart, settings, setShadows, setDistance, get wreck() { return wreck; },
+  cine, CINE, TRIP, Sound, cineStart, cineStep, cineCamera, mate, skip, settings, setShadows, setDistance, get wreck() { return wreck; },
   watch(t) { manual = true; if (!cine.on || t < cine.t) { cineStart(); render(); } while (cine.on && cine.t < t - 1e-6) cineStep(Math.min(1 / 20, t - cine.t)); render(); if (cine.on) cineOverlay(0); },
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },
