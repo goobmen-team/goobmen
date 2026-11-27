@@ -125,8 +125,8 @@ def worn_vest(vest_P, vest_N, vest_UV, vest_F, caveman_path, vest_tex):
     """The vest reshaped to hug the caveman's torso, slice by slice, in the space of his chest bone.
     vest_P is upright (front towards +z), y up, centred."""
     parts, _, _ = load(caveman_path)
-    B = np.concatenate([q['P'] for q in parts])
-    ys_b = np.arange(0.62, 1.38, 0.01)
+    B = parts[0]['P']                                              # his bare skin only: not the loincloth skirt, hair or beard
+    ys_b = np.arange(0.66, 1.38, 0.01)
     zf_b, zb_b, hw_b = profile(B, ys_b, 0.34)
     # the model is a plate carrier seen from the front: its back is only straps. Copy the front plate onto the back so it is covered all round.
     zc0 = (vest_P[:, 2].max() + vest_P[:, 2].min()) / 2
@@ -138,7 +138,7 @@ def worn_vest(vest_P, vest_N, vest_UV, vest_F, caveman_path, vest_tex):
     vest_P = np.concatenate([vest_P, mir]); vest_N = np.concatenate([vest_N, mirN]); vest_UV = np.concatenate([vest_UV, vest_UV])
     vest_F = np.concatenate([vest_F, front[:, ::-1] + nv])
     ylo, yhi = vest_P[:, 1].min(), vest_P[:, 1].max()
-    BODY_LO, BODY_HI = 0.66, 1.36                                  # right down over his belly
+    BODY_LO, BODY_HI = 0.76, 1.36                                  # down over his belly, and ending above the loincloth
     t = (vest_P[:, 1] - ylo) / (yhi - ylo)
     yb = BODY_LO + t * (BODY_HI - BODY_LO)
     fb = lambda a: np.interp(yb, ys_b, a)
@@ -158,12 +158,12 @@ def worn_vest(vest_P, vest_N, vest_UV, vest_F, caveman_path, vest_tex):
     # nothing of the vest may sit inside his body. Measure his outline at every height and angle (how far out his skin reaches
     # from the middle of his torso), and push every vest vertex that is inside it out to just above it.
     NB = 72
-    Bp0 = np.concatenate([parts[0]['P'], parts[1]['P']])
+    Bp0 = parts[0]['P']
     ysT = np.arange(0.58, 1.42, 0.01)
     hull = np.zeros((len(ysT), NB))
     for yi, y in enumerate(ysT):
         sl = Bp0[np.abs(Bp0[:, 1] - y) < 0.02]
-        sl = sl[np.abs(sl[:, 0]) < (0.36 if y > 1.15 else 0.45)]
+        sl = sl[np.abs(sl[:, 0]) < (0.29 if y > 1.15 else 0.40)]
         czy = float(np.interp(y, ys_b, (zf_b + zb_b) / 2))
         ang = np.arctan2(sl[:, 2] - czy, sl[:, 0]); rad = np.hypot(sl[:, 0], sl[:, 2] - czy)
         bins = ((ang + np.pi) / (2 * np.pi) * NB).astype(int) % NB
