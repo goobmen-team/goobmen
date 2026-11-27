@@ -296,7 +296,7 @@ function holsterPose(f, g, G, h) {
   const e = smooth(0, 1, h.a), s = Math.sin(Math.PI * e);
   // up and back past the shoulder on the way (the hip for a pistol), so it never cuts through him
   const arc = pistol ? [-0.1 * s, -0.05 * s, 0.14 * s] : [-0.14 * s, 0.34 * s, -0.10 * s];
-  const Gp = { R: M3.mix(G.R, M.R, e), p: V.add(V.lerp(G.p, M.p, e), arc) };
+  const Gp = Object.assign({}, G, { R: M3.mix(G.R, M.R, e), p: V.add(V.lerp(G.p, M.p, e), arc) });      // keeps the scale and aim the hands need
   const pole = V.lerp([-0.8, -1, -0.15], pistol ? [-1, -0.2, 0.1] : [-1, 0.1, -0.7], e);
   const grip = P => handGoal(P, g.right, pole), left = P => handGoal(P, leftGrip(f, g), [0.75, -1, 0.1]);
   const restR = idleArm(-1), restL = idleArm(1);
