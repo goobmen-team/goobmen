@@ -221,8 +221,15 @@ function drawWornVest(prog, textured, f, hideSelf) {
   if (!(f.vest > 0 || f.hasVest) || (hideSelf && f.isPlayer) || f.gone || !f.vis || f.rag || f.away > 40 || !f.wr[IDX.chest]) return;
   if (f.script && f.script.vest && f.scriptW > 0.3) return;
   const Rb = M3.mul(f.R, f.wr[IDX.chest]);
-  // measured against his torso (about 0.55 wide, 0.46 deep, from his waist to his shoulders): the model scaled evenly by 1.12 fits it
-  drawLoot(prog, 'vest', M3.mul(Rb, [1.12, 0, 0, 0, 1.2, 0, 0, 0, 1.12]), toWorld(f, V.add(f.wp[IDX.chest], M3.vec(f.wr[IDX.chest], [0, 0.0, 0.025]))), 2);   // a little taller, to cover his belly
+  // the vest was reshaped to his torso (tools/make_loot.py), in the space of his chest bone, so it simply goes where the bone goes
+  if (prog.u.uHasTex) {
+    const m = LOOT.vest;
+    gl.uniform1i(prog.u.uHasTex, 1);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, m.tex);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, m.normal);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, m.orm);
+  }
+  drawMesh(prog, LOOT.vestWorn, Rb, toWorld(f, f.wp[IDX.chest]));
 }
 function drawHeldVest(prog, R, p) { drawLoot(prog, 'vest', R, p, 2); }
 const itemName = id => id === 'vest' ? 'bulletproof vest' : GUNS[id].name;
