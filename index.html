@@ -6447,9 +6447,10 @@ function holsterPose(f, g, G, h) {
     const lift = smooth(PICK.grab, PICK.dur, t), poking = smooth(PICK.reach, PICK.reach + 0.05, t) * (1 - smooth(PICK.tapEnd - 0.04, PICK.tapEnd, t));
     const R0 = M3.mul(M3.ry(h.a - f.yaw), M3.mul(M3.rz(0.12 * Math.sin(t * 31) * poking), M3.rx(0.08 * Math.sin(t * 23) * poking)));   // it jiggles when poked
     const onFloor = V.add(h.item, V.add([0, 0.03 * Math.abs(Math.sin(t * 13)) * poking, 0], M3.vec(R0, [0, 0, -0.18 * g.scale])));
-    const flip = Math.PI * (1 - smooth(0.25, 0.8, lift));                                // he picks it up the wrong way round and turns it over
-    const R = M3.mul(M3.mix(R0, G.R, lift), M3.rx(flip));
-    const p = V.add(V.lerp(onFloor, G.p, lift), [0, 0.1 * Math.sin(Math.PI * lift), 0]);
+    const flip = Math.PI * (1 - smooth(0.15, 0.7, lift));                                // he picks it up the wrong way round and turns it over
+    const R = M3.mul(M3.mix(R0, G.R, lift), M3.rz(flip));                              // rolls over about its own length, so the muzzle never swings back into him
+    const out = [-0.15, 1.0, 0.52];                                                      // it comes up out in front of him first, and is only drawn in once he is standing
+    const p = V.lerp(V.lerp(onFloor, out, smooth(0, 0.6, lift)), G.p, smooth(0.6, 1, lift));
     const Gp = Object.assign({}, G, { R, p });
     let right = handGoal(Gp, g.right, [-0.8, -1, -0.15]);
     const tap = 0.07 * Math.abs(Math.sin((t - PICK.reach) * 13)) * poking, away = smooth(PICK.tapEnd - 0.02, PICK.tapEnd + 0.1, t) * (1 - smooth(PICK.backEnd, PICK.grab, t));
