@@ -284,6 +284,8 @@ function groundHeight(x, z) {
 }
 const inSea = p => groundAt(p[0], p[2]) < SEA.level;
 // what loose things come to rest on
+// a drowned body starts down on the sea floor and floats up to the surface, instead of being thrown out of the water
+const ragdollFloor = (f, x, z, y) => f.drowned && f.dead >= 0 ? Math.max(groundAt(x, z, y), SEA.level - 1.0 * (1 - smooth(0, 0.7, f.dead))) : floorAt(x, z, y);
 const floorAt = (x, z, y) => world.map === 'island' ? Math.max(groundAt(x, z, y), SEA.level) : 0;
 
 // keeps a fighter on the map: bots stay on land, you can wade out a bit further
@@ -356,6 +358,8 @@ function cameraRoom(at, fwd, dist) {
 
 // ---------------------------------------------------------------- the sea bites
 function seaStep(f, dt) {
+  if (f.dead >= 0 && f.drowned) return;                      // (the body floats up from the sea floor: see ragdollFloor)
+  if (f.dead < 0) f.drowned = false;
   if (f.dead >= 0 || !inSea(f.pos)) { f.wet = 0; return; }
   const before = f.wet || 0;
   f.wet = before + dt;
@@ -366,7 +370,7 @@ function seaStep(f, dt) {
   ui.hurtDir.style.transform = 'scale(0)';                   // no attacker to point at
   puff([f.pos[0], SEA.level + 0.05, f.pos[2]], 10, [0.85, 0.93, 0.97, 0.8], 1.1, 0.05, 0.5, 4);
   if (f.hp > 0) notify('The water hurts! Get back to land');
-  else { f.pos[1] = SEA.level - 0.15; knockOut(f, 'The water got you'); }
+  else { f.drowned = true; knockOut(f, 'The water got you'); }
 }
 
 // ---------------------------------------------------------------- swapping maps

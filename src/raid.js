@@ -10,7 +10,7 @@ const PIECES = {
   bench: { name: 'Work table', cost: 30, hw: 0.78, hd: 0.42, h: 0.95 }
 };
 const PIECE_ORDER = ['wall', 'door', 'stash', 'bench'];
-const raid = { builds: [], cells: new Map(), kind: 0, turn: 0, ghost: null, swing: 0, rightWas: false, use: null, alarm: null, nextRaid: 150 };
+const raid = { builds: [], cells: new Map(), kind: 0, turn: 0, ghost: null, swing: 0, hit: null, rightWas: false, use: null, alarm: null, nextRaid: 150 };
 const raidOn = () => world.map === 'island';
 const addRocks = (n, more) => Math.min(ROCK_MAX, n + more);
 
@@ -178,29 +178,39 @@ function buildAim(f) {
 function buildStep(f, dt) {
   raid.swing = Math.max(0, raid.swing - dt);
   raid.ghost = buildAim(f);
-  if (mouse.pressed && raid.swing <= 0.05) {
+  // whatever the swing does happens when the hammer lands, not when you click
+  if (raid.hit && raid.swing <= 0.4 * (1 - 0.6)) { const hit = raid.hit; raid.hit = null; hit(); }
+  const idle = raid.swing <= 0 && !raid.hit;
+  if (mouse.pressed && idle) {
     mouse.pressed = false;
     const b = raid.ghost;
     if (b.why) Sound.play('nope', 0.6);
     else {
-      f.rocks -= PIECES[b.kind].cost; b.born = game.time;
-      addPiece(b); buildSound(b); puffAt([b.x, b.y, b.z], 14);
-      raid.swing = 0.4; raid.ghost = null; hudDirty = true;
+      raid.swing = 0.4; raid.ghost = null;
+      raid.hit = () => {
+        if (placeBlock(b) || f.rocks < PIECES[b.kind].cost) { Sound.play('nope', 0.6); return; }      // it was blocked while he swung
+        f.rocks -= PIECES[b.kind].cost; b.born = game.time;
+        addPiece(b); buildSound(b); puffAt([b.x, b.y, b.z], 14); hudDirty = true;
+      };
     }
   }
   // right click: knock down one of your own that you are facing, and get half back
   const right = mouse.aim;
-  if (right && !raid.rightWas) {
+  if (right && !raid.rightWas && idle) {
     const from = V.add(f.pos, [0, 0.5, 0]), hit = buildRay(from, [Math.sin(f.yaw), 0, Math.cos(f.yaw)], 3);
     let q = hit.piece;
     if (!q) q = buildsNear(f.pos[0], f.pos[2]).find(p => (p.kind === 'stash' || p.kind === 'bench') && Math.hypot(p.x - f.pos[0], p.z - f.pos[2]) < 1.8);
     if (q && sameSide(f, q.owner)) {
-      if (q.kind === 'stash') spillStash(q);
-      removePiece(q); f.rocks = addRocks(f.rocks, Math.floor(PIECES[q.kind].cost / 2));
-      playAt('logbreak', [q.x, q.y, q.z], 0.8, 40); debris(q, 0.4); raid.swing = 0.4; hudDirty = true;
+      raid.swing = 0.4;
+      raid.hit = () => {
+        if (!raid.builds.includes(q)) return;
+        if (q.kind === 'stash') spillStash(q);
+        removePiece(q); f.rocks = addRocks(f.rocks, Math.floor(PIECES[q.kind].cost / 2));
+        playAt('logbreak', [q.x, q.y, q.z], 0.8, 40); debris(q, 0.4); hudDirty = true;
+      };
     } else Sound.play('nope', 0.6);
   }
-  raid.rightWas = right;
+  if (idle || !right) raid.rightWas = right;
 }
 // the hammer in your fist, and the swing when you put something up
 function hammerPose(f) {

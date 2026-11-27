@@ -439,7 +439,7 @@ function itemStep(f, dt) {
   const h = f.hold || (f.hold = { kind: null, w: 0 });
   if (f.hand && findSlot(f, f.hand) < 0) { f.hand = null; f.use = null; }
   const free = f.dead < 0 && !looting && !f.ride && !f.hol && !f.weapon;      // hands not busy with a gun
-  if (f.hand !== 'hammer' || !free) { raid.ghost = null; raid.rightWas = mouse.aim; }
+  if (f.hand !== 'hammer' || !free) { raid.ghost = null; raid.hit = null; raid.swing = 0; raid.rightWas = mouse.aim; }
   if (!f.hand || !free) {
     f.use = null;
     if (!free) h.w = 0; else h.w = Math.max(0, h.w - dt / 0.22);
