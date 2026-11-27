@@ -70,6 +70,7 @@ function miniIsland() {
 }
 function drawMinimap() {
   const cv = ui.minimap; if (!cv) return;
+  buildMapFrame();
   const g = cv.getContext('2d'), S = MINI.size, r = S / 2, scale = r / MINI.range;
   const me = player.pos, yaw = cam.yaw + Math.PI;                // the way the camera looks
   const theta = -Math.PI / 2 - Math.atan2(Math.cos(yaw), Math.sin(yaw));   // turns the world so that way is up
@@ -116,4 +117,91 @@ function drawMinimap() {
   // you: a white-edged arrow pointing up, the way you're looking
   g.fillStyle = 'rgb(214,42,30)'; g.strokeStyle = '#fff'; g.lineWidth = 2; g.lineJoin = 'miter';
   g.beginPath(); g.moveTo(r, r - 9); g.lineTo(r + 6.5, r + 7); g.lineTo(r, r + 3); g.lineTo(r - 6.5, r + 7); g.closePath(); g.stroke(); g.fill();
+}
+
+// ---------------------------------------------------------------- the frame around the map
+// A slab of carved stone, drawn once at double size: a rock texture embossed from noise, chiselled edges, grooves of
+// zigzags and rows of pits cut along each side, cracks, and in the corners two spirals and two red-ochre handprints
+// like on a cave wall. The middle is cut out so the map shows through; the corner blocks overlap it a little.
+function buildMapFrame() {
+  const cv = document.getElementById('mapframecv');
+  if (!cv || cv.dataset.done) return;
+  cv.dataset.done = '1';
+  const SC = 2, W = 220, N = W * SC, B = 18, CB = 30;
+  cv.width = cv.height = N;
+  const g = cv.getContext('2d');
+  let seed = 4242; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const G = 96, cells = new Float32Array(G * G); for (let i = 0; i < cells.length; i++) cells[i] = rnd();
+  const val = (x, y) => { const fx = Math.floor(x), fy = Math.floor(y), u = x - fx, v = y - fy, s = t => t * t * (3 - 2 * t), at = (a, b) => cells[((b % G + G) % G) * G + ((a % G + G) % G)];
+    return at(fx, fy) * (1 - s(u)) * (1 - s(v)) + at(fx + 1, fy) * s(u) * (1 - s(v)) + at(fx, fy + 1) * (1 - s(u)) * s(v) + at(fx + 1, fy + 1) * s(u) * s(v); };
+  const height = (x, y) => val(x / 7, y / 7) * 0.5 + val(x / 3, y / 3 + 20) * 0.3 + val(x / 1.3, y / 1.3 + 50) * 0.2;
+  // the stone: patchy grey-brown, speckled, and embossed so every pit and grain catches the light from the top left
+  const img = g.createImageData(N, N), d = img.data;
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const fx = x / SC, fy = y / SC, k = (y * N + x) * 4;
+    const patch = val(fx / 22, fy / 22 + 7) - 0.5, e = height(fx, fy) - height(fx + 0.5, fy + 0.5);
+    let f = 1 + e * 2.6 + patch * 0.28;
+    if (rnd() < 0.012) f *= 0.62;
+    else if (rnd() < 0.006) f *= 1.22;
+    d[k] = 134 * f + patch * 18; d[k + 1] = 124 * f + patch * 10; d[k + 2] = 110 * f; d[k + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const stone = document.createElement('canvas'); stone.width = stone.height = N; stone.getContext('2d').drawImage(cv, 0, 0);
+  g.scale(SC, SC); g.lineCap = 'round'; g.lineJoin = 'round';
+  // a groove cut into the stone: a pale lip on the lower right, a dark cut on top
+  const groove = (draw, w) => {
+    g.save(); g.translate(0.7, 0.8); g.strokeStyle = 'rgba(238,228,206,.5)'; g.lineWidth = w || 1.7; g.beginPath(); draw(); g.stroke(); g.restore();
+    g.strokeStyle = 'rgba(34,26,18,.88)'; g.lineWidth = w || 1.7; g.beginPath(); draw(); g.stroke();
+  };
+  const mid = B / 2;
+  const zig = (x0, y0, x1, y1) => groove(() => {
+    const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len, nx = -uy, ny = ux, step = 6.5;
+    g.moveTo(x0, y0);
+    for (let t = step / 2, s = 1; t < len; t += step / 2, s = -s) g.lineTo(x0 + ux * t + nx * 3.2 * s, y0 + uy * t + ny * 3.2 * s);
+    g.lineTo(x1, y1);
+  });
+  const pits = (x0, y0, x1, y1, off) => {
+    const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len, nx = -uy, ny = ux;
+    for (let t = 3; t < len; t += 6.5) for (const s of [-off, off]) {
+      const px = x0 + ux * t + nx * s, py = y0 + uy * t + ny * s;
+      g.fillStyle = 'rgba(238,228,206,.45)'; g.beginPath(); g.arc(px + 0.5, py + 0.6, 1.15, 0, 6.3); g.fill();
+      g.fillStyle = 'rgba(34,26,18,.85)'; g.beginPath(); g.arc(px, py, 1.1, 0, 6.3); g.fill();
+    }
+  };
+  const lo = CB + 3, hi = W - CB - 3;
+  const sides = [[lo, mid, hi, mid], [lo, W - mid, hi, W - mid], [mid, lo, mid, hi], [W - mid, lo, W - mid, hi]];
+  for (const q of sides) zig(q[0], q[1], q[2], q[3]);
+  for (const q of sides) pits(q[0], q[1], q[2], q[3], 5.6);
+  // cracks: a few jagged lines across the slab
+  const crack = (x, y, ang, len) => groove(() => { g.moveTo(x, y); for (let t = 0; t < len; t += 3) { ang += (rnd() - 0.5) * 1.1; x += Math.cos(ang) * 3; y += Math.sin(ang) * 3; g.lineTo(x, y); } }, 0.9);
+  crack(70, 1, 1.5, 15); crack(160, W - 1, -1.6, 14); crack(1, 150, 0.1, 13); crack(W - 1, 70, 3.2, 14); crack(112, 2, 1.7, 9);
+  // the chiselled edges: outer lip lit from the top left, the window's edge stepped down into the slab
+  const edge = (x, y, w, h, up) => {
+    const a = up ? 'rgba(244,236,216,.7)' : 'rgba(30,22,14,.75)', b = up ? 'rgba(30,22,14,.75)' : 'rgba(244,236,216,.7)';
+    g.lineWidth = 1.6; g.strokeStyle = a; g.beginPath(); g.moveTo(x, y + h); g.lineTo(x, y); g.lineTo(x + w, y); g.stroke();
+    g.strokeStyle = b; g.beginPath(); g.moveTo(x + w, y); g.lineTo(x + w, y + h); g.lineTo(x, y + h); g.stroke();
+  };
+  edge(1.2, 1.2, W - 2.4, W - 2.4, true); edge(B - 0.8, B - 0.8, W - 2 * B + 1.6, W - 2 * B + 1.6, false);
+  g.strokeStyle = 'rgba(20,14,8,.95)'; g.lineWidth = 1.4; g.strokeRect(0.7, 0.7, W - 1.4, W - 1.4);
+  g.clearRect(B, B, W - 2 * B, W - 2 * B);                        // the window for the map
+  // the corner blocks, standing a little proud of the frame
+  const handprint = (cx, cy, flip) => {
+    g.save(); g.translate(cx, cy); if (flip) g.scale(-1, 1);
+    const paint = 'rgba(158,50,32,.93)';
+    g.fillStyle = paint; g.strokeStyle = paint; g.lineWidth = 2.5;
+    g.beginPath(); g.ellipse(0, 3.5, 5.2, 5.6, 0, 0, 6.3); g.fill();
+    for (const f of [[-3.8, -4], [-1.3, -7.5], [1.3, -8], [3.9, -5]]) { g.beginPath(); g.moveTo(f[0], 1.5); g.lineTo(f[0] * 1.08, f[1]); g.stroke(); }
+    g.lineWidth = 2.8; g.beginPath(); g.moveTo(-4.4, 4.5); g.lineTo(-9.2, 0.6); g.stroke();
+    for (let i = 0; i < 70; i++) { g.fillStyle = rnd() < 0.5 ? 'rgba(250,236,210,.34)' : 'rgba(70,20,12,.4)'; g.fillRect(-9 + rnd() * 18, -8 + rnd() * 17, 0.7, 0.7); }
+    g.restore();
+  };
+  const spiral = (cx, cy) => groove(() => { for (let t = 0; t <= 13.2; t += 0.15) { const r = 1 + t * 0.62, px = cx + Math.cos(t) * r, py = cy + Math.sin(t) * r; if (t === 0) g.moveTo(px, py); else g.lineTo(px, py); } }, 1.6);
+  const corners = [[0, 0, 'spiral'], [W - CB, 0, 'hand'], [0, W - CB, 'hand'], [W - CB, W - CB, 'spiral']];
+  for (const c of corners) {
+    const x = c[0], y = c[1];
+    g.drawImage(stone, x * SC, y * SC, CB * SC, CB * SC, x, y, CB, CB);
+    edge(x + 1, y + 1, CB - 2, CB - 2, true);
+    g.strokeStyle = 'rgba(20,14,8,.95)'; g.lineWidth = 1.4; g.strokeRect(x + 0.7, y + 0.7, CB - 1.4, CB - 1.4);
+    if (c[2] === 'spiral') spiral(x + CB / 2, y + CB / 2); else handprint(x + CB / 2, y + CB / 2 + 0.5, x > 0);
+  }
 }
