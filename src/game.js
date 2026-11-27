@@ -434,7 +434,7 @@ function poseFighter(f) {
     }
   }
   // the height he is lifted off the ground eases by a few hundredths of a second, so a jump's take-off and landing never start or stop in one frame
-  f.airS = f.airS === undefined ? f.air : f.airS + (f.air - f.airS) * (1 - Math.exp(-dtp / 0.04));
+  f.airS = f.airS === undefined ? f.air : f.airS + (f.air - f.airS) * (1 - Math.exp(-dtp / 0.055));
   if (Math.abs(f.airS - f.air) < 0.0005) f.airS = f.air;
   let R = M3.mul(M3.ry(f.yaw), M3.rx(f.tilt)), root = [f.pos[0], f.pos[1] + f.airS, f.pos[2]];
   let held = null;
@@ -447,6 +447,11 @@ function poseFighter(f) {
   }
   if (f.script && f.scriptW > 0.001) {
     const S = f.script, w = f.scriptW;
+    if (f.dead >= 0 && f.rag && S.root) {                      // a ragdoll is posed in the world; the script in its own frame. Bring the ragdoll into the script's frame so the two blend there
+      const Rt = M3.tr(S.root.R);                              // (blending them as they were swung the body through the air as the balloons took hold)
+      for (let i = 0; i < NB; i++) { wr[i] = M3.mul(Rt, wr[i]); wp[i] = M3.vec(Rt, V.sub(wp[i], S.root.p)); }
+      R = S.root.R; root = S.root.p;
+    }
     blendPose(f, scriptPose(f, S), w);
     if (S.root) { R = M3.mix(R, S.root.R, w); root = V.lerp(root, S.root.p, w); }
     if (S.gun && w >= 0.3) held = S.gun;
@@ -1476,6 +1481,7 @@ window.__game = {
   draw() { manual = true; render(); hud(0); },
   tick(dt) { manual = true; update(dt); },                    // the world only, no drawing
   ensure(f) { f.posedT = -1; ensurePosed(f); },
+  newBike,
   pose(f) { f.vis = true; f.away = f.isPlayer ? 0 : f.away; poseFighter(f); },     // for the animation audit
   resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE, bikes, HOUSES, houseWorld,
   look(eye, at) { testView = eye ? { eye, at } : null; },

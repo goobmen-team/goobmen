@@ -164,8 +164,8 @@ function startRide(b) {
   f.holdC4 = false; f.plantT = -1; f.carry = null; f.reload = -1; f.cycle = -1; f.inspect = -1; f.jump = -1; f.air = 0; f.punch = -1; f.ads = 0; f.sprintW = 0; f.crouch = false; f.legYaw = 0; f.speed = 0;
   game.aimToggle = false; mouse.fire = mouse.aim = mouse.pressed = false;
   f.ride = { b, mode: 'mount', t: 0, v: 0, vy: 0, vg: 0, air: false, trick: 3, rate: 0, idle: 0, held, eHeld: true, w: { idle: 1 }, bell: 3, said: 0, wheelie: 0 };
-  f.pos = b.p.slice(); b.rest = 0;
-  cam.yaw = b.yaw + Math.PI;
+  b.rest = 0;
+  f.ride.from = f.pos.slice(); f.ride.camFrom = cam.yaw;        // he walks over to the bike and the view turns round behind it while he gets on, instead of both snapping
   Sound.play('hup', 0.7); notify('E off · Space hop · Shift faster · click for the bell');
   hudDirty = true;
 }
@@ -287,8 +287,10 @@ function rideStep(dt) {
       r.plopped = true; b.sqV += 3.6; Sound.play('squeak', 0.9); popWord(V.add(b.p, [0, 1.6, 0]), 'hehe!', 0.7);
       puff([b.p[0], b.p[1] + 0.05, b.p[2]], 10, [0.55, 0.50, 0.40, 0.6], 1.0, 0.05, 0.5, 1);
     }
-    f.script = rideScript(P); const F = bikeFrame(b); f.script.root = { R: F.R, p: V.add(F.p, [0, -b.sq * 0.4 * smooth(0.7, 0.8, u), 0]) }; f.scriptW = 1;
-    if (u >= 1) { r.mode = 'ride'; r.t = 0; r.eHeld = e; mouse.pressed = false; }
+    const arrive = smooth(0, 0.22, r.t);
+    f.pos = V.lerp(r.from, b.p, arrive); cam.yaw = r.camFrom + wrap(b.yaw + Math.PI - r.camFrom) * smooth(0, 0.4, r.t);
+    f.script = rideScript(P); const F = bikeFrame(b); f.script.root = { R: F.R, p: V.add(F.p, [0, -b.sq * 0.4 * smooth(0.7, 0.8, u), 0]) }; f.scriptW = arrive;
+    if (u >= 1) { f.pos = b.p.slice(); r.mode = 'ride'; r.t = 0; r.eHeld = e; mouse.pressed = false; }
     return true;
   }
   if (r.mode === 'off') {

@@ -32,7 +32,7 @@ function jumpStep(f, dt) {
 function jumpShape(f) {
   if (f.jump < 0 || f.dead >= 0) return null;
   const T = jumpTimes(f), t = f.jump, A = JUMP.air, P = T.pre, D = T.down, E = T.end, moving = f.jumpMoving, way = f.jumpBack ? -1 : 1;
-  const w = smooth(0, 0.04, t) * (1 - smooth(E - 0.08, E, t));
+  const w = smooth(0, 0.14, t) * (1 - smooth(E - 0.16, E, t));      // into the jump pose and back to the run or the stand over a few frames, not in two
   const at = k => P + A * k;                                       // a moment in the air, 0 to 1
   const shape = {
     w,
