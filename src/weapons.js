@@ -243,9 +243,10 @@ const itemName = id => id === 'vest' ? 'bulletproof vest' : GUNS[id].name;
 // rifles ride on the back, crossed; pistols hang on the hip. Every gun keeps its own place however he switches.
 const BACK_SPOTS = [{ dir: [0.34, 1, 0], off: [0.03, 0.02, -0.20] }, { dir: [-0.34, 1, 0], off: [-0.03, 0.02, -0.235] }, { dir: [0.95, 0.28, 0], off: [0, -0.2, -0.205] }, { dir: [-0.95, 0.28, 0], off: [0, -0.26, -0.24] }];
 const isPistol = g => g.muzzle[2] < 0.3;
-function gunMount(f, id) {
+// where the gun rests, in the fighter's own space (wr and wp must already hold the bones it hangs from)
+function mountLocal(f, id) {
   const g = GUNS[id], pistol = isPistol(g), bone = pistol ? IDX.hips : IDX.chest;
-  const Rb = M3.mul(f.R, f.wr[bone]), base = toWorld(f, f.wp[bone]);
+  const Rb = f.wr[bone], base = f.wp[bone];
   let Rl, off;
   if (pistol) {                                                // muzzle down, slide to the back
     const z = V.norm([0, -1, 0.1]), x = [-1, 0, 0];
@@ -259,17 +260,53 @@ function gunMount(f, id) {
 }
 function drawStowed(prog, textured, f, hideSelf) {
   if ((hideSelf && f.isPlayer) || f.gone || !f.vis || f.rag || !f.wr[IDX.chest] || f.away > (textured ? 40 : 14)) return;
-  if (f.stow && f.stow.t0 === null) f.stow.t0 = game.time;
-  if (f.stow && game.time - f.stow.t0 >= 0.3) f.stow = null;
   for (const id of f.inv) {
     const g = GUNS[id];
-    if (f.gun && f.gun.g === g) continue;                        // that one is in his hands
-    const m = gunMount(f, id);
-    let R = m.R, p = m.p;
-    if (f.stow && f.stow.id === id) {                          // on its way from the hand to the back
-      const k = smooth(0, 1, (game.time - f.stow.t0) / 0.3);
-      R = M3.mix(f.stow.R, m.R, k); p = V.lerp(f.stow.p, m.p, k); p[1] += Math.sin(Math.PI * k) * 0.12;
-    }
-    drawGun(prog, textured, g, R.map(x => x * g.scale), p, {});
+    if (f.gun && f.gun.g === g) continue;                        // that one is in his hands (or on its way)
+    const m = mountLocal(f, id);
+    drawGun(prog, textured, g, M3.mul(f.R, m.R).map(x => x * g.scale), toWorld(f, m.p), {});
   }
+}
+
+// ---------------------------------------------------------------- putting a gun away and taking one out
+// f.hol = { mode: 'stow' | 'draw', id, a, rel | reach }: a runs 0 (in the hands) to 1 (on the back). The right hand carries the gun there
+// and lets go of it; taking one out, the hand first reaches round to the back, takes hold and brings it to the front.
+const HOL = { carry: 0.30, release: 0.16, reach: 0.20 };
+function holsterOnEquip(f, id) {
+  const h = f.hol, now = f.weapon;
+  if (id === now) return;
+  if (h && h.mode === 'draw') { f.hol = { mode: 'stow', id: h.id, a: h.a, rel: 0 }; return; }   // changed his mind half way: it goes back the way it came
+  if (h) return;                                                                                  // already putting one away; the next one follows
+  if (now && f.gun && !f.gun.held && f.dead < 0 && f.inv.includes(now)) f.hol = { mode: 'stow', id: now, a: 0, rel: 0 };
+  else if (id) f.hol = { mode: 'draw', id, a: 1, reach: 0 };
+}
+function holsterStep(f, dt) {
+  const h = f.hol;
+  if (h.mode === 'stow') {
+    if (h.a < 1) h.a = Math.min(1, h.a + dt / HOL.carry);
+    else if ((h.rel += dt / HOL.release) >= 1) f.hol = f.weapon ? { mode: 'draw', id: f.weapon, a: 1, reach: 0 } : null;
+  } else if (h.reach < 1) h.reach += dt / HOL.reach;
+  else if ((h.a -= dt / HOL.carry) <= 0) f.hol = null;
+  if (f.hol) f.equip = 0;
+  else { f.equip = 1; f.cool = Math.max(f.cool, 0.05); if (f.isPlayer) hudDirty = true; }
+}
+// the gun's place and both hands for this moment of the holster, given where the gun sits in the hands (G)
+function holsterPose(f, g, G, h) {
+  const M = mountLocal(f, h.id), pistol = isPistol(g);
+  const e = smooth(0, 1, h.a), s = Math.sin(Math.PI * e);
+  // up and back past the shoulder on the way (the hip for a pistol), so it never cuts through him
+  const arc = pistol ? [-0.1 * s, -0.05 * s, 0.14 * s] : [-0.14 * s, 0.34 * s, -0.10 * s];
+  const Gp = Object.assign({}, G, { R: M3.mix(G.R, M.R, e), p: V.add(V.lerp(G.p, M.p, e), arc) });      // keeps the scale and aim the hands need
+  const pole = V.lerp([-0.8, -1, -0.15], pistol ? [-1, -0.2, 0.1] : [-1, 0.1, -0.7], e);
+  const grip = P => handGoal(P, g.right, pole), left = P => handGoal(P, leftGrip(f, g), [0.75, -1, 0.1]);
+  const restR = idleArm(-1), restL = idleArm(1);
+  let R, L;
+  if (h.mode === 'stow') {
+    R = h.a < 1 ? grip(Gp) : mixGoal(grip(Gp), restR, smooth(0, 1, h.rel));          // carries it there, then lets go and drops the hand
+    L = mixGoal(left(Gp), restL, smooth(0, 0.4, h.a));                                  // the other hand lets go first
+  } else {
+    R = h.reach < 1 ? mixGoal(restR, grip(Gp), smooth(0, 1, h.reach)) : grip(Gp);      // reaches round, takes hold, then brings it out
+    L = mixGoal(restL, left(Gp), smooth(0.6, 1, 1 - h.a));
+  }
+  return { G: Gp, goals: { R, L } };
 }

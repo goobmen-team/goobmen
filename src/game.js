@@ -158,8 +158,7 @@ function give(f, id, spare, rarity) {
 function equip(f, id) {
   if (f.weapon === id || (id && !f.inv.includes(id))) return;
   f.holdC4 = false; f.hand = null; f.use = null;
-  if (f.weapon && f.gun && !f.gun.held) f.stow = { id: f.weapon, t0: null, p: f.gun.p.slice(), R: f.gun.R.slice() };
-  if (id) f.drawAt = null;                                       // stamped with the clock when it is first drawn (equip also runs before the game exists)
+  holsterOnEquip(f, id);
   f.weapon = id; f.equip = 0; f.reload = -1; f.cool = Math.max(f.cool, 0.2); f.bolt = 0; f.cycle = -1; f.inspect = -1;
   if (f.isPlayer) { Sound.play('rack', 0.5); hudDirty = true; }
 }
@@ -244,7 +243,7 @@ function gunTransform(f, g, chestPos) {
   if (aim[2] < 0.45) aim = V.norm([clamp(aim[0], -0.6, 0.6), aim[1], 0.45]);
   const x = V.norm(V.cross([0, 1, 0], aim)), y = V.cross(aim, x);
   let R = M3.cols(x, y, aim);
-  const sp = f.sprintW, down = 1 - smooth(0, 1, f.equip);
+  const sp = f.sprintW, down = f.hol ? 0 : 1 - smooth(0, 1, f.equip);
   // working the bolt tips the rifle so the action shows; inspecting turns it over
   const bp = boltState(f, g), work = bp.hand;
   const iu = f.inspect >= 0 ? f.inspect / 2.6 : 0, look1 = smooth(0, 0.18, iu) * (1 - smooth(0.42, 0.56, iu)), look2 = smooth(0.46, 0.6, iu) * (1 - smooth(0.82, 1, iu));
@@ -305,7 +304,9 @@ function poseFighter(f) {
     poseAdd(P, n, gait ? f.phase * Rig.clips[n].T : f.time, f.weights[n]);
   }
   const J = jumpShape(f);
-  const g = f.weapon && f.dead < 0 && f.scriptW < 0.3 ? GUNS[f.weapon] : null;
+  if (f.hol && (f.dead >= 0 || !f.inv.includes(f.hol.id))) f.hol = null;
+  const hol = f.hol, vid = hol ? hol.id : f.weapon;           // the gun in his hand: while he stows one, that is the one still moving
+  const g = vid && f.dead < 0 && f.scriptW < 0.3 ? GUNS[vid] : null;
   const wr = f.wr, wp = f.wp;
   const aw = f.aimW;
   let G = null, goals = null, arms = null, item = null;
@@ -353,8 +354,9 @@ function poseFighter(f) {
     if (i === IDX.chest && g) {
       G = gunTransform(f, g, wp[i]);
       goals = { R: handGoal(G, g.right, [-0.8, -1, -0.15]), L: handGoal(G, leftGrip(f, g), [0.75, -1, 0.1]) };
-      if (f.reload >= 0) { const r = reloadPose(f, g, G, goals.L, wp[i]); goals.L = r.hand; item = r.item; }
-      if (g.boltAction) goals.R = boltHand(f, g, G, goals.R);
+      if (hol) { const h = holsterPose(f, g, G, hol); G = h.G; goals = h.goals; }
+      else if (f.reload >= 0) { const r = reloadPose(f, g, G, goals.L, wp[i]); goals.L = r.hand; item = r.item; }
+      if (g.boltAction && !hol) goals.R = boltHand(f, g, G, goals.R);
       arms = {};
     }
     if (i === IDX.chest && !g && !punching && f.carry) { goals = f.carry; arms = {}; }   // carrying something in both hands
@@ -805,6 +807,7 @@ function push(f, p, r) {
 function weaponStep(f, dt) {
   f.cool = Math.max(0, f.cool - dt);
   f.equip = Math.min(1, f.equip + dt / (f.weapon && GUNS[f.weapon].draw || 0.38));
+  if (f.hol) holsterStep(f, dt);
   if (f.inspect >= 0) { f.inspect += dt; if (f.inspect > 2.6) f.inspect = -1; }
   if (f.cycle >= 0) {
     const g = GUNS[f.weapon], u0 = f.cycle / g.cycle;
@@ -1111,14 +1114,7 @@ function drawStatics(prog, textured, hideSelf) {
         o.slide = slide;
       }
     }
-    let Rg = R, pg = p;
-    if (f.drawAt === null) f.drawAt = game.time;
-    const k = f.drawAt === undefined ? 1 : smooth(0, 1, (game.time - f.drawAt) / 0.34);
-    if (k < 1 && !held && f.inv.includes(f.weapon)) {          // out from the back and into his hands
-      const m = gunMount(f, f.weapon), Rm = M3.mix(m.R, f.gun.R, k);
-      Rg = Rm.map(x => x * g.scale); pg = V.lerp(m.p, p, k);
-    }
-    drawGun(prog, textured, g, Rg, pg, o);
+    drawGun(prog, textured, g, R, p, o);
   }
   for (const f of fighters) drawStowed(prog, textured, f, hideSelf);
   for (const f of fighters) {
@@ -1267,44 +1263,32 @@ const barEls = Array.from({ length: 14 }, () => { const d = document.createEleme
 // what is in your pockets: a hotbar of tiles that are built once and then only change class, so everything animates
 const FIST_ICON = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><g stroke="#2a1a0c" stroke-width="3" stroke-linejoin="round"><path fill="#e7b48a" d="M14 30c0-5 4-8 9-8h24c6 0 10 4 10 10v9c0 8-6 14-14 14H27c-8 0-13-5-13-12z"/><path fill="none" d="M26 23v12M37 22v13M48 25v10" stroke-linecap="round"/><path fill="#e7b48a" d="M10 33c-3 0-5 3-4 6 1 4 5 6 9 6V34c-1-1-3-1-5-1z"/></g></svg>');
 const hotTiles = [];
-function hotBuild() {
-  for (let k = -1; k < SLOT_COUNT; k++) {
-    const d = document.createElement('div');
-    d.className = 'hot empty';
-    d.innerHTML = `<i>${k < 0 ? 'H' : k + 1}</i><img alt="" draggable="false"><span></span><em></em>`;
-    ui.slots.appendChild(d);
-    hotTiles.push({ el: d, img: d.children[1], count: d.children[2], key: '', cls: '' });
-  }
-  const f = hotTiles[0]; f.img.src = FIST_ICON; f.el.className = 'hot'; f.cls = 'hot';
-}
 function hotbarRender() {
-  if (!hotTiles.length) hotBuild();
-  const held = heldSlot(player);
-  const set = (t, cls, key, rarity) => {
-    if (t.cls !== cls) { t.el.className = cls; t.cls = cls; }
-    t.el.style.setProperty('--r', rarity || '');
-    if (key !== t.key) {
-      if (key && t.key !== null && (t.key === '' || key.split('|')[0] !== t.key.split('|')[0] || +key.split('|')[1] > +t.key.split('|')[1])) { t.el.classList.remove('pop'); void t.el.offsetWidth; t.el.classList.add('pop'); t.cls = t.el.className; }
-      t.key = key;
-    }
-  };
-  set(hotTiles[0], 'hot' + (held < 0 ? ' on' : ''), 'fists|0', '');
+  if (!hotTiles.length) {
+    hotTiles.push(...Array.from(ui.slots.children, el => ({ el, img: el.children[1], count: el.children[2], cls: '', src: '' })));
+    hotTiles[0].img.src = FIST_ICON;
+  }
+  const held = heldSlot(player), put = (t, cls, rarity) => { if (t.cls !== cls) { t.el.className = cls; t.cls = cls; } t.el.style.setProperty('--r', rarity || ''); };
+  put(hotTiles[0], 'hot' + (held < 0 ? ' on' : ''), '');
   player.slots.forEach((q, k) => {
     const t = hotTiles[k + 1];
-    if (!q) { set(t, 'hot empty', '', ''); t.img.hidden = true; t.count.textContent = ''; return; }
+    if (!q) { put(t, 'hot empty', ''); t.img.hidden = true; t.count.textContent = ''; return; }
     const w = slotWords(q), src = itemIcon(slotKind(q));
-    if (t.img.getAttribute('src') !== src) t.img.src = src;
+    if (t.src !== src) { t.src = src; t.img.src = src; }
     t.img.hidden = false;
     t.count.textContent = q.t === 'gun' ? player.ammo[q.id].spare : w.count;
-    set(t, 'hot' + (held === k ? ' on' : '') + (w.css ? ' rare' : ''), slotKind(q) + '|' + (q.n || (q.t === 'c4' ? player.c4 : 1)), w.css);
+    put(t, 'hot' + (held === k ? ' on' : '') + (w.css ? ' rare' : ''), w.css);
   });
 }
+// the item pictures take a moment to draw, so they are made a few at a time while the game is quiet
+const iconQueue = [...Object.keys(GUNS).map(id => 'gun:' + id), 'c4', 'plate', ...Object.keys(FOOD)];
 function project(p) {
   const m = lastView.vp, x = m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12], y = m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13], w = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
   return w > 0.1 ? [(x / w * 0.5 + 0.5) * lastView.w, (0.5 - y / w * 0.5) * lastView.h] : null;
 }
 function hud(dt) {
   drawMinimap();
+  if (iconQueue.length && game.running) { try { itemIcon(iconQueue.shift()); } catch (e) { } }
   if (game.inv) invCheck();
   if (hudDirty) {
     hudDirty = false;

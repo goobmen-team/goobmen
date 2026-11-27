@@ -38,41 +38,33 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; o
 .panel { background: rgba(20,22,26,.62); border-radius: 8px; padding: 8px 14px; }
 #score { position: fixed; left: 18px; top: 14px; }
 
-/* ---- the hotbar, health and shield: a Fortnite-style layout ---- */
-:root { --t: clamp(54px, 5.4vw, 78px); }
-#status { position: fixed; left: 24px; bottom: 26px; width: clamp(240px, 27vw, 380px); display: flex; flex-direction: column; gap: 6px; filter: drop-shadow(0 4px 8px rgba(0,0,0,.45)); }
-.meter { display: flex; align-items: center; gap: 10px; }
-.meter b { width: 46px; text-align: right; font-size: 24px; line-height: 1; font-weight: 900; font-style: italic; letter-spacing: -.02em; text-shadow: 0 2px 0 rgba(0,0,0,.6); }
-.track { position: relative; flex: 1; height: 15px; background: rgba(8,12,22,.66); border: 2px solid rgba(255,255,255,.92); border-radius: 2px; transform: skewX(-18deg); overflow: hidden; }
-.meter.health .track { height: 21px; }
+/* ---- hotbar, health and shield: flat and plain ---- */
+:root { --t: clamp(56px, 5vw, 72px); }
+#status { position: fixed; left: 24px; bottom: 24px; width: clamp(230px, 24vw, 330px); display: flex; flex-direction: column; gap: 5px; }
+.meter { display: flex; align-items: center; gap: 8px; }
+.meter b { width: 34px; text-align: right; font-size: 17px; line-height: 1; font-weight: 700; font-variant-numeric: tabular-nums; }
+.track { position: relative; flex: 1; height: 9px; background: rgba(10,14,22,.7); overflow: hidden; }
+.meter.health .track { height: 12px; }
 .fill, .lag { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; }
-.fill { transition: width .32s cubic-bezier(.2,.85,.25,1); background: linear-gradient(#8dff8a, #2fcf4a 55%, #1fa83a); box-shadow: inset 0 2px 0 rgba(255,255,255,.35); }
-.lag { transition: width .75s cubic-bezier(.4,0,.2,1) .28s; background: rgba(255,255,255,.88); }
-.shield .fill { background: linear-gradient(#a6dcff, #3aa3ff 55%, #1f73e0); }
-.meter.low .fill { background: linear-gradient(#ff9a8c, #ff4a3d 55%, #c9261b); animation: lowpulse .8s ease-in-out infinite alternate; }
-.meter.low b { color: #ff6b5e; }
-@keyframes lowpulse { to { filter: brightness(1.45); } }
-#gunbox { position: fixed; right: 24px; bottom: calc(26px + var(--t) + 30px); text-align: right; filter: drop-shadow(0 3px 6px rgba(0,0,0,.55)); transition: opacity .2s; }
-#weapon { font-size: 15px; font-weight: 800; font-style: italic; letter-spacing: .08em; text-transform: uppercase; text-shadow: 0 2px 0 rgba(0,0,0,.6); }
-#ammo { font-size: 24px; font-weight: 800; font-style: italic; opacity: .85; text-shadow: 0 2px 0 rgba(0,0,0,.6); min-height: 40px; }
-#ammo b { font-size: 46px; line-height: 1; font-weight: 900; opacity: 1; transition: color .15s; } #ammo b.low { color: #ff6b5e; }
-#slots { position: fixed; right: 24px; bottom: 26px; display: flex; gap: 8px; align-items: flex-end; }
-.hot { position: relative; width: var(--t); height: var(--t); border-radius: 7px; overflow: hidden; background: linear-gradient(160deg, rgba(48,62,92,.82), rgba(12,18,32,.9)); border: 2px solid rgba(255,255,255,.16);
-  box-shadow: 0 6px 14px rgba(0,0,0,.42); transform-origin: 50% 100%; transition: transform .2s cubic-bezier(.3,1.5,.5,1), border-color .15s, box-shadow .25s, opacity .2s, background .25s; }
-.hot::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: var(--r, transparent); box-shadow: 0 -3px 10px var(--r, transparent); }
-.hot.rare { background: linear-gradient(to top, color-mix(in srgb, var(--r) 62%, #0b1020), rgba(12,18,32,.9) 82%); }
-.hot.on { transform: translateY(-11px) scale(1.14); border-color: #fff; box-shadow: 0 12px 24px rgba(0,0,0,.5), 0 0 22px color-mix(in srgb, var(--r, #ffffff) 60%, transparent); }
-.hot.empty { opacity: .42; }
-.hot i { position: absolute; left: 6px; top: 3px; font-style: italic; font-weight: 900; font-size: 14px; text-shadow: 0 1px 0 #000, 0 0 4px #000; z-index: 2; }
-.hot img { position: absolute; left: 6%; top: 12%; width: 88%; height: 64%; object-fit: contain; filter: drop-shadow(0 3px 3px rgba(0,0,0,.65)); transition: transform .25s cubic-bezier(.3,1.5,.5,1); }
-.hot.on img { transform: scale(1.08) rotate(-3deg); }
-.hot span { position: absolute; right: 6px; bottom: 7px; font-style: italic; font-weight: 900; font-size: 14px; text-shadow: 0 1px 0 #000, 0 0 4px #000; z-index: 2; }
-.hot em { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 3; }
-.hot.pop em { animation: hotflash .55s ease-out; }
-@keyframes hotflash { 0% { opacity: .9; } 100% { opacity: 0; } }
-.hot.pop img { animation: hotpop .45s cubic-bezier(.3,1.6,.5,1); }
-@keyframes hotpop { 0% { transform: scale(.4) rotate(-14deg); } 100% { transform: scale(1); } }
-#score { padding: 4px 14px; font-weight: 800; font-style: italic; letter-spacing: .04em; border-radius: 3px; background: rgba(12,18,32,.55); text-shadow: 0 1px 0 #000; }
+.fill { transition: width .25s ease-out; background: #4ad866; }
+.lag { transition: width .6s ease-in .25s; background: rgba(255,255,255,.75); }
+.shield .fill { background: #46a8ff; }
+.meter.low .fill { background: #ff5448; }
+.meter.low b { color: #ff7a6e; }
+#gunbox { position: fixed; right: 24px; bottom: calc(24px + var(--t) + 22px); text-align: right; }
+#weapon { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+#ammo { font-size: 20px; font-weight: 600; color: rgba(255,255,255,.7); min-height: 34px; font-variant-numeric: tabular-nums; }
+#ammo b { font-size: 34px; line-height: 1; font-weight: 700; color: #fff; } #ammo b.low { color: #ff7a6e; }
+#slots { position: fixed; right: 24px; bottom: 24px; display: flex; gap: 6px; align-items: flex-end; }
+.hot { position: relative; flex: none; width: var(--t); height: var(--t); overflow: hidden; background: rgba(14,19,30,.78); border: 2px solid rgba(255,255,255,.12); transition: transform .12s ease-out, border-color .12s, background-color .12s; }
+.hot::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--r, transparent); }
+.hot.rare { background: linear-gradient(to top, color-mix(in srgb, var(--r) 40%, rgba(14,19,30,.85)), rgba(14,19,30,.78) 70%); }
+.hot.on { transform: translateY(-6px); border-color: #fff; }
+.hot.empty { opacity: .4; }
+.hot i { position: absolute; left: 5px; top: 3px; font-style: normal; font-weight: 700; font-size: 12px; opacity: .9; }
+.hot img { position: absolute; left: 8%; top: 14%; width: 84%; height: 60%; object-fit: contain; }
+.hot span { position: absolute; right: 5px; bottom: 6px; font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; }
+#score { padding: 4px 12px; font-weight: 700; border-radius: 3px; background: rgba(10,14,22,.55); }
 /* the map: a dark plate with a frame of four bones */
 #mapframe { position: fixed; right: 10px; top: 8px; padding: 15px; background: #26211c; }
 #minimap { position: static; inset: auto; display: block; width: 180px; height: 180px; background: #2c6290; border: 2px solid #0e0c0a; }
@@ -191,7 +183,13 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
     <div class="meter health"><b id="hp">100</b><div class="track"><div class="lag" id="hplag"></div><div class="fill" id="hpfill"></div></div></div>
   </div>
   <div id="gunbox"><div id="weapon"></div><div id="ammo"></div></div>
-  <div id="slots"></div>
+  <div id="slots">
+    <div class="hot"><i>H</i><img alt="" draggable="false"><span></span></div>
+    <div class="hot empty"><i>1</i><img alt="" draggable="false" hidden><span></span></div>
+    <div class="hot empty"><i>2</i><img alt="" draggable="false" hidden><span></span></div>
+    <div class="hot empty"><i>3</i><img alt="" draggable="false" hidden><span></span></div>
+    <div class="hot empty"><i>4</i><img alt="" draggable="false" hidden><span></span></div>
+  </div>
 </div>
 <div id="inv" hidden>
   <div id="invpanel">
