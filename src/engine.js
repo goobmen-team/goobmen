@@ -142,7 +142,7 @@ void main() {
   if (uPaint > 0 && vTorso > 0.55) {                  // a bulletproof vest painted onto his skin (1: whole, 2: broken)
     float ax = abs(vRest.x), y = vRest.y, front = step(-0.02, vRest.z);
     bool shell = y > 0.775 && y < 1.30 && !(y > 1.13 && ax > 0.205);          // all the way round, open at the arm holes
-    bool strap = y >= 1.15 && y < 1.40 && ax > 0.095 && ax < 0.165;           // straps over the shoulders
+    bool strap = y >= 1.12 && y < 1.42 && ax > 0.15 && ax < 0.225;            // straps up the chest, over the top of the shoulders and down the back
     if (shell || strap) {
       vec3 olive = vec3(0.107, 0.122, 0.054), dark = vec3(0.075, 0.087, 0.040), web = vec3(0.025, 0.027, 0.018), pouch = vec3(0.034, 0.040, 0.021), metal = vec3(0.16, 0.15, 0.13);
       float weave = 0.9 + 0.1 * sin(vRest.x * 240.0) * sin(vRest.y * 240.0);
@@ -163,7 +163,11 @@ void main() {
       }
       if (y < 0.835) c = web;                                                  // a belt round the waist
       if (front > 0.5 && ax < 0.028 && y > 0.79 && y < 0.826) c = metal;
-      if (strap) { c = web; if (abs(ax - 0.13) < 0.004) c = olive * 0.6; }
+      if (strap) {
+        c = web;
+        if (abs(ax - 0.1875) > 0.026 && abs(ax - 0.1875) < 0.031) c = olive * 0.55;                      // stitching down both edges
+        if (front > 0.5 && y > 1.145 && y < 1.175 && abs(ax - 0.1875) < 0.03) c = metal;                // the adjuster buckle
+      }
       if (uPaint == 2) c *= 0.5;
       base = c;
     }
