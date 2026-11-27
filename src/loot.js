@@ -774,11 +774,14 @@ function lootStep(dt) {
   f.scriptW = smooth(0.28, 0.55, t) * out; L.w0 = f.scriptW;
   if (L.victim) { L.victim.script = null; L.victim.scriptW = 0; }   // the body stays a ragdoll: he gets poked and bounced on for real
   if (!L.given && t >= L.def.hold) grant(L);
+  // the gun he just took is already in his hands: just before the animation lets go, it becomes the one he holds, so nothing is put away or taken out again
+  if (L.given && !L.armed && t >= L.def.end - 0.34 && GUNS[L.gun] && f.inv.includes(L.gun)) { L.armed = true; equipNow(f, L.gun); }
   weaponStep(f, dt);
   if (t >= L.def.end) {
-    const id = L.gun;
+    const id = L.gun, armed = L.armed;
     endLoot();
-    if (!GUNS[id] || f.weapon === id || !f.inv.includes(id)) f.equip = 0; else equip(f, id);
+    if (armed) f.equip = 1;
+    else if (!GUNS[id] || f.weapon === id || !f.inv.includes(id)) f.equip = 0; else equip(f, id);
   }
   return true;
 }

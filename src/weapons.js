@@ -271,6 +271,12 @@ function drawStowed(prog, textured, f, hideSelf) {
 // ---------------------------------------------------------------- putting a gun away and taking one out
 // f.hol = { mode: 'stow' | 'draw', id, a, rel | reach }: a runs 0 (in the hands) to 1 (on the back). The right hand carries the gun there
 // and lets go of it; taking one out, the hand first reaches round to the back, takes hold and brings it to the front.
+// he already has it in his hands (a chest or a body just gave it to him): no putting away, no taking out
+function equipNow(f, id) {
+  f.hol = null; f.holdC4 = false; f.hand = null; f.use = null;
+  f.weapon = id; f.equip = 1; f.reload = -1; f.cool = Math.max(f.cool, 0.2); f.bolt = 0; f.cycle = -1; f.inspect = -1;
+  if (f.isPlayer) { Sound.play('rack', 0.5); hudDirty = true; }
+}
 const HOL = { carry: 0.30, release: 0.16, reach: 0.20 };
 function holsterOnEquip(f, id) {
   const h = f.hol, now = f.weapon;
