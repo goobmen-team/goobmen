@@ -232,7 +232,14 @@ function pickUp(o) {
   if (!takeItem(f, it, true)) { list.push(o.loot || o.prop); Sound.play('nope', 0.7); return; }
   pickFlyers.push({ item: it, from: V.add(o.p, [0, 0.3, 0]), t0: game.time, a: rand(0, 6.3) });
   Sound.play(it.t === 'gun' ? 'rarity' : it.t === 'vest' ? 'vest' : 'grab', 0.8, it.rarity);
-  if (it.t === 'gun' && (f.weapon !== it.id) && !f.hand && !f.holdC4) equip(f, it.id);
+  // a gun off the floor flies into his hand and stays there: no reaching round to his back for it. one already in his hands goes to his back first
+  let delay = 0;
+  if (it.t === 'gun' && (f.weapon !== it.id) && !f.hand && !f.holdC4) {
+    if (f.weapon) { delay = HOL.carry + HOL.release; equip(f, null); }
+    f.pendEq = { id: it.id, at: game.time + delay + 0.3 };
+  }
+  const fly = pickFlyers[pickFlyers.length - 1];
+  if (fly) { fly.t0 = game.time + delay; fly.hand = !!f.pendEq; }
   hudDirty = true;
 }
 function drawProps(prog, textured) {

@@ -808,6 +808,11 @@ function weaponStep(f, dt) {
   f.cool = Math.max(0, f.cool - dt);
   f.equip = Math.min(1, f.equip + dt / (f.weapon && GUNS[f.weapon].draw || 0.38));
   if (f.hol) holsterStep(f, dt);
+  if (f.pendEq) {                                              // a gun is on its way into his hand
+    const q = f.pendEq;
+    if (f.weapon || f.hand || f.holdC4 || f.dead >= 0 || !f.inv.includes(q.id)) f.pendEq = null;
+    else if (!f.hol && game.time >= q.at) { f.pendEq = null; equipNow(f, q.id); }
+  }
   if (f.inspect >= 0) { f.inspect += dt; if (f.inspect > 2.6) f.inspect = -1; }
   if (f.cycle >= 0) {
     const g = GUNS[f.weapon], u0 = f.cycle / g.cycle;
