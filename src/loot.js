@@ -235,7 +235,7 @@ function pickUp(o) {
   if (it.t === 'gun' && (f.weapon !== it.id) && !f.hand && !f.holdC4) {
     const st = { id: it.id, floorP: o.p.slice(), a: o.loot ? o.loot.a + game.time * 0.9 : rand(0, 6.3) };
     if (f.weapon) { equip(f, null); f.pickNext = st; } else if (!f.hol) f.hol = pickHol(f, st); else f.pickNext = st;
-  } else if (LOOT[it.t] && !f.hand && !f.holdC4 && !f.pickIt && !f.wearing) {
+  } else if ((LOOT[it.t] || it.t === 'ammo' || it.t === 'c4') && !f.hand && !f.holdC4 && !f.pickIt && !f.wearing) {
     // food, plates and vests: he leans over it, sniffs and pokes it, grabs it, and stuffs it in his pocket (a vest he puts on)
     const st = { kind: it.t, floorP: o.p.slice(), a: o.loot ? o.loot.a + game.time * 0.9 : rand(0, 6.3) };
     if (f.weapon) { equip(f, null); f.pickNext = st; } else if (!f.hol) f.pickIt = startItemPick(f, st); else f.pickNext = st;

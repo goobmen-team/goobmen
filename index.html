@@ -4362,7 +4362,7 @@ function pickUp(o) {
   if (it.t === 'gun' && (f.weapon !== it.id) && !f.hand && !f.holdC4) {
     const st = { id: it.id, floorP: o.p.slice(), a: o.loot ? o.loot.a + game.time * 0.9 : rand(0, 6.3) };
     if (f.weapon) { equip(f, null); f.pickNext = st; } else if (!f.hol) f.hol = pickHol(f, st); else f.pickNext = st;
-  } else if (LOOT[it.t] && !f.hand && !f.holdC4 && !f.pickIt && !f.wearing) {
+  } else if ((LOOT[it.t] || it.t === 'ammo' || it.t === 'c4') && !f.hand && !f.holdC4 && !f.pickIt && !f.wearing) {
     // food, plates and vests: he leans over it, sniffs and pokes it, grabs it, and stuffs it in his pocket (a vest he puts on)
     const st = { kind: it.t, floorP: o.p.slice(), a: o.loot ? o.loot.a + game.time * 0.9 : rand(0, 6.3) };
     if (f.weapon) { equip(f, null); f.pickNext = st; } else if (!f.hol) f.pickIt = startItemPick(f, st); else f.pickNext = st;
@@ -6747,7 +6747,12 @@ const lootSeen = o => Math.abs(o.p[0] - player.pos[0]) < LOOT_SEEN && Math.abs(o
 function drawFloorLoot(prog, textured) {
   for (const f of fighters) {                                  // food, plates and vests he is about to pick up still lie where they were
     const q = f.pickIt || f.pickNext;
-    if (q && q.kind && !(f.pickIt && f.pickIt.t >= PICKIT.grab)) drawLoot(prog, q.kind, M3.mul(M3.ry(q.a), M3.rz(0.1 * Math.sin((q.t || 0) * 30) * (f.pickIt && q.t > PICKIT.reach && q.t < PICKIT.poke ? 1 : 0))), V.add(q.floorP, [0, 0.0, 0]), 0);
+    if (q && q.kind && !(f.pickIt && f.pickIt.t >= PICKIT.grab)) {
+      const R = M3.mul(M3.ry(q.a), M3.rz(0.1 * Math.sin((q.t || 0) * 30) * (f.pickIt && q.t > PICKIT.reach && q.t < PICKIT.poke ? 1 : 0)));
+      if (q.kind === 'ammo') drawThing(prog, 'ammo', R, V.add(q.floorP, [0, 0.06, 0]));
+      else if (q.kind === 'c4') drawC4(prog, V.add(q.floorP, [0, 0.02, 0]), R, false, 0);
+      else drawLoot(prog, q.kind, R, q.floorP, 0);
+    }
   }
   for (const f of fighters) if (f.pickNext && !f.pickNext.kind) {                  // the gun he is about to pick up still lies where it was
     const st = f.pickNext, g = GUNS[st.id], spin = M3.ry(st.a), lift = 0.04 * Math.sin(game.time * 2.2);
@@ -6888,7 +6893,7 @@ function pickItStep(f, dt) {
                       : [[PICKIT.grab, q.item], [1.15, [0, 1.05, 0.48]], [1.4, [0, 1.1, 0.4]], [1.62, pocket], [PICKIT.dur, pocket]], t);
   if (food) p = V.add(p, [0, 0, 0.05 * Math.max(0, Math.sin((t - 1.3) / 0.2 * Math.PI)) * (t > 1.3 && t < 1.5 ? 1 : 0)]);
   const shrink = 1 - 0.85 * smooth(1.55, 1.74, t);                            // into the pocket
-  f.carry = q.kind === 'fish' || q.kind === 'meat' ? foodGoal(p) : plateGoals(p);
+  f.carry = food || q.kind === 'ammo' ? foodGoal(p) : plateGoals(p);                  // the ammo box goes in one fist, the rest in two hands
   f.thing = t >= PICKIT.grab && t < PICKIT.dur - 0.06 ? { kind: q.kind, p, R: M3.mul(M3.ry(food ? 1.35 : 0), M3.rx(food ? 0.1 : -0.25)).map(x => x * shrink) } : null;
   f.bendX = 1.15 * smooth(0, PICKIT.reach, t) * (1 - smooth(PICKIT.grab + 0.05, 1.3, t));
   const sniff = smooth(0.3, 0.45, t) * (1 - smooth(0.58, 0.64, t)), puzzled = smooth(PICKIT.poke - 0.04, PICKIT.poke + 0.1, t) * (1 - smooth(0.82, PICKIT.grab + 0.04, t));
