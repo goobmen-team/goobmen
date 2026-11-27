@@ -759,7 +759,7 @@ function lootStep(dt) {
     if (L.victim) L.victim.scriptW = L.vw * w;
     if (L.chest) L.chest.forced = false;
     weaponStep(f, dt);
-    if (L.cancel >= 0.35) { endLoot(); f.equip = 0; return false; }
+    if (L.cancel >= 0.35) { endLoot(); if (!f.hol) f.equip = 1; return false; }     // what he held stays in his hands: no drawing it again
     return true;
   }
   L.prev = L.t; L.t += dt;
@@ -787,8 +787,8 @@ function lootStep(dt) {
   if (t >= L.def.end) {
     const id = L.gun, armed = L.armed;
     endLoot();
-    if (armed) f.equip = 1;
-    else if (!GUNS[id] || f.weapon === id || !f.inv.includes(id)) f.equip = 0; else equip(f, id);
+    if (armed || !f.hol) f.equip = 1;                          // whatever was in his hands still is: nothing is put away or drawn again
+    if (!armed && GUNS[id] && f.weapon !== id && f.inv.includes(id)) equipNow(f, id);
   }
   return true;
 }
