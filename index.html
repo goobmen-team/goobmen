@@ -3762,11 +3762,14 @@ function boltHand(f, g, G, goal) {
 // radians a second a bone may turn: a shoulder or a hip at most 8 (a swinging arm is 4-6), wrists and ankles 14, fingers 30. Far quicker than
 // any real movement, far slower than a snap.
 const SLEW_OF = (() => { const a = new Array(64).fill(8); (Rig.names || []).forEach((n, i) => { if (/finger|thumb|tips/i.test(n)) a[i] = 30; else if (/hand|foot|toe/i.test(n)) a[i] = 14; }); return a; })();
+// radians a second, every second, a bone may gain in speed: shoulders and hips 260, hands and feet 520, fingers 900
+const ACC_OF = (() => { const a = new Array(64).fill(260); (Rig.names || []).forEach((n, i) => { if (/finger|thumb|tips/i.test(n)) a[i] = 900; else if (/hand|foot|toe/i.test(n)) a[i] = 520; }); return a; })();
 const _offs = new Array(64), _old = new Array(64);
 function smoothPose(f, dt) {
   const prev = f.prevLoc, wr = f.wr, wp = f.wp, par = Rig.parent;
   const loc = new Array(NB);
   for (let i = 0; i < NB; i++) loc[i] = par[i] < 0 ? wr[i] : M3.mul(M3.tr(wr[par[i]]), wr[i]);
+  const ps0 = f.prevStep, stepNow = f.prevStep = new Float32Array(NB);
   if (prev && dt > 0 && dt < 0.1) {
     let changed = false;
     for (let i = 0; i < NB; i++) {
@@ -3775,10 +3778,15 @@ function smoothPose(f, dt) {
       if (!a) continue;
       const tr = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3] + a[4] * b[4] + a[5] * b[5] + a[6] * b[6] + a[7] * b[7] + a[8] * b[8];
       const ang = Math.acos(Math.max(-1, Math.min(1, (tr - 1) / 2)));
-      if (ang > maxA * 0.3) {                                  // beyond a third of the limit it is eased in (tanh), so there is no jolt where the limit starts to bite
+      let step = ang > maxA * 0.3 ? maxA * Math.tanh(ang / maxA) : ang;   // beyond a third of the limit it is eased in (tanh), so there is no jolt where the limit starts to bite
+      // and a bone does not go from still to full speed in one frame either: it may only speed up so fast
+      const ps = ps0 ? ps0[i] : step, speedUp = ACC_OF[i] * dt * dt * (f.rag ? 2.6 : 1);
+      if (step > ps + speedUp) step = ps + speedUp;
+      if (step < ang - 1e-6) {
         if (!changed) { changed = true; for (let k = 0; k < NB; k++) { _old[k] = wr[k]; } for (let k = 0; k < NB; k++) _offs[k] = par[k] < 0 ? wp[k] : M3.vec(M3.tr(_old[par[k]]), V.sub(wp[k], wp[par[k]])); }
-        loc[i] = M3.mix(a, b, maxA * Math.tanh(ang / maxA) / ang);
+        loc[i] = M3.mix(a, b, step / ang);
       }
+      stepNow[i] = step;
     }
     if (changed) {                                             // the bones below a slowed one follow it
       for (let i = 0; i < NB; i++) {
@@ -5058,7 +5066,9 @@ function lootStep(dt) {
     f.phase = (f.phase + dt * 1.6) % 1;
   } else f.speed = 0;
   const gait = f.speed > 0.2 ? 'Walk' : 'Idle';
-  for (const n of CLIP_NAMES) f.weights[n] = n === gait ? 1 : 0;
+  let wsum = 0;                                                // the walk comes in and out over a few frames, like any other walking
+  for (const n of CLIP_NAMES) { f.weights[n] = n === gait ? Math.min(1, f.weights[n] + dt / 0.18) : Math.max(0, f.weights[n] - dt / 0.18); wsum += f.weights[n]; }
+  for (const n of CLIP_NAMES) f.weights[n] /= wsum;
 
   L.step(L);
   const out = 1 - smooth(L.def.end - 0.28, L.def.end, t);
