@@ -6,7 +6,7 @@
 <title>Caveman Fight</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { height: 100%; overflow: hidden; background: #dbdbdb; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #fff; user-select: none; }
+html, body { height: 100%; overflow: hidden; background: #dbdbdb; font: 14px/1.4 "Comic Sans MS", "Comic Sans", "Chalkboard SE", "Comic Neue", cursive, system-ui, sans-serif; color: #fff; user-select: none; }
 canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; outline: none; }
 [hidden] { display: none !important; }
 #hud, #hud > * { pointer-events: none; }
@@ -119,6 +119,7 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; o
 h1 { font-size: 46px; line-height: 1; font-weight: 900; letter-spacing: .01em; color: #ffd23f; -webkit-text-stroke: 8px #221708; paint-order: stroke fill; margin-bottom: 6px; }
 #card p { opacity: .9; margin-bottom: 12px; text-shadow: 0 1px 3px #000; }
 #maps { display: flex; gap: 12px; margin-bottom: 10px; }
+button, input, select, textarea { font-family: inherit; }
 button { font: inherit; cursor: pointer; border: 0; color: #fff; }
 button:disabled { opacity: .5; cursor: default; }
 .map { flex: 1; min-width: 0; text-align: left; border-radius: 14px; padding: 0; overflow: hidden; background: rgba(24,26,31,.94); border: 3px solid rgba(255,255,255,.16); transition: transform .12s, border-color .12s; }

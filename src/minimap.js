@@ -105,7 +105,7 @@ function drawMinimap() {
     const [ex, ey] = toMap([me[0] + dx * 1000, 0, me[2] + dz * 1000]), vx = ex - r, vy = ey - r, m = Math.max(Math.abs(vx), Math.abs(vy)), lim = r - 10;
     const lx = r + vx / m * lim, ly = r + vy / m * lim;
     g.fillStyle = name === 'N' ? 'rgb(170,40,30)' : 'rgb(30,26,22)'; g.fillRect(lx - 8, ly - 8, 16, 16);
-    g.fillStyle = '#f0e8d0'; g.font = 'bold 12px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name, lx, ly + 0.5);
+    g.fillStyle = '#f0e8d0'; g.font = "bold 12px 'Comic Sans MS', 'Comic Sans', 'Comic Neue', cursive, sans-serif"; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(name, lx, ly + 0.5);
   }
   // you: a white-edged arrow pointing up, the way you're looking
   g.fillStyle = 'rgb(214,42,30)'; g.strokeStyle = '#fff'; g.lineWidth = 2; g.lineJoin = 'miter';
