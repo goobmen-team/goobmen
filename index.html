@@ -5578,11 +5578,11 @@ function tickBomb(b, left, fuse, c) {
 
 // ---------------------------------------------------------------- your own C4
 // 5 to hold it, click to kneel and plant it (on a knocked-out caveman's belly if one is right there),
-// G to drop it, E to pick one up. You start with one and shake another out of every body you loot.
+// G to drop it, E to pick one up. On the baseplate you shake one out of every body you loot.
 const C4_FUSE = 5, C4_MAX = 3, PLANT = 2.1;
 const C4_HOLD = [0, 0.95, 0.38];
 const planted = [];
-player.c4 = 1; player.holdC4 = false; player.plantT = -1;
+player.c4 = 0; player.holdC4 = false; player.plantT = -1;
 function holdC4(f) {
   if (!f.c4 || f.dead >= 0 || looting) return;
   if (f.holdC4) return;
@@ -6447,10 +6447,9 @@ function selectSlot(f, k) {
   else if (f.hand !== s.t) { fists(f); f.hand = s.t; Sound.play(s.t === 'plate' ? 'plateout' : 'rustle', 0.6); }
   hudDirty = true;
 }
-// what you set out with: nothing on the island, the old C4 on the baseplate
-function freshPockets(f, name) {
+// what you set out with: nothing
+function freshPockets(f) {
   f.slots = emptySlots(); f.inv = []; f.ammo = {}; f.weapon = null; f.hand = null; f.use = null; f.holdC4 = false; f.bank = 0; f.c4 = 0; f.vest = 0; f.hasVest = false;
-  if (name !== 'island') { f.c4 = 1; f.slots[SLOT_COUNT - 1] = { t: 'c4' }; }
   hudDirty = true;
 }
 
@@ -9857,8 +9856,7 @@ function cameraEye() {
 function respawnPlayer() {
   abortLoot(); endRide(true);
   const f = player;
-  if (world.map === 'island') freshPockets(f, 'island');
-  else if (!(f.c4 > 0)) { f.c4 = 1; syncC4(f); }
+  if (world.map === 'island') freshPockets(f);
   f.holdC4 = false; f.plantT = -1; f.hand = null; f.use = null; f.carry = null; f.thing = null; f.headTilt = null; f.gone = false; f.rag = null;
   f.dead = -1; f.hp = 100; f.vest = 0; f.hasVest = false; grenades.length = 0; f.pos = world.map === 'island' ? [START[0], groundAt(START[0], START[2]), START[2]] : [0, 0, 0]; f.air = 0; f.jump = -1; f.equip = 0;
   deathCam = 0; deathShot = null; hudDirty = true;
@@ -10360,7 +10358,7 @@ function frame(now) {
 }
 ui.msg.textContent = '';
 ui.play.disabled = ui.island.disabled = false;
-freshPockets(player, 'plate');
+freshPockets(player);
 player.target = [0, 1.2, -10];
 for (const f of fighters) poseFighter(f);
 update(0.016); render();

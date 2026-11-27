@@ -716,11 +716,11 @@ function tickBomb(b, left, fuse, c) {
 
 // ---------------------------------------------------------------- your own C4
 // 5 to hold it, click to kneel and plant it (on a knocked-out caveman's belly if one is right there),
-// G to drop it, E to pick one up. You start with one and shake another out of every body you loot.
+// G to drop it, E to pick one up. On the baseplate you shake one out of every body you loot.
 const C4_FUSE = 5, C4_MAX = 3, PLANT = 2.1;
 const C4_HOLD = [0, 0.95, 0.38];
 const planted = [];
-player.c4 = 1; player.holdC4 = false; player.plantT = -1;
+player.c4 = 0; player.holdC4 = false; player.plantT = -1;
 function holdC4(f) {
   if (!f.c4 || f.dead >= 0 || looting) return;
   if (f.holdC4) return;

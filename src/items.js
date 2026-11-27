@@ -124,10 +124,9 @@ function selectSlot(f, k) {
   else if (f.hand !== s.t) { fists(f); f.hand = s.t; Sound.play(s.t === 'plate' ? 'plateout' : 'rustle', 0.6); }
   hudDirty = true;
 }
-// what you set out with: nothing on the island, the old C4 on the baseplate
-function freshPockets(f, name) {
+// what you set out with: nothing
+function freshPockets(f) {
   f.slots = emptySlots(); f.inv = []; f.ammo = {}; f.weapon = null; f.hand = null; f.use = null; f.holdC4 = false; f.bank = 0; f.c4 = 0; f.vest = 0; f.hasVest = false;
-  if (name !== 'island') { f.c4 = 1; f.slots[SLOT_COUNT - 1] = { t: 'c4' }; }
   hudDirty = true;
 }
 

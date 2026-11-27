@@ -855,8 +855,7 @@ function cameraEye() {
 function respawnPlayer() {
   abortLoot(); endRide(true);
   const f = player;
-  if (world.map === 'island') freshPockets(f, 'island');
-  else if (!(f.c4 > 0)) { f.c4 = 1; syncC4(f); }
+  if (world.map === 'island') freshPockets(f);
   f.holdC4 = false; f.plantT = -1; f.hand = null; f.use = null; f.carry = null; f.thing = null; f.headTilt = null; f.gone = false; f.rag = null;
   f.dead = -1; f.hp = 100; f.vest = 0; f.hasVest = false; grenades.length = 0; f.pos = world.map === 'island' ? [START[0], groundAt(START[0], START[2]), START[2]] : [0, 0, 0]; f.air = 0; f.jump = -1; f.equip = 0;
   deathCam = 0; deathShot = null; hudDirty = true;
@@ -1358,7 +1357,7 @@ function frame(now) {
 }
 ui.msg.textContent = '';
 ui.play.disabled = ui.island.disabled = false;
-freshPockets(player, 'plate');
+freshPockets(player);
 player.target = [0, 1.2, -10];
 for (const f of fighters) poseFighter(f);
 update(0.016); render();
