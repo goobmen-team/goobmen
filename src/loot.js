@@ -225,6 +225,7 @@ function thingNear(p) {
 }
 function pickUp(o) {
   const f = player;
+  if (f.pickIt || f.pickNext || f.wearing || (f.hol && f.hol.mode === 'pick')) return;               // one thing at a time
   const it = o.item || (o.prop.kind === 'c4' ? { t: 'c4' } : gunItem(o.prop.gun, o.prop.ammo.rarity, o.prop.ammo.clip, o.prop.ammo.spare));
   const list = o.loot ? floorLoot : props, at = list.indexOf(o.loot || o.prop);
   if (at < 0) return;
