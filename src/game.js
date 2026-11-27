@@ -1499,7 +1499,7 @@ window.__game = {
   resume() { manual = false; }, give, equip, startReload, damage, props, FLY, bridges, SPOTS, treeWork, CAVES, CAVE, bikes, HOUSES, houseWorld,
   look(eye, at) { testView = eye ? { eye, at } : null; },
   raid, addPiece, newPiece, placeBlock, removePiece, buildRay, surfaceHit, canSee, trace, caveShift, caveWide, explode, planted, benchBuy, openInventory, closeInventory,
-  cine, CINE, TRIP, Sound, cineStart, cineStep, cineCamera, mate, skip, settings, setShadows, setDistance, get wreck() { return wreck; },
+  cine, CINE, TRIP, Sound, cineStart, cineStep, cineCamera, mate, skip, riverDistance, SEA, RIVER, inSea, nearBridge, settings, setShadows, setDistance, get wreck() { return wreck; },
   watch(t) { manual = true; if (!cine.on || t < cine.t) { cineStart(); render(); } while (cine.on && cine.t < t - 1e-6) cineStep(Math.min(1 / 20, t - cine.t)); render(); if (cine.on) cineOverlay(0); },
   get looting() { return looting; },
   get sendCount() { return sends.length + helpers.length; },

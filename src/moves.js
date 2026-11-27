@@ -32,7 +32,7 @@ function jumpStep(f, dt) {
 function jumpShape(f) {
   if (f.jump < 0 || f.dead >= 0) return null;
   const T = jumpTimes(f), t = f.jump, A = JUMP.air, P = T.pre, D = T.down, E = T.end, moving = f.jumpMoving, way = f.jumpBack ? -1 : 1;
-  const w = smooth(0, 0.14, t) * (1 - smooth(E - 0.16, E, t));      // into the jump pose and back to the run or the stand over a few frames, not in two
+  const w = smooth(0, 0.2, t) * (1 - smooth(E - 0.2, E, t));      // into the jump pose and back to the run or the stand over a few frames, not in two
   const at = k => P + A * k;                                       // a moment in the air, 0 to 1
   const shape = {
     w,
@@ -164,6 +164,35 @@ function endSend(f) {
   f.send = null; f.script = null; f.scriptW = 0; f.gone = false;
 }
 
+// ---------------------------------------------------------------- the sea: he swims across it instead of running on top of it
+const inWater = p => world.map === 'island' && groundAt(p[0], p[2]) < SEA.level - 0.1;
+function swimScript(h) {
+  const ph = h.swimPh || 0, S = { hips: Rig.rest[IDX.hips], head: M3.rx(-0.95), twist: 0.22 * Math.sin(ph * 6.2832), arms: {}, legs: {} };
+  for (const [side, x] of [['R', -1], ['L', 1]]) {
+    const a = (ph + (x < 0 ? 0 : 0.5)) * 6.2832;                // one arm reaches while the other pulls
+    S.arms[side] = { wrist: [x * 0.24 + x * 0.1 * Math.max(0, -Math.sin(a)), 1.575 + 0.375 * Math.cos(a), 0.1 + 0.32 * Math.sin(a)], dir: [0, 1, 0.25], palm: [0, 0, 1], pole: [x, 0, -0.5], curl: [0.3, 0.3] };
+    S.legs[side] = { ankle: V.add(Rig.rest[IDX['foot_' + side]], [x * 0.05, 0, 0.14 * Math.sin(ph * 6.2832 * 3 + x * 1.6)]), pole: [x * 0.3, 0, 1] };
+  }
+  return S;
+}
+// ground under a helper, and the swim when he is in the sea. `swimming`: he is travelling through water right now
+function helperWater(h, dt, swimming) {
+  if (world.map !== 'island') return;
+  h.swimW = (h.swimW || 0) + ((swimming ? 1 : 0) - (h.swimW || 0)) * Math.min(1, dt * 7);
+  if (swimming) h.swimPh = ((h.swimPh || 0) + dt * 2.3) % 1;
+  const g = groundAt(h.pos[0], h.pos[2]), w = h.swimW;
+  if (w < 0.004) { h.swimW = 0; h.pos = [h.pos[0], Math.max(g, SEA.floor), h.pos[2]]; return; }          // standing in the shallows or on the land
+  h.pos = [h.pos[0], g + (SEA.level - 0.55 - g) * w * (g < SEA.level ? 1 : 0), h.pos[2]];
+  if (h.script) return;                                          // busy with something else
+  const lean = M3.ry(h.yaw), roll = 0.22 * Math.sin((h.swimPh || 0) * 6.2832), R = M3.mul(M3.mul(lean, M3.rz(roll)), M3.rx(1.5));
+  const bob = 0.03 * Math.sin((h.swimPh || 0) * 12.566);
+  const hipsAt = [h.pos[0], SEA.level - 0.02 + bob, h.pos[2]], hips0 = Rig.rest[IDX.hips];
+  const S = swimScript(h);
+  S.root = { R, p: V.sub(hipsAt, M3.vec(R, hips0)) };
+  h.script = S; h.scriptW = w;
+  h.tilt = 0;
+  if (swimming && Math.floor((h.swimPh || 0) * 6) !== Math.floor(((h.swimPh || 0) - dt * 2.3 + 1) % 1 * 6)) puff([h.pos[0] + rand(-0.3, 0.3), SEA.level + 0.04, h.pos[2] + rand(-0.3, 0.3)], 4, [0.9, 0.96, 1, 0.75], 1.0, 0.05, 0.5, 5);
+}
 function sendStep(s, dt) {
   if (s.bomb) return bombStep(s, dt);
   const f = s.f, h = s.helper;
@@ -177,7 +206,8 @@ function sendStep(s, dt) {
   // ---------- the man himself
   h.gone = false; h.script = null; h.scriptW = 0; h.tilt = 0;
   let gait = 'Idle';
-  const runTo = (a, b, u) => { h.pos = V.lerp(a, b, u); h.yaw = Math.atan2(b[0] - a[0], b[2] - a[2]); gait = 'Run'; h.phase = (h.phase + dt * 5.5) % 1; h.tilt = 0.38; };
+  let swimming = false;
+  const runTo = (a, b, u) => { h.pos = V.lerp(a, b, u); h.yaw = Math.atan2(b[0] - a[0], b[2] - a[2]); gait = 'Run'; h.phase = (h.phase + dt * 5.5) % 1; h.tilt = 0.38; if (inWater(h.pos)) swimming = true; };
   const dust = () => puff([h.pos[0], floorAt(h.pos[0], h.pos[2]) + 0.07, h.pos[2]], 3, [0.55, 0.53, 0.49, 0.6], 0.5, 0.1, 0.5, -0.2);
   const arm = (x, wrist, dir, palm, curl) => ({ wrist, dir: dir || [0, -0.3, 1], palm: palm || [-x, 0, 0], pole: [x, -0.4, -0.5], curl: [curl === undefined ? 0.7 : curl, curl === undefined ? 0.7 : curl] });
   const hips0 = Rig.rest[IDX.hips];
@@ -217,7 +247,7 @@ function sendStep(s, dt) {
     const u = (t - 5.7) / 0.75;
     runTo(s.spot, s.from, Math.pow(u, 1.6)); dust();
   } else h.gone = true;
-  if (world.map === 'island') h.pos = [h.pos[0], floorAt(h.pos[0], h.pos[2]), h.pos[2]];   // he runs over the hills
+  helperWater(h, dt, swimming);                                   // he runs over the hills, wades, or swims
   for (const n of CLIP_NAMES) h.weights[n] = n === gait ? 1 : 0;
 
   if (crossed(0.001)) { Sound.play('zoom', near); popWord(V.add(V.lerp(s.from, s.spot, 0.75), [0, 2.0, 0]), 'NYOOOM!', 0.8); }
@@ -562,7 +592,8 @@ function bombStep(s, dt) {
   const wrong = V.mad(s.spot, s.away, -3.2);                   // he runs the wrong way first
   h.gone = false; h.script = null; h.scriptW = 0; h.tilt = 0;
   let gait = 'Idle';
-  const runTo = (a, b, u) => { h.pos = V.lerp(a, b, u); h.yaw = Math.atan2(b[0] - a[0], b[2] - a[2]); gait = 'Run'; h.phase = (h.phase + dt * 5.5) % 1; h.tilt = 0.38; };
+  let swimming = false;
+  const runTo = (a, b, u) => { h.pos = V.lerp(a, b, u); h.yaw = Math.atan2(b[0] - a[0], b[2] - a[2]); gait = 'Run'; h.phase = (h.phase + dt * 5.5) % 1; h.tilt = 0.38; if (inWater(h.pos)) swimming = true; };
   const dust = () => puff([h.pos[0], floorAt(h.pos[0], h.pos[2]) + 0.07, h.pos[2]], 3, [0.55, 0.53, 0.49, 0.6], 0.5, 0.1, 0.5, -0.2);
   const arm = (x, wrist, dir, palm, curl) => ({ wrist, dir: dir || [0, -0.3, 1], palm: palm || [-x, 0, 0], pole: [x, -0.4, -0.5], curl: [curl === undefined ? 0.7 : curl, curl === undefined ? 0.7 : curl] });
   const hips0 = Rig.rest[IDX.hips];
@@ -659,7 +690,7 @@ function bombStep(s, dt) {
   } else if (t < 7.1) {                                         // the penny drops. gone
     runTo(wrong, s.from, Math.pow((t - 6.2) / 0.9, 1.8)); dust();
   } else h.gone = true;
-  if (world.map === 'island') h.pos = [h.pos[0], floorAt(h.pos[0], h.pos[2]), h.pos[2]];   // he runs over the hills
+  helperWater(h, dt, swimming);                                   // he runs over the hills, wades, or swims
   for (const n of CLIP_NAMES) h.weights[n] = n === gait ? 1 : 0;
 
   // ---------- the cues

@@ -212,13 +212,45 @@ function dropLoot(item, at, spread, still) {
     const a = rand(0, 6.3), sp = rand(0.4, 1.6);
     Object.assign(o, { rest: false, p: [x, Math.max(o.p[1] + 0.4, at[1] + 0.9), z], v: [Math.cos(a) * sp, rand(1.2, 2.6), Math.sin(a) * sp], axis: V.norm([rand(-1, 1), rand(-1, 1), rand(-1, 1)]), spin: rand(5, 11), R: M3.ry(rand(0, 6.3)) });
   }
+  if (overSea(x, z)) {                                         // dropped in the sea: it floats or sinks
+    if (still) { if (FLOATS[item.t]) Object.assign(o, { rest: false, water: 'float', v: [0, 0, 0], R: lootRestR(o), spin: 0, axis: [0, 1, 0], p: [x, SEA.level + 0.02, z] }); else o.p = [x, groundAt(x, z), z]; }
+  }
   floorLoot.push(o);
   while (floorLoot.length > 320) floorLoot.shift();
 }
 // the way each thing lies when it has come to rest
 const lootRestR = o => o.item.t === 'gun' ? M3.mul(M3.ry(o.a), M3.rz(Math.PI / 2)) : M3.ry(o.a);
+// what floats in the sea and what sinks (wood, food, cloth float; metal and stone go to the bottom)
+const FLOATS = { fish: 1, meat: 1, hammer: 1, bag: 1, vest: 1 };
+const overSea = (x, z) => world.map === 'island' && groundAt(x, z) < SEA.level;
+function enterWater(o, vy, d) {
+  o.water = FLOATS[o.item.t] ? 'float' : 'sink';
+  o.v = [o.v[0] * 0.35, o.v[1] * 0.2, o.v[2] * 0.35];
+  puff([o.p[0], SEA.level + 0.04, o.p[2]], Math.round(clamp(vy * 1.5, 3, 9)), [0.9, 0.96, 1, 0.75], 0.8 + vy * 0.15, 0.04, 0.45, 5);
+  if (d < 28) Sound.play('splash', clamp(vy / 7, 0.12, 0.5) * (1 - d / 28));
+}
+function waterLoot(o, dt) {
+  const k = Math.min(1, dt * 3);
+  o.spin *= Math.max(0, 1 - 2.5 * dt);
+  o.R = M3.mul(M3.axis(o.axis, o.spin * dt), o.R);
+  o.v[0] *= 1 - Math.min(1, 3 * dt); o.v[2] *= 1 - Math.min(1, 3 * dt);
+  if (o.water === 'float') {                                   // bobs on the top
+    const top = SEA.level + 0.02 + 0.012 * Math.sin(game.time * 2.2 + o.a);
+    o.v[1] += ((top - o.p[1]) * 70 - o.v[1] * 7) * dt;
+    o.p = V.mad(o.p, o.v, dt);
+    o.R = M3.mix(o.R, lootRestR(o), k * 0.7);
+  } else {                                                     // sinks slowly, turning flat, and settles on the bottom
+    o.v[1] = Math.max(o.v[1] - 3.2 * dt, -0.85);
+    o.p = V.mad(o.p, o.v, dt);
+    o.R = M3.mix(o.R, lootRestR(o), k * 0.5);
+    const bed = groundAt(o.p[0], o.p[2]);
+    if (o.p[1] <= bed) { o.p[1] = bed; o.v = [0, 0, 0]; o.water = null; o.settle = 0; }
+  }
+}
 function lootPhysics(dt) {
   for (const o of floorLoot) {
+    if (o.water && !overSea(o.p[0], o.p[2])) { o.water = null; o.v = [o.v[0], 0, o.v[2]]; }       // drifted onto the beach
+    if (o.water) { waterLoot(o, dt); continue; }
     if (o.rest) continue;
     if (o.settle !== undefined) {                              // lands, then eases onto the side it rests on
       o.settle += dt;
@@ -228,6 +260,7 @@ function lootPhysics(dt) {
     }
     o.v[1] -= 9.8 * dt; o.p = V.mad(o.p, o.v, dt);
     o.R = M3.mul(M3.axis(o.axis, o.spin * dt), o.R);
+    if (o.p[1] <= SEA.level && o.v[1] < 0 && overSea(o.p[0], o.p[2])) { enterWater(o, -o.v[1], Math.hypot(o.p[0] - player.pos[0], o.p[2] - player.pos[2])); continue; }
     const ground = floorAt(o.p[0], o.p[2], o.p[1] + 0.4);
     if (o.p[1] <= ground && o.v[1] < 0) {
       o.p[1] = ground;
