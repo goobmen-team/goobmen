@@ -238,3 +238,37 @@ function drawHeldVest(prog, R, p) {
   flat(prog, BLACK, 0.6, 0.1); drawMesh(prog, vestShape.trim, R, p);
 }
 const itemName = id => id === 'vest' ? 'bulletproof vest' : GUNS[id].name;
+
+// ======================================================================= guns carried on the body
+// rifles ride on the back, crossed; pistols hang on the hip. Every gun keeps its own place however he switches.
+const BACK_SPOTS = [{ dir: [0.34, 1, 0], off: [0.03, 0.02, -0.20] }, { dir: [-0.34, 1, 0], off: [-0.03, 0.02, -0.235] }, { dir: [0.95, 0.28, 0], off: [0, -0.2, -0.205] }, { dir: [-0.95, 0.28, 0], off: [0, -0.26, -0.24] }];
+const isPistol = g => g.muzzle[2] < 0.3;
+function gunMount(f, id) {
+  const g = GUNS[id], pistol = isPistol(g), bone = pistol ? IDX.hips : IDX.chest;
+  const Rb = M3.mul(f.R, f.wr[bone]), base = toWorld(f, f.wp[bone]);
+  let Rl, off;
+  if (pistol) {                                                // muzzle down, slide to the back
+    const z = V.norm([0, -1, 0.1]), x = [-1, 0, 0];
+    Rl = M3.cols(x, V.cross(z, x), z); off = V.sub([-0.30, -0.02, 0.0], M3.vec(Rl, [0, 0, g.muzzle[2] * 0.4 * g.scale]));
+  } else {                                                     // side flat against the back, muzzle up and across
+    let n = 0; for (const other of f.inv) { if (other === id) break; if (!isPistol(GUNS[other])) n++; }
+    const spot = BACK_SPOTS[Math.min(n, BACK_SPOTS.length - 1)], z = V.norm(spot.dir), x = [0, 0, -1];
+    Rl = M3.cols(x, V.cross(z, x), z); off = V.sub(spot.off, M3.vec(Rl, [0, 0, g.muzzle[2] * 0.44 * g.scale]));
+  }
+  return { R: M3.mul(Rb, Rl), p: V.add(base, M3.vec(Rb, off)) };
+}
+function drawStowed(prog, textured, f, hideSelf) {
+  if ((hideSelf && f.isPlayer) || f.gone || !f.vis || f.rag || !f.wr[IDX.chest] || f.away > (textured ? 40 : 14)) return;
+  if (f.stow && game.time - f.stow.t0 >= 0.3) f.stow = null;
+  for (const id of f.inv) {
+    const g = GUNS[id];
+    if (f.gun && f.gun.g === g) continue;                        // that one is in his hands
+    const m = gunMount(f, id);
+    let R = m.R, p = m.p;
+    if (f.stow && f.stow.id === id) {                          // on its way from the hand to the back
+      const k = smooth(0, 1, (game.time - f.stow.t0) / 0.3);
+      R = M3.mix(f.stow.R, m.R, k); p = V.lerp(f.stow.p, m.p, k); p[1] += Math.sin(Math.PI * k) * 0.12;
+    }
+    drawGun(prog, textured, g, R.map(x => x * g.scale), p, {});
+  }
+}

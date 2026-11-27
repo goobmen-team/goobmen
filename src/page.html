@@ -36,16 +36,43 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; o
 #invghost.drop { border-color: #ff5a50; }
 #invghost.drop b { display: block; }
 .panel { background: rgba(20,22,26,.62); border-radius: 8px; padding: 8px 14px; }
-#status { position: fixed; left: 18px; bottom: 18px; width: 220px; }
-#hpbar { height: 10px; background: rgba(255,255,255,.2); border-radius: 5px; overflow: hidden; margin-top: 4px; }
-#hpfill { height: 100%; background: #58d66a; }
-#vestbox { margin-top: 6px; } .vestbar { height: 10px; background: rgba(255,255,255,.2); border-radius: 5px; overflow: hidden; margin-top: 4px; } #vestfill { height: 100%; background: #7ea6c4; }
-#gunbox { position: fixed; right: 18px; bottom: 18px; text-align: right; min-width: 170px; }
-#ammo { font-size: 22px; } #ammo b { font-size: 36px; } #ammo b.low { color: #ff6b5e; }
-#slots { position: fixed; left: 250px; right: 200px; bottom: 18px; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; white-space: nowrap; }
-#slots span { background: rgba(20,22,26,.55); border: 2px solid transparent; border-radius: 7px; padding: 4px 10px; }
-#slots span.on { border-color: #fff; background: rgba(20,22,26,.8); } #slots span.none { opacity: .45; }
 #score { position: fixed; left: 18px; top: 14px; }
+
+/* ---- the hotbar, health and shield: a Fortnite-style layout ---- */
+:root { --t: clamp(54px, 5.4vw, 78px); }
+#status { position: fixed; left: 24px; bottom: 26px; width: clamp(240px, 27vw, 380px); display: flex; flex-direction: column; gap: 6px; filter: drop-shadow(0 4px 8px rgba(0,0,0,.45)); }
+.meter { display: flex; align-items: center; gap: 10px; }
+.meter b { width: 46px; text-align: right; font-size: 24px; line-height: 1; font-weight: 900; font-style: italic; letter-spacing: -.02em; text-shadow: 0 2px 0 rgba(0,0,0,.6); }
+.track { position: relative; flex: 1; height: 15px; background: rgba(8,12,22,.66); border: 2px solid rgba(255,255,255,.92); border-radius: 2px; transform: skewX(-18deg); overflow: hidden; }
+.meter.health .track { height: 21px; }
+.fill, .lag { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; }
+.fill { transition: width .32s cubic-bezier(.2,.85,.25,1); background: linear-gradient(#8dff8a, #2fcf4a 55%, #1fa83a); box-shadow: inset 0 2px 0 rgba(255,255,255,.35); }
+.lag { transition: width .75s cubic-bezier(.4,0,.2,1) .28s; background: rgba(255,255,255,.88); }
+.shield .fill { background: linear-gradient(#a6dcff, #3aa3ff 55%, #1f73e0); }
+.meter.low .fill { background: linear-gradient(#ff9a8c, #ff4a3d 55%, #c9261b); animation: lowpulse .8s ease-in-out infinite alternate; }
+.meter.low b { color: #ff6b5e; }
+@keyframes lowpulse { to { filter: brightness(1.45); } }
+#gunbox { position: fixed; right: 24px; bottom: calc(26px + var(--t) + 30px); text-align: right; filter: drop-shadow(0 3px 6px rgba(0,0,0,.55)); transition: opacity .2s; }
+#weapon { font-size: 15px; font-weight: 800; font-style: italic; letter-spacing: .08em; text-transform: uppercase; text-shadow: 0 2px 0 rgba(0,0,0,.6); }
+#ammo { font-size: 24px; font-weight: 800; font-style: italic; opacity: .85; text-shadow: 0 2px 0 rgba(0,0,0,.6); min-height: 40px; }
+#ammo b { font-size: 46px; line-height: 1; font-weight: 900; opacity: 1; transition: color .15s; } #ammo b.low { color: #ff6b5e; }
+#slots { position: fixed; right: 24px; bottom: 26px; display: flex; gap: 8px; align-items: flex-end; }
+.hot { position: relative; width: var(--t); height: var(--t); border-radius: 7px; overflow: hidden; background: linear-gradient(160deg, rgba(48,62,92,.82), rgba(12,18,32,.9)); border: 2px solid rgba(255,255,255,.16);
+  box-shadow: 0 6px 14px rgba(0,0,0,.42); transform-origin: 50% 100%; transition: transform .2s cubic-bezier(.3,1.5,.5,1), border-color .15s, box-shadow .25s, opacity .2s, background .25s; }
+.hot::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: var(--r, transparent); box-shadow: 0 -3px 10px var(--r, transparent); }
+.hot.rare { background: linear-gradient(to top, color-mix(in srgb, var(--r) 62%, #0b1020), rgba(12,18,32,.9) 82%); }
+.hot.on { transform: translateY(-11px) scale(1.14); border-color: #fff; box-shadow: 0 12px 24px rgba(0,0,0,.5), 0 0 22px color-mix(in srgb, var(--r, #ffffff) 60%, transparent); }
+.hot.empty { opacity: .42; }
+.hot i { position: absolute; left: 6px; top: 3px; font-style: italic; font-weight: 900; font-size: 14px; text-shadow: 0 1px 0 #000, 0 0 4px #000; z-index: 2; }
+.hot img { position: absolute; left: 6%; top: 12%; width: 88%; height: 64%; object-fit: contain; filter: drop-shadow(0 3px 3px rgba(0,0,0,.65)); transition: transform .25s cubic-bezier(.3,1.5,.5,1); }
+.hot.on img { transform: scale(1.08) rotate(-3deg); }
+.hot span { position: absolute; right: 6px; bottom: 7px; font-style: italic; font-weight: 900; font-size: 14px; text-shadow: 0 1px 0 #000, 0 0 4px #000; z-index: 2; }
+.hot em { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 3; }
+.hot.pop em { animation: hotflash .55s ease-out; }
+@keyframes hotflash { 0% { opacity: .9; } 100% { opacity: 0; } }
+.hot.pop img { animation: hotpop .45s cubic-bezier(.3,1.6,.5,1); }
+@keyframes hotpop { 0% { transform: scale(.4) rotate(-14deg); } 100% { transform: scale(1); } }
+#score { padding: 4px 14px; font-weight: 800; font-style: italic; letter-spacing: .04em; border-radius: 3px; background: rgba(12,18,32,.55); text-shadow: 0 1px 0 #000; }
 /* the map: a dark plate with a frame of four bones */
 #mapframe { position: fixed; right: 10px; top: 8px; padding: 15px; background: #26211c; }
 #minimap { position: static; inset: auto; display: block; width: 180px; height: 180px; background: #2c6290; border: 2px solid #0e0c0a; }
@@ -53,7 +80,6 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; o
 #kills { position: fixed; right: 10px; top: 227px; width: 214px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 24px; font-weight: 900; color: #f1e3c0; -webkit-text-stroke: 5px #2a1a0c; paint-order: stroke fill; }
 #kills svg { width: 24px; height: 24px; overflow: visible; }
 #alive { display: flex; align-items: center; gap: 7px; margin-left: 20px; }
-#slots span.rare { border-bottom: 4px solid var(--r); background: linear-gradient(transparent 35%, color-mix(in srgb, var(--r) 42%, transparent)), rgba(20,22,26,.6); }
 #results { position: fixed; left: 50%; top: 24%; transform: translateX(-50%); text-align: center; padding: 18px 44px 16px; background: rgba(20,22,26,.78); border: 3px solid #ffd23f; border-radius: 16px; white-space: nowrap; }
 #restitle { font-size: clamp(34px, 7vw, 66px); line-height: 1.05; font-weight: 900; color: #ffd23f; -webkit-text-stroke: 8px #221708; paint-order: stroke fill; }
 #resplace { font-size: 26px; font-weight: 800; } #reskills { font-size: 18px; opacity: .9; margin-bottom: 8px; }
@@ -160,9 +186,12 @@ table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 
   <div id="results" hidden><div id="restitle"></div><div id="resplace"></div><div id="reskills"></div><div class="small">Enter: play again · Esc: menu</div></div>
   <div id="mapask" class="panel" hidden>Which island?<br><b>1</b>Normal map<br><b>2</b>Optimized map, for low-end devices<br><span class="small">T to cancel</span></div>
   <div id="score" class="panel"></div>
-  <div id="status" class="panel">Health <b id="hp">100</b><div id="hpbar"><div id="hpfill"></div></div><div id="vestbox" hidden>Vest <b id="vest">100</b><div class="vestbar"><div id="vestfill"></div></div></div></div>
+  <div id="status">
+    <div id="vestbox" class="meter shield" hidden><b id="vest">100</b><div class="track"><div class="lag" id="vestlag"></div><div class="fill" id="vestfill"></div></div></div>
+    <div class="meter health"><b id="hp">100</b><div class="track"><div class="lag" id="hplag"></div><div class="fill" id="hpfill"></div></div></div>
+  </div>
+  <div id="gunbox"><div id="weapon"></div><div id="ammo"></div></div>
   <div id="slots"></div>
-  <div id="gunbox" class="panel"><div id="weapon"></div><div id="ammo"></div></div>
 </div>
 <div id="inv" hidden>
   <div id="invpanel">
