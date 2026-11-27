@@ -832,7 +832,8 @@ function sendsStep(dt) {
     if (s.t >= s.end) {
       const f = s.f;
       endSend(f);
-      if (!f.isPlayer) spawnBot(f, bots.indexOf(f)); else if (royaleOn()) f.gone = true; else respawnPlayer();   // on the island there is no coming back
+      if (royaleOn()) f.gone = true;                         // on the island there is no coming back
+      else if (!f.isPlayer) spawnBot(f, bots.indexOf(f)); else respawnPlayer();
     }
   }
 }

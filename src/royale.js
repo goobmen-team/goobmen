@@ -5,7 +5,7 @@
 //
 // The ones near you are played out in full. The ones far away move and fight in a cheaper way, so a hundred of them
 // still runs.
-const BR = { others: 99, near: 65, far: 80, sight: 48, bodies: 10, bodyTime: 40, bikes: 30 };
+const BR = { others: 99, near: 65, far: 80, sight: 48, bodies: 10, watch: 55, bikes: 30 };
 let match = null;
 const royaleOn = () => world.map === 'island';
 const TINTS = [[0.78, 0.95, 0.72], [1.0, 0.72, 0.66], [0.72, 0.82, 1.05], [1.12, 0.97, 0.55], [0.95, 0.72, 1.08], [0.66, 1.02, 1.02], [1.15, 1.02, 0.86], [0.68, 0.68, 0.72], [1.12, 0.80, 0.54], [0.86, 1.10, 0.56]];
@@ -19,7 +19,7 @@ function resetBot(b) {
   endSend(b);
   Object.assign(b, { hp: 100, dead: -1, hurt: 0, vest: 0, hasVest: false, air: 0, jump: -1, gone: false, rag: null, looted: false, beingLooted: false, script: null, scriptW: 0,
     cycle: -1, reload: -1, cool: 0, punch: -1, equip: 1, inv: [], ammo: {}, weapon: null, crouch: false, use: null, carry: null, thing: null, headTilt: null, onBike: null, speed: 0,
-    lastHit: null, hitByYou: -99, shotAt: -99, food: { fish: 0, meat: 0 }, plates: 0, legYaw: 0, tilt: 0, drop: 0, posedT: -1 });
+    lastHit: null, hitByYou: -99, yours: false, shotAt: -99, food: { fish: 0, meat: 0 }, plates: 0, legYaw: 0, tilt: 0, drop: 0, posedT: -1 });
   for (const n of CLIP_NAMES) b.weights[n] = n === 'Idle' ? 1 : 0;
 }
 function brain(extra) {
@@ -633,7 +633,13 @@ function royaleStep(dt) {
     if (b.dead >= 0) {
       if (b.gone) continue;
       const before = b.dead; b.dead += dt; deathCues(b, before);
-      if (!b.beingLooted && !b.send && (b.dead > BR.bodyTime || (b.looted && b.dead > 2.5))) { b.gone = true; spillPockets(b); }
+      if (b.send) locomotion(b, 0, 0, false, dt);
+      // same as ever: once looted the balloon man comes for him; left lying, the bomb man does
+      else if (!b.beingLooted && b.dead >= (b.looted ? 1.6 : LOOT_WINDOW)) {
+        spillPockets(b);
+        if (b.yours || Math.hypot(b.pos[0] - player.pos[0], b.pos[2] - player.pos[2]) < BR.watch) startSend(b, 0, !b.looted);
+        else b.gone = true;                                    // nobody there to see it
+      }
       continue;
     }
     const d = Math.hypot(b.pos[0] - player.pos[0], b.pos[2] - player.pos[2]);
@@ -667,11 +673,16 @@ function royaleDeath(b) {
   dismount(b, true); leaveLoot(b);
   b.use = null; b.carry = null; b.thing = null; b.headTilt = null; b.script = null; b.scriptW = 0;
   const d = Math.hypot(b.pos[0] - player.pos[0], b.pos[2] - player.pos[2]);
-  if (d > 55) { b.gone = true; spillPockets(b); }              // too far to see: just his things on the ground
+  b.yours = game.time - b.hitByYou < 4;                        // your knockouts stay, however far off
+  if (d > BR.watch && !b.yours) { b.gone = true; spillPockets(b); }   // too far to see: just his things on the ground
   else {
     match.bodies = match.bodies.filter(f => !f.gone && f.dead >= 0 && bots.includes(f));
     match.bodies.push(b);
-    while (match.bodies.length > BR.bodies) { const old = match.bodies.shift(); if (!old.beingLooted && !old.send) { old.gone = true; spillPockets(old); } }
+    while (match.bodies.length > BR.bodies) {                  // too many lying about: somebody else's goes first
+      const k = Math.max(0, match.bodies.findIndex(f => !f.yours));
+      const old = match.bodies.splice(k, 1)[0];
+      if (!old.beingLooted && !old.send) { old.gone = true; spillPockets(old); }
+    }
     if (!b.inv.length) spillPockets(b);
   }
   hudDirty = true;
@@ -741,6 +752,8 @@ function poseOthers(vp, eye) {
   for (let i = 0; i < bots.length; i++) {
     const b = bots[i];
     if (b.gone) { b.vis = false; continue; }
+    // flying off: he is nowhere near where he fell, so always pose and draw him
+    if (b.send) { b.away = 0; b.vis = true; poseFighter(b); continue; }
     const x = b.pos[0], y = b.pos[1] + 1, z = b.pos[2], d = Math.hypot(x - eye[0], z - eye[2]);
     b.away = d;
     let vis = d < range;
