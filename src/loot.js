@@ -799,7 +799,9 @@ function lootStep(dt) {
     f.phase = (f.phase + dt * 1.6) % 1;
   } else f.speed = 0;
   const gait = f.speed > 0.2 ? 'Walk' : 'Idle';
-  for (const n of CLIP_NAMES) f.weights[n] = n === gait ? 1 : 0;
+  let wsum = 0;                                                // the walk comes in and out over a few frames, like any other walking
+  for (const n of CLIP_NAMES) { f.weights[n] = n === gait ? Math.min(1, f.weights[n] + dt / 0.18) : Math.max(0, f.weights[n] - dt / 0.18); wsum += f.weights[n]; }
+  for (const n of CLIP_NAMES) f.weights[n] /= wsum;
 
   L.step(L);
   const out = 1 - smooth(L.def.end - 0.28, L.def.end, t);
